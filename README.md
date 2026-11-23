@@ -2,7 +2,7 @@
 
 <img src="assets/pwa-icons/icon-512.png" alt="P00RIJA Chat" width="132">
 
-# P00RIJA Chat
+# P00RIJÃ-CHAT
 
 **End-to-end encrypted chat, voice & video calls and groups — through a server you run yourself.**<br>
 **چت رمزنگاری‌شدهٔ سرتاسری، تماس صوتی و تصویری و گروه — از راه سروری که خودتان اجرا می‌کنید.**
