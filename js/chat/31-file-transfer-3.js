@@ -23,6 +23,91 @@ await element.play?.();
 /* ignore autoplay failures */
 }
 }
+/* A video that is on screen and shows nothing. On iOS the remote picture was
+   sometimes black for the whole call and came right only after the app had been
+   closed and opened a few times. The causes seen there, each of which this
+   answers:
+   - the stream arrives before any frame does (the track is still muted while
+     ICE connects) and WebKit does not pick the picture up when the track wakes
+     afterwards — the stream is attached to the element again then;
+   - play() is refused (autoplay, or the element was hidden at that moment) and
+     nothing ever asks again — it is asked again on a timer, when the app
+     comes back to the front, and at the next touch;
+   - the element is paused by the system when the app is put away.
+   It looks for the first twenty seconds of a stream, and again whenever the
+   app returns to the front. */
+function callVideoElementsNow() {
+  return ['chatFloatingRemoteVideo', 'chatRemoteVideo', 'chatFloatingLocalVideo', 'chatLocalVideo']
+    .map((id) => document.getElementById(id)).filter((element) => element && element.srcObject);
+}
+function callVideoUnhealthy(element) {
+  const stream = element?.srcObject;
+  if (!stream?.getVideoTracks?.().some((track) => track.readyState === 'live')) return false;
+  return element.paused || element.readyState < 2 || !element.videoWidth;
+}
+let callVideoTapArmed = false;
+function armTapToShowVideo() {
+  if (callVideoTapArmed) return;
+  callVideoTapArmed = true;
+  const resume = () => {
+    callVideoTapArmed = false;
+    document.removeEventListener('pointerdown', resume, true);
+    callVideoElementsNow().forEach((element) => playMediaElement(element));
+  };
+  document.addEventListener('pointerdown', resume, true);
+  if (typeof notify === 'function') notify(t('برای نمایش تصویر یک‌بار صفحه را لمس کنید.', 'Touch the screen once to show the picture.'), 'info');
+}
+function reattachCallVideo(element) {
+  const stream = element.srcObject;
+  if (!stream) return;
+  element.srcObject = null;
+  element.srcObject = stream;
+  const started = element.play?.();
+  if (started?.catch) {
+    started.catch((error) => { if (error?.name === 'NotAllowedError') armTapToShowVideo(); });
+  }
+}
+function watchCallVideo(element) {
+  if (!element) return;
+  window.clearInterval(element.__videoWatch);
+  const stream = element.srcObject;
+  if (!stream) return;
+  let ticks = 0;
+  let healthy = 0;
+  const heal = (hard) => {
+    if (!callVideoUnhealthy(element)) return false;
+    if (hard) reattachCallVideo(element);
+    else playMediaElement(element).then?.(() => {});
+    return true;
+  };
+  stream.getVideoTracks().forEach((track) => {
+    track.addEventListener('unmute', () => {
+      if (callVideoUnhealthy(element) || !element.videoWidth) reattachCallVideo(element);
+      window.setTimeout(() => syncVideoElementFit(element), 300);
+    });
+  });
+  ['loadeddata', 'playing'].forEach((name) => element.addEventListener(name, () => syncVideoElementFit(element)));
+  element.__videoWatch = window.setInterval(() => {
+    ticks += 1;
+    if (ticks > 20 || element.srcObject !== stream || !chatState.currentCall) {
+      window.clearInterval(element.__videoWatch);
+      return;
+    }
+    if (heal(ticks % 3 === 0)) { healthy = 0; return; }
+    healthy += 1;
+    if (healthy >= 3 && element.videoWidth) window.clearInterval(element.__videoWatch);
+  }, 1000);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !chatState?.currentCall) return;
+  callVideoElementsNow().forEach((element) => {
+    if (callVideoUnhealthy(element)) reattachCallVideo(element);
+    else playMediaElement(element);
+  });
+});
+window.addEventListener('pageshow', () => {
+  if (chatState?.currentCall) callVideoElementsNow().forEach((element) => { if (callVideoUnhealthy(element)) reattachCallVideo(element); });
+});
 function streamHasLiveVideo(stream) {
 return Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
 }
@@ -372,6 +457,8 @@ floatingLocalVideo.onresize = () => syncVideoElementFit(floatingLocalVideo);
 playMediaElement(floatingLocalVideo);
 }
 document.querySelector('.chat-local-stage')?.classList.toggle('has-video', streamHasLiveVideo(stream));
+watchCallVideo(floatingLocalVideo);
+watchCallVideo(localVideo);
 syncCallStageState();
 }
 function attachRemoteStream(stream) {
@@ -399,6 +486,8 @@ syncVideoElementFit(floatingRemoteVideo);
 floatingRemoteVideo.onresize = () => syncVideoElementFit(floatingRemoteVideo);
 playMediaElement(floatingRemoteVideo);
 }
+watchCallVideo(floatingRemoteVideo);
+watchCallVideo(remoteVideo);
 syncCallStageState();
 }
 function syncCallStageState() {
@@ -1415,6 +1504,14 @@ clearIceRecoveryTimer();
 chatState.iceRestartAttempt = 0;
 setCallStatusText(t('اتصال امن برقرار است', 'Secure call is active'));
 return;
+/* A call whose media path never comes up: the stream event has already put
+   "connected" on screen, the picture stays black and the person closes the app
+   and tries again. ICE that is still at new or checking after nine seconds is
+   restarted once, by the caller, the same way a path that fails is. */
+window.setTimeout(() => {
+  if (!chatState.currentCall || chatState.currentCall.peerConnection !== pc) return;
+  if (['new', 'checking'].includes(pc.iceConnectionState)) attemptCallRecovery(pc, 'stalled');
+}, 9000);
 }
 if (state === 'disconnected') {
 // ICE recovers from this on its own most of the time, so give it a
@@ -2427,7 +2524,7 @@ screen: Boolean(chatState.screenStream),
    other side kept seeing me unflipped and the setting looked broken. It
    travels with the rest of the call state now, and the peer applies it to
    the video of me that they are watching. */
-mirror: Boolean(chatState.callMirrorSelf),
+mirror: Boolean(chatState.callMirrorShared && chatState.callMirrorSelf),
 },
 });
 }
@@ -2452,7 +2549,18 @@ if (merged.held) {
 document.getElementById('chatFloatingCallStatus').textContent = t('طرف مقابل تماس را روی hold گذاشت', 'The other side put the call on hold');
 }
 }
+/* The preview is mirrored by default, as every camera app shows it; what the
+   other side sees of me is not changed by that. Only pressing the button in a
+   call asks them to see the mirrored picture too (callMirrorShared). */
+function setMirrorSelfDefault(on) {
+  chatState.profile.mirrorSelfVideo = Boolean(on);
+  try { saveEncrypted(CHAT_PROFILE_STORAGE_KEY, chatState.profile); } catch (_error) { /* best effort */ }
+  chatState.callMirrorSelf = Boolean(on);
+  syncMirrorSelfView();
+  if (chatState.currentCall) { refreshCallControls(); broadcastCallState(); }
+}
 function toggleMirrorVideo() {
+chatState.callMirrorShared = true;
 chatState.callMirrorSelf = !chatState.callMirrorSelf;
 try {
 chatState.profile.mirrorSelfVideo = chatState.callMirrorSelf;
@@ -2867,6 +2975,7 @@ Object.defineProperties(globalThis, {
   "stopCallQualityMonitor": { get() { return stopCallQualityMonitor; }, set(value) { stopCallQualityMonitor = value; }, configurable: true },
   "broadcastCallState": { get() { return broadcastCallState; }, set(value) { broadcastCallState = value; }, configurable: true },
   "applyRemoteCallState": { get() { return applyRemoteCallState; }, set(value) { applyRemoteCallState = value; }, configurable: true },
+  "setMirrorSelfDefault": { get() { return setMirrorSelfDefault; }, set(value) { setMirrorSelfDefault = value; }, configurable: true },
   "toggleMirrorVideo": { get() { return toggleMirrorVideo; }, set(value) { toggleMirrorVideo = value; }, configurable: true },
   "applyRemoteMirrorView": { get() { return applyRemoteMirrorView; }, set(value) { applyRemoteMirrorView = value; }, configurable: true },
   "syncMirrorSelfView": { get() { return syncMirrorSelfView; }, set(value) { syncMirrorSelfView = value; }, configurable: true },

@@ -145,16 +145,22 @@ const mirrorOf = (page) => page.evaluate(()=>({
     || document.getElementById('chatFloatingRemoteVideo')?.classList.contains('remote-mirrored')),
   selfMirrored: Boolean(document.querySelector('#chatFloatingCall .chat-local-stage')?.classList.contains('mirror-on')),
 }));
-console.log('  before A', JSON.stringify(await mirrorOf(A)), ' before B', JSON.stringify(await mirrorOf(B)));
-await A.evaluate(()=>document.getElementById('chatMirrorVideoBtn')?.click());
-await A.waitForTimeout(1200); await B.waitForTimeout(2500);
+const beforeA = await mirrorOf(A); const beforeB = await mirrorOf(B);
+console.log('  before A', JSON.stringify(beforeA), ' before B', JSON.stringify(beforeB));
+/* The preview is mirrored by default, and that is for my own screen only. */
+check('my preview is mirrored by default', beforeA.selfMirrored === true, JSON.stringify(beforeA));
+check('and the other side is not shown a mirrored picture of me because of it', beforeB.remoteMirrored === false, JSON.stringify(beforeB));
+const press = async () => { await A.evaluate(()=>document.getElementById('chatMirrorVideoBtn')?.click()); await A.waitForTimeout(1200); await B.waitForTimeout(2500); };
+await press();
+const offA = await mirrorOf(A);
+check('the button turns my own mirror off', offA.selfMirrored === false, JSON.stringify(offA));
+await press();
 const afterA = await mirrorOf(A); const afterB = await mirrorOf(B);
 console.log('  after  A', JSON.stringify(afterA), ' after  B', JSON.stringify(afterB));
 check('turning my mirror on changes my own preview', afterA.selfMirrored === true, JSON.stringify(afterA));
-check('and the other side sees the change on the picture of me',
+check('and, asked for in the call, the other side sees the change on the picture of me',
   afterB.remoteMirrored === true, JSON.stringify(afterB));
-await A.evaluate(()=>document.getElementById('chatMirrorVideoBtn')?.click());
-await A.waitForTimeout(1000); await B.waitForTimeout(2500);
+await press();
 const backB = await mirrorOf(B);
 check('and back again when I turn it off', backB.remoteMirrored === false, JSON.stringify(backB));
 

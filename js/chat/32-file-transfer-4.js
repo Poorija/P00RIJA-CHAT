@@ -78,7 +78,8 @@ chatState.remoteCallState = { muted: false, held: false, videoOff: false, screen
 /* Not mirrored unless asked for: what the camera sees, the way the other
    side sees it — the way FaceTime-era apps ship today. Turning it on is
    remembered. */
-chatState.callMirrorSelf = chatState.profile?.mirrorSelfVideo === true;
+chatState.callMirrorSelf = chatState.profile?.mirrorSelfVideo !== false;
+chatState.callMirrorShared = false;
 syncMirrorSelfView();
 applyRemoteCallState(chatState.remoteCallState);
 closeCallSettingsPanel();

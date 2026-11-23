@@ -97,6 +97,19 @@ check('opening the reactions closes the extras (one menu at a time)', react.barO
 check('the reactions are as wide as the extras', Math.abs(react.barWidth - more.sheetWidth) < 3, `${Math.round(react.barWidth)} / ${Math.round(more.sheetWidth)}`);
 await A.evaluate(() => document.getElementById('chatCallReactBtn')?.click());
 
+/* ------------------------------ the picture: mirror default, a stalled video */
+console.log('\n===== the picture in a call =====');
+check('my own preview is mirrored by default', await A.evaluate(() => chatState.callMirrorSelf === true && document.querySelector('.chat-local-stage')?.classList.contains('mirror-on')));
+const stalled = await A.evaluate(async () => {
+  const el = document.getElementById('chatFloatingRemoteVideo');
+  el.pause();
+  const before = el.paused;
+  document.dispatchEvent(new Event('visibilitychange'));
+  await new Promise((r) => setTimeout(r, 1500));
+  return { before, after: el.paused, healthyFn: typeof callVideoUnhealthy === 'function' };
+});
+check('a remote video that was paused is started again when the app comes back to the front', stalled.before === true && stalled.after === false, JSON.stringify(stalled));
+
 /* ----------------------------------------- 1 again: end it, read what it wrote */
 await A.evaluate(() => document.getElementById('chatEndCallControlBtn')?.click());
 await A.waitForTimeout(2500);
@@ -170,6 +183,22 @@ const toneDown = await conn();
 await A.evaluate(() => setConnectionState(true, ['متصل به سرور چت', 'Connected to chat server']));
 await A.waitForTimeout(2000);
 check('the connection page shows the live state', toneDown === 'offline' && (await conn()) === 'online', `${toneDown} → ${await conn()}`);
+await A.evaluate(() => PoorijaSettingsPages.reset());
+
+await A.evaluate(() => PoorijaSettingsPages.open('connection'));
+await A.waitForTimeout(600);
+const mirrorRow = await A.evaluate(() => {
+  const row = [...document.querySelectorAll('[data-msgr-page="connection"] .msgr-switch-row')].find((r) => /Mirror my own picture/.test(r.textContent));
+  if (!row) return { found: false };
+  const input = row.querySelector('input');
+  const was = input.checked;
+  input.click();
+  return { found: true, was };
+});
+await A.waitForTimeout(500);
+check('Settings has the switch for mirroring my own picture, on by default', mirrorRow.found && mirrorRow.was === true, JSON.stringify(mirrorRow));
+check('and turning it off is kept', await A.evaluate(() => chatState.profile.mirrorSelfVideo === false && chatState.callMirrorSelf === false), await A.evaluate(() => JSON.stringify({ p: chatState.profile.mirrorSelfVideo, c: chatState.callMirrorSelf, fn: typeof globalThis.setMirrorSelfDefault })));
+await A.evaluate(() => setMirrorSelfDefault(true));
 await A.evaluate(() => PoorijaSettingsPages.reset());
 
 /* ------------------------------------------------------ 4. back and forward */

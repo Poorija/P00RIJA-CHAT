@@ -99,6 +99,7 @@ function applyCallStageFit(stage) {
   }
   const videoRatio = width / height;
   stage.style.setProperty('--video-aspect', `${width} / ${height}`);
+  nudgeStageWhenAspectChanges(stage);
   stage.dataset.videoOrientation = height > width ? 'portrait' : (width > height ? 'landscape' : 'square');
   /* The small tile is cut to the picture's own shape, so cover crops nothing
      and a portrait selfie never gets squeezed into a landscape thumbnail. */
@@ -123,6 +124,32 @@ function applyCallStageFit(stage) {
 
 function refreshCallLayout() {
   callStageElements().forEach(applyCallStageFit);
+}
+
+/* WebKit on iOS lays a <video> out against the box it had when the picture
+   first reported a size, and the box changes shape a moment later (the tile is
+   cut to the picture's aspect, --video-aspect, only once the first frame has
+   said what that is). The result was the self-view with a black margin all the
+   way round — the picture drawn at half size in the middle of its own tile —
+   until the tile was dragged, because moving it is the only thing that made
+   WebKit lay the video out again. This is that, without the finger: a
+   one-pixel change of the video's width, forced and taken back, across two
+   frames and again a little later. */
+function nudgeVideoLayout(video) {
+  if (!video) return;
+  const kick = () => {
+    video.style.setProperty('width', 'calc(100% - 0.5px)', 'important');
+    void video.offsetWidth;
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => video.style.removeProperty('width')));
+  };
+  kick();
+  window.setTimeout(kick, 350);
+}
+function nudgeStageWhenAspectChanges(stage) {
+  const aspect = stage?.style.getPropertyValue('--video-aspect') || '';
+  if (!stage || stage.dataset.nudgedFor === aspect) return;
+  stage.dataset.nudgedFor = aspect;
+  nudgeVideoLayout(stagePrimaryVideo(stage));
 }
 
 /* The box changes shape on rotation, on a window resize, and when the roles

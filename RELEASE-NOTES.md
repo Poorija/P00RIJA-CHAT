@@ -1,8 +1,43 @@
+# P00RIJA Chat 2.16.1
+
+Version 2.16.1 · build chat-v26
+
+Three things found on an iPhone, on top of 2.16.0 — the first release published
+on GitHub.
+
+**Fixed**
+
+- **The self-view in a video call no longer has a black margin all round it.**
+  On iOS the picture was drawn at half size in the middle of its own tile until
+  the tile was dragged, because WebKit lays a video out for the box it had when
+  the first frame arrived and the tile changes shape a moment later. The video is
+  laid out again when that happens.
+- **The other person's picture is brought back when it stays black.** On iOS it
+  was sometimes black for the whole call and came right only after closing and
+  opening the app a few times. The picture is looked at for the first twenty
+  seconds and again whenever the app returns to the front: a video that is
+  paused or has no frame is attached again, asked to play again, and — if iOS
+  refuses until a touch — shown the moment the screen is touched once. A call
+  whose media path is still at *checking* after nine seconds is restarted by the
+  caller, as one that fails is.
+
+**New**
+
+- **Your own picture is mirrored by default**, the way every camera app shows it,
+  and **Settings, Server and connection, Calls** has a switch to turn that off.
+  It changes only what you see: the other side is asked to see the mirrored
+  picture only when you press the mirror button in a call.
+
+Tests: `navfixes` gained the mirror default, the Settings switch and a stalled
+remote video (42 checks); `callfix` and `callmirror` follow the new default.
+Not tried on a phone: the two iOS fixes were written from the symptoms and from
+WebKit's behaviour, and Playwright's WebKit cannot connect a call here.
+
 # P00RIJA Chat 2.16.0
 
 Version 2.16.0 · build chat-v25
 
-The first release published on GitHub, and the fixes found by using 2.15 on
+The first release published on GitHub, with the fixes found by using 2.15 on
 phones. The protocol and the servers are unchanged; apps and servers of 2.15.x
 keep working with this one.
 

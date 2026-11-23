@@ -129,8 +129,8 @@ const mirror = await A.evaluate(async () => {
   return { before, after, back, offClass: document.querySelector('#chatFloatingCall .chat-local-stage').className.includes('mirror-off') };
 });
 console.log('  ' + JSON.stringify(mirror));
-check('the self-view is not mirrored by default', !/matrix\(-1/.test(mirror.before), mirror.before);
-check('pressing the button mirrors it', /matrix\(-1/.test(mirror.after), mirror.after);
+check('the self-view is mirrored by default, as every camera app shows it', /matrix\(-1/.test(mirror.before), mirror.before);
+check('pressing the button un-mirrors it', !/matrix\(-1/.test(mirror.after), mirror.after);
 check('the button actually changes the transform', mirror.before !== mirror.after, `${mirror.before} -> ${mirror.after}`);
 check('pressing it again turns the mirror off again', mirror.back === mirror.before, mirror.back);
 

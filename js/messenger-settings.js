@@ -832,6 +832,7 @@
       {
         native: () => group(t('تماس', 'Calls'), [
           toggle({ icon: 'fa-video', tile: '#34c759', label: t('تماس تصویری', 'Video calls'), source: 'chatAllowVideo' }),
+          switchRow({ icon: 'fa-code-compare', tile: '#0a84ff', label: t('آینه‌ای کردن تصویر خودم', 'Mirror my own picture'), on: chatSt()?.profile?.mirrorSelfVideo !== false, fn: (on) => { global.setMirrorSelfDefault?.(on); refresh(); } }),
           toggle({ icon: 'fa-wave-square', tile: '#af52de', label: t('حذف نویز پس‌زمینه', 'Background noise removal'), source: 'chatCallNoiseToggle' }),
           toggle({ icon: 'fa-tower-broadcast', tile: '#8e8e93', label: t('STUN عمومی (Google / Twilio)', 'Public STUN (Google / Twilio)'), source: 'chatPublicStun' }),
         ], hintOf('chatCallNoiseToggle'))
