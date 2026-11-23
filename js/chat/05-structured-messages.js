@@ -1,0 +1,454 @@
+/*
+ * P00RIJA Chat — end-to-end encrypted messenger.
+ * Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+ *
+ * Licensed under the GNU Affero General Public License, version 3 only.
+ * See LICENSE for the full text. Section 13 matters here: run a modified
+ * version as a network service and its users are entitled to your source.
+ */
+
+/* Part 5 of 36 of the Secure Chat module.
+   Split out of the original single-file js/chat.js — see js/chat/README.md.
+   These files share one global scope and are loaded in order; the numbering is
+   that order and must not be changed.
+
+   Structured messages — polls, location, contact cards
+*/
+
+/* =====================================================================
+   Structured messages — polls, location, contact cards
+   ---------------------------------------------------------------------
+   One wire type carries all three. `rich` is an ordinary encrypted
+   message whose plaintext is JSON with a `kind` field, so it inherits
+   the session key, the delivery receipts, the offline relay envelope and
+   the self-destruct timer without any of that being reimplemented three
+   times. Votes travel the same way rather than as plaintext session
+   events: a ballot is content, not metadata, and the relay must not be
+   able to read it when the peer is offline.
+   ===================================================================== */
+/* 'live-location' is the card of a share whose pin keeps moving
+   (50-live-location.js); its updates are not entries and never come here. */
+const RICH_KINDS = new Set(['poll', 'location', 'contact', 'live-location']);
+const POLL_MAX_OPTIONS = 10;
+const POLL_MIN_OPTIONS = 2;
+
+function richPayloadOf(entry) {
+  if (!entry?.rich) return null;
+  return typeof entry.rich === 'string' ? safeJsonParse(entry.rich) : entry.rich;
+}
+function safeJsonParse(text) {
+  try { return JSON.parse(text); } catch (_error) { return null; }
+}
+
+/* Sends one structured message down the same path a text message takes. */
+async function sendRichMessage(kind, data) {
+  if (!RICH_KINDS.has(kind)) return;
+  if (!guardGroupSend('sendMessages')) return;
+  const conversation = getActiveConversation();
+  const peer = activePeer();
+  if (!conversation) {
+    notify(t('اول یک گفتگو را باز کنید.', 'Open a conversation first.'), 'warning');
+    return;
+  }
+  const messageId = generateId(kind);
+  const createdAt = new Date().toISOString();
+  const timerSeconds = Number(chatState.timerSeconds || 0);
+  const rich = { kind, ...data, id: messageId };
+  /* Saved Messages keeps the card here and sends it nowhere. */
+  if (conversation.type === 'saved' && typeof keepRichInSaved === 'function') {
+    keepRichInSaved(rich);
+    return;
+  }
+  const entry = {
+    id: messageId,
+    direction: 'out',
+    type: 'rich',
+    rich,
+    status: 'queued',
+    createdAt,
+    expiresAt: '',
+    timerSeconds,
+    senderName: chatState.profile.name || t('شما', 'You'),
+    senderPeerId: chatState.peerId || '',
+    senderFingerprint: chatState.identity?.fingerprint || '',
+  };
+
+  if (conversation.type === 'group') {
+    const members = groupDeliveryMemberKeys(conversation);
+/* groupDeliveryMemberKeys resolves every member to whatever key the peer is
+   reachable by right now — usually a peerId, which changes between sessions.
+   Writing that back into space.members replaced the stable fingerprint roster
+   the group was created with, so after the first message the member list was
+   full of volatile ids: removals matched nothing and a reconnected peer looked
+   like a stranger. The delivery list is derived; it must not be persisted. */
+    /* No write-back. groupDeliveryMemberKeys resolves each member to whatever key
+       they are reachable by right now — usually a peerId, which changes between
+       sessions. Persisting that replaced the stable fingerprint roster the group
+       was created with, so removals matched nothing and a reconnected peer looked
+       like a stranger. The delivery list is derived; it stays derived. */
+
+    appendHistory(conversation.conversationId, entry);
+    let delivered = 0;
+    const skippedMembers = [];
+    for (const memberId of members) {
+      const member = findPeerByAnyKey(memberId);
+      if (member && isSelfPeerRecord(member)) continue;
+      if (!member || !member.publicKeyData) { skippedMembers.push(member?.fingerprint || memberId); continue; }
+      let memberSession = await ensureStoredSession(member);
+      if (!memberSession?.cryptoKey) {
+        /* `member.status === 'online'` used to guard this, so an offline
+           member was skipped entirely and no copy was ever queued for them —
+           they came back to a group conversation with holes in it.
+           ensureDirectSession now mints an offline key when the member is
+           away, and the envelope carries it sealed. */
+        memberSession = await ensureDirectSession(member, { silent: true });
+      }
+      if (!memberSession?.cryptoKey) continue;
+      const payload = await encryptForSession(memberSession, new TextEncoder().encode(JSON.stringify(rich)), 'rich');
+      const outbound = {
+        type: 'rich', id: messageId, createdAt, timerSeconds, payload,
+        spaceId: conversation.conversationId, spaceType: 'group', spaceName: conversation.name,
+        /* The stored roster, not the derived delivery list. Shipping delivery keys
+           here let peer ids leak into everyone's member list via upsertSharedSpace,
+           which then merged them back to the owner — so a removed member reappeared
+           under a second identity and could never be taken out. */
+        members: normalizeSpaceMembers(conversation.members), senderName: entry.senderName, senderPeerId: entry.senderPeerId,
+        senderFingerprint: entry.senderFingerprint,
+      };
+      if (memberSession.connection?.open) {
+        if (safeConnectionSend(memberSession.connection, outbound, 'rich')) delivered += 1;
+      } else if (await sendSealedRelay(member, memberSession, outbound, { createdAt, scope: 'group' })) {
+        delivered += 1;
+      }
+    }
+    markMessageStatus(conversation.conversationId, messageId, delivered ? 'sent' : 'queued');
+    /* Members whose cards this device lacks: asked for, so the next message
+       reaches them (see 41-member-cards.js). */
+    if (skippedMembers.length && typeof requestMemberCards === 'function') requestMemberCards(conversation, skippedMembers);
+    renderMessages();
+    return;
+  }
+
+  if (!peer || isSelfPeerRecord(peer)) return;
+  if (typeof refuseIfVerifiedKeyChanged === 'function' && refuseIfVerifiedKeyChanged(peer)) return;
+  appendHistory(getConversationKey(peer), entry);
+  let session = activeSession();
+  if (!session?.cryptoKey) session = await ensureDirectSession(peer);
+  /* No live channel in time: the relay carries it (relaySessionFor), as it
+     does a text. */
+  if (!session?.cryptoKey && typeof relaySessionFor === 'function') session = await relaySessionFor(peer);
+  if (!session?.cryptoKey) {
+    markMessageStatus(getConversationKey(peer), messageId, 'failed');
+    notify(t('برای این مخاطب کلیدی در دست نیست؛ پیام فرستاده نشد.', 'There is no key for this contact, so the message was not sent.'), 'warning');
+    return;
+  }
+  const body = JSON.stringify(rich);
+  /* Refuse loudly rather than hand the data channel something it will drop in
+     silence. Everything that can legitimately be this big goes down the
+     chunked file path instead. */
+  if (body.length > RICH_MESSAGE_MAX_BYTES) {
+    markMessageStatus(getConversationKey(peer), messageId, 'failed');
+    notify(t('این پیام برای ارسال بیش از حد بزرگ است.', 'That message is too large to send.'), 'warning');
+    renderMessages();
+    return;
+  }
+  const payload = await encryptForSession(session, new TextEncoder().encode(body), 'rich');
+  const outbound = { type: 'rich', id: messageId, createdAt, timerSeconds, payload };
+  const conversationKey = getConversationKey(peer);
+  if (session.connection?.open) {
+    /* safeConnectionSend returns false when the channel throws. Marking "sent"
+       regardless is what made a failed card look delivered and then sit there. */
+    const ok = safeConnectionSend(session.connection, outbound, 'rich');
+    if (ok) {
+      markMessageStatus(conversationKey, messageId, 'sent');
+      /* No answer, and it goes again through the relay (watchLiveDelivery). */
+      if (typeof watchLiveDelivery === 'function') {
+        watchLiveDelivery(peer, messageId, () => sendSealedRelay(peer, session, outbound, { createdAt }));
+      }
+    } else {
+      const relayed = await sendSealedRelay(peer, session, outbound, { createdAt });
+      markMessageStatus(conversationKey, messageId, relayed ? 'queued' : 'failed');
+      if (!relayed) notify(t('ارسال ناموفق بود.', 'Sending failed.'), 'warning');
+    }
+  } else {
+    const relayed = await sendSealedRelay(peer, session, outbound, { createdAt });
+    markMessageStatus(conversationKey, messageId, relayed ? 'queued' : 'failed');
+    if (!relayed) notify(t('ارسال ناموفق بود.', 'Sending failed.'), 'warning');
+    else if (typeof noteRelayRoute === 'function') noteRelayRoute(peer);
+  }
+  renderMessages();
+}
+
+/* ---------------- polls ------------------------------------------- */
+function pollVoterId() {
+  return chatState.identity?.fingerprint || chatState.peerId || 'self';
+}
+function normalizePollVotes(rich) {
+  if (!rich.votes || typeof rich.votes !== 'object') rich.votes = {};
+  return rich.votes;
+}
+function pollTally(rich) {
+  const votes = normalizePollVotes(rich);
+  const counts = new Array(rich.options.length).fill(0);
+  let voters = 0;
+  Object.values(votes).forEach((choices) => {
+    const list = Array.isArray(choices) ? choices : [choices];
+    if (!list.length) return;
+    voters += 1;
+    list.forEach((index) => {
+      if (Number.isInteger(index) && index >= 0 && index < counts.length) counts[index] += 1;
+    });
+  });
+  return { counts, voters };
+}
+
+async function castPollVote(entryId, optionIndex) {
+  const conversationId = chatState.activeConversationId;
+  const entry = (chatState.history[conversationId] || []).find((item) => item.id === entryId);
+  const rich = richPayloadOf(entry);
+  if (!rich || rich.kind !== 'poll') return;
+  if (rich.closed) return;
+  const votes = normalizePollVotes(rich);
+  const me = pollVoterId();
+  const current = Array.isArray(votes[me]) ? votes[me].slice() : [];
+  if (rich.multi) {
+    const at = current.indexOf(optionIndex);
+    if (at >= 0) current.splice(at, 1);
+    else current.push(optionIndex);
+    votes[me] = current;
+  } else {
+    /* Single-choice: tapping the option you already picked clears it, which is
+       what every poll UI does and saves an explicit "retract" control. */
+    votes[me] = current.length === 1 && current[0] === optionIndex ? [] : [optionIndex];
+  }
+  entry.rich = rich;
+  storeHistory();
+  renderMessages();
+  /* Tell the other side. Everyone keeps their own tally from the votes they
+     have seen, so a missed vote self-heals the next time one arrives. */
+  const target = activePeer();
+  if (!target) return;
+  const session = chatState.sessions.get(target.peerId);
+  if (!session?.cryptoKey) return;
+  const body = { kind: 'poll-vote', pollId: entryId, voter: me, choices: votes[me] };
+  const payload = await encryptForSession(session, new TextEncoder().encode(JSON.stringify(body)), 'rich');
+  const outbound = { type: 'rich', id: generateId('vote'), createdAt: new Date().toISOString(), payload };
+  if (session.connection?.open) safeConnectionSend(session.connection, outbound, 'poll-vote');
+  else await sendSealedRelay(target, session, outbound, { createdAt: outbound.createdAt });
+}
+
+function applyIncomingVote(conversationId, body) {
+  const entry = (chatState.history[conversationId] || []).find((item) => item.id === body.pollId);
+  const rich = richPayloadOf(entry);
+  if (!rich || rich.kind !== 'poll') return false;
+  const votes = normalizePollVotes(rich);
+  votes[body.voter] = Array.isArray(body.choices) ? body.choices : [];
+  entry.rich = rich;
+  storeHistory();
+  renderMessages();
+  return true;
+}
+
+function togglePollClosed(entryId) {
+  const conversationId = chatState.activeConversationId;
+  const entry = (chatState.history[conversationId] || []).find((item) => item.id === entryId);
+  const rich = richPayloadOf(entry);
+  if (!rich || rich.kind !== 'poll' || entry.direction !== 'out') return;
+  rich.closed = !rich.closed;
+  entry.rich = rich;
+  storeHistory();
+  renderMessages();
+}
+
+/* ---------------- location ----------------------------------------- */
+/* No map tiles are fetched. A tile request would tell a third party where the
+   user is at the moment they share it, which is exactly the thing being
+   protected. The card draws its own marker and offers links the user has to
+   click, so leaving the app is always a deliberate act. */
+function shareCurrentLocation() {
+  if (!navigator.geolocation) {
+    notify(t('این دستگاه موقعیت‌یابی ندارد.', 'This device has no geolocation.'), 'warning');
+    return;
+  }
+  notify(t('در حال گرفتن موقعیت…', 'Getting your location…'), 'info');
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const { latitude, longitude, accuracy } = position.coords;
+      sendRichMessage('location', {
+        lat: Number(latitude.toFixed(6)),
+        lng: Number(longitude.toFixed(6)),
+        accuracy: Math.round(accuracy || 0),
+        at: new Date().toISOString(),
+      }).catch((error) => {
+        console.error('[Location] send failed', error);
+        notify(t('ارسال موقعیت ناموفق بود.', 'Sending the location failed.'), 'error');
+      });
+    },
+    (error) => {
+      const reason = error.code === error.PERMISSION_DENIED
+        ? t('اجازهٔ دسترسی به موقعیت داده نشد.', 'Location permission was denied.')
+        : t('موقعیت در دسترس نیست.', 'Location is unavailable.');
+      notify(reason, 'warning');
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
+  );
+}
+
+/* ---------------- contact cards ------------------------------------ */
+/* A profile avatar can be a five-megabyte data URL. A contact card carrying
+   one becomes a single multi-megabyte message on a data channel that expects
+   kilobytes: it neither arrives nor errors, it just sits at "queued". A card
+   needs a thumbnail, so make one. */
+/* 160px rather than 96: the card's circle is drawn at up to 3x on a phone,
+   and 96 pixels across that is a blur. Still a few kilobytes. */
+const CONTACT_CARD_AVATAR_PX = 160;
+/* The text card someone pastes is smaller again: it is text, and every
+   kilobyte of photograph is a kilobyte more to select and copy. */
+const CONTACT_SHARE_TEXT_AVATAR_PX = 96;
+const RICH_MESSAGE_MAX_BYTES = 40 * 1024;
+
+/* Always redrawn, never passed through: the photograph on a contact's record
+   may be one an older build received with its EXIF still inside, or an SVG
+   no other device will draw, and a small one used to go out untouched. The
+   same redraw the profile avatar gets (cleanAvatarImage) — square, JPEG,
+   nothing but pixels. */
+async function contactCardAvatar(dataUrl, size = CONTACT_CARD_AVATAR_PX) {
+  if (!dataUrl || typeof cleanAvatarImage !== 'function') return '';
+  try {
+    return await cleanAvatarImage(dataUrl, { size });
+  } catch (_error) {
+    return '';
+  }
+}
+
+
+function shareableContacts() {
+  const activeKey = getConversationKey(getActiveConversation());
+  return allConversationRecords()
+    .filter((record) => !record.type && !isSelfPeerRecord(record) && record.fingerprint)
+    .filter((record) => getConversationKey(record) !== activeKey)
+    .map((record) => ({
+      key: getConversationKey(record),
+      name: record.username || record.name || record.peerId,
+      fingerprint: record.fingerprint,
+      peerId: record.peerId,
+      publicKeyData: record.publicKeyData || '',
+      /* A v4 contact's agreement key and its signature travel with the card. */
+      agreeKey: record.agreeKey || '',
+      agreeKeySig: record.agreeKeySig || '',
+      avatarData: record.avatarData || '',
+      /* Where they can be reached, so a contact on the other relay can be
+         written to by whoever adds them from the card. */
+      homeRelay: typeof shareableHomeRelay === 'function' ? shareableHomeRelay(record) : null,
+    }));
+}
+
+async function openConversationWithFingerprint(fingerprint) {
+  const record = chatState.peers.find((peer) => peer.fingerprint === fingerprint);
+  if (!record) return false;
+  chatState.activePeerClientId = record.clientId || '';
+  chatState.activeConversationId = getConversationKey(record);
+  setChatView('chats');
+  renderPeers();
+  renderActivePeer();
+  renderMessages();
+  return true;
+}
+
+async function adoptSharedContact(entryId, { openChat = false } = {}) {
+  const conversationId = chatState.activeConversationId;
+  const entry = (chatState.history[conversationId] || []).find((item) => item.id === entryId);
+  const rich = richPayloadOf(entry);
+  if (!rich || rich.kind !== 'contact') return;
+  if (!rich.fingerprint || !rich.publicKeyData) {
+    notify(t('این کارت کلید عمومی ندارد و قابل افزودن نیست.', 'This card carries no public key, so it cannot be added.'), 'warning');
+    return;
+  }
+  /* The fingerprint is what the safety number is computed from and the key is
+     what messages are sealed to, so a card whose two disagree is a card that
+     would pass a safety-number check while somebody else read every message.
+     It was added as it came; the fingerprint is now worked out from the key. */
+  const checked = typeof checkedIdentity === 'function' ? await checkedIdentity(rich) : { ok: true, identity: rich };
+  if (!checked.ok) {
+    notify(t('اثرانگشت این کارت با کلیدش جور نیست؛ اضافه نشد.', "This card's fingerprint does not match its key, so it was not added."), 'error');
+    return;
+  }
+  const fingerprint = checked.identity.fingerprint;
+  if (fingerprint === chatState.identity?.fingerprint) {
+    notify(t('این کارت خود شماست.', 'That card is you.'), 'info');
+    return;
+  }
+  const existing = chatState.peers.find((peer) => peer.fingerprint === fingerprint);
+  /* Somebody else's id with this key is not "the same person with a new key",
+     however the card puts it: that is the key-change path, and a card handed
+     on by a third person is not where it may start. */
+  const sameIdOtherKey = rich.peerId && chatState.peers.find((peer) => (
+    peer.peerId === rich.peerId && peer.fingerprint && peer.fingerprint !== fingerprint
+  ));
+  if (sameIdOtherKey) {
+    notify(t('این شناسه در مخاطبین شما به کلید دیگری تعلق دارد؛ کارت اضافه نشد.', 'That id belongs to a different key in your contacts, so the card was not added.'), 'warning');
+    return;
+  }
+  /* Through the same door as every other record, so the key is pinned the way
+     it is for a scanned card (a record pushed in by hand had no pin at all)
+     and the relay it names is filed on the ladder like a pasted card's. A
+     photograph only fills an empty frame: their own card is their word on
+     what they look like, a friend's copy is not. */
+  const record = mergePeerRecord({
+    peerId: rich.peerId || fingerprint,
+    clientId: existing?.clientId || '',
+    username: existing?.username || rich.name,
+    fingerprint,
+    publicKeyData: rich.publicKeyData,
+    avatarData: existing?.avatarData ? '' : (rich.avatarData || ''),
+    homeRelay: rich.homeRelay || null,
+    homeRelaySource: rich.homeRelay ? 'card' : '',
+    /* Checked above by checkedIdentity against the card's signing key. */
+    agreeKey: checked.identity.agreeKey || '',
+    agreeKeySig: checked.identity.agreeKeySig || '',
+    status: existing?.status || 'offline',
+    /* Same flag "Start chat" sets. Without it shouldShowConversation hides a
+       contact that has no history and no key yet, so tapping Add would look
+       like it did nothing at all. */
+    manual: true,
+  }, { online: false, checked: true });
+  if (!record) {
+    notify(t('این کارت قابل افزودن نیست.', 'This card cannot be added.'), 'warning');
+    return;
+  }
+  record.manual = true;
+  saveContacts();
+  renderPeers();
+  renderMessages();
+  if (existing) {
+    if (openChat) await openConversationWithFingerprint(fingerprint);
+    else notify(t('این مخاطب از قبل در لیست شماست.', 'That contact is already in your list.'), 'info');
+    return;
+  }
+  notify(t(`«${rich.name}» به مخاطبین اضافه شد.`, `"${rich.name}" was added to your contacts.`), 'success');
+  if (openChat) await openConversationWithFingerprint(fingerprint);
+}
+
+/* ---- published to globalThis (roadmap 2.1, tools/esm-chat.cjs) ---- */
+Object.defineProperties(globalThis, {
+  "RICH_KINDS": { get() { return RICH_KINDS; }, set() { throw new TypeError('Assignment to constant variable RICH_KINDS.'); }, configurable: true },
+  "POLL_MAX_OPTIONS": { get() { return POLL_MAX_OPTIONS; }, set() { throw new TypeError('Assignment to constant variable POLL_MAX_OPTIONS.'); }, configurable: true },
+  "POLL_MIN_OPTIONS": { get() { return POLL_MIN_OPTIONS; }, set() { throw new TypeError('Assignment to constant variable POLL_MIN_OPTIONS.'); }, configurable: true },
+  "richPayloadOf": { get() { return richPayloadOf; }, set(value) { richPayloadOf = value; }, configurable: true },
+  "safeJsonParse": { get() { return safeJsonParse; }, set(value) { safeJsonParse = value; }, configurable: true },
+  "sendRichMessage": { get() { return sendRichMessage; }, set(value) { sendRichMessage = value; }, configurable: true },
+  "pollVoterId": { get() { return pollVoterId; }, set(value) { pollVoterId = value; }, configurable: true },
+  "normalizePollVotes": { get() { return normalizePollVotes; }, set(value) { normalizePollVotes = value; }, configurable: true },
+  "pollTally": { get() { return pollTally; }, set(value) { pollTally = value; }, configurable: true },
+  "castPollVote": { get() { return castPollVote; }, set(value) { castPollVote = value; }, configurable: true },
+  "applyIncomingVote": { get() { return applyIncomingVote; }, set(value) { applyIncomingVote = value; }, configurable: true },
+  "togglePollClosed": { get() { return togglePollClosed; }, set(value) { togglePollClosed = value; }, configurable: true },
+  "shareCurrentLocation": { get() { return shareCurrentLocation; }, set(value) { shareCurrentLocation = value; }, configurable: true },
+  "CONTACT_CARD_AVATAR_PX": { get() { return CONTACT_CARD_AVATAR_PX; }, set() { throw new TypeError('Assignment to constant variable CONTACT_CARD_AVATAR_PX.'); }, configurable: true },
+  "CONTACT_SHARE_TEXT_AVATAR_PX": { get() { return CONTACT_SHARE_TEXT_AVATAR_PX; }, set() { throw new TypeError('Assignment to constant variable CONTACT_SHARE_TEXT_AVATAR_PX.'); }, configurable: true },
+  "RICH_MESSAGE_MAX_BYTES": { get() { return RICH_MESSAGE_MAX_BYTES; }, set() { throw new TypeError('Assignment to constant variable RICH_MESSAGE_MAX_BYTES.'); }, configurable: true },
+  "contactCardAvatar": { get() { return contactCardAvatar; }, set(value) { contactCardAvatar = value; }, configurable: true },
+  "shareableContacts": { get() { return shareableContacts; }, set(value) { shareableContacts = value; }, configurable: true },
+  "openConversationWithFingerprint": { get() { return openConversationWithFingerprint; }, set(value) { openConversationWithFingerprint = value; }, configurable: true },
+  "adoptSharedContact": { get() { return adoptSharedContact; }, set(value) { adoptSharedContact = value; }, configurable: true },
+});

@@ -1,0 +1,603 @@
+/* A conversation: the header, the bubbles on their wallpaper, the composer.
+
+   Outgoing bubbles sit on the right and incoming on the left in both writing
+   directions, as they do in Telegram and WhatsApp: it is the layout of the
+   exchange, not of the text, so it is written with physical sides on
+   purpose. Everything else follows the direction of the page. */
+
+html.msgr body #mainApp #content-chat .chat-thread {
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  background: var(--ap-bg, var(--wall));
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--label);
+  isolation: isolate;
+}
+/* a picture of the person's own, behind the bubbles, as far out of focus as they asked */
+html.msgr .chat-thread::after {
+  content: "";
+  position: absolute;
+  /* twice the blur beyond every edge: a blur fades the picture over about that distance, and at once the soft
+     edge showed inside the thread as a pale frame (the layer this replaced was inset the same way, and the test said so) */
+  inset: calc(var(--ap-blur, 0px) * -2);
+  z-index: 0;
+  pointer-events: none;
+  background: var(--ap-image, none) center / cover no-repeat;
+  filter: blur(var(--ap-blur, 0px));
+}
+html.msgr .chat-thread::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 20% 15%, var(--wall-ink) 0 1.5px, transparent 2px),
+    radial-gradient(circle at 70% 60%, var(--wall-ink) 0 1.5px, transparent 2px),
+    radial-gradient(circle at 45% 85%, var(--wall-ink) 0 1px, transparent 1.5px);
+  background-size: 64px 64px, 96px 96px, 48px 48px;
+  opacity: 1;
+}
+html.msgr .chat-thread > * { position: relative; z-index: 1; }
+/* The message-request card is placed over the messages by placeMessageRequestCard (inline left/top and the
+   legacy translate(-50%, -50%)); the rule above made it position:relative, so it flowed in after the
+   composer, below the screen, and a stranger's message could be neither accepted nor blocked. */
+html.msgr .chat-thread > .chat-request-bar { position: absolute; z-index: 25; }
+/* ...and drawn in the card's own colours: the legacy dark card gave Accept white text on a white button. */
+html.msgr .chat-request-bar { width: min(380px, calc(100% - 32px)); background: var(--cell); color: var(--label); border: 0; border-radius: 14px; box-shadow: 0 10px 34px rgba(2, 6, 23, 0.28), inset 0 0 0 0.5px var(--sep); font-size: calc(14px * var(--fs, 1)); line-height: 1.5; }
+html.msgr .chat-request-bar p i { color: var(--orange); }
+html.msgr .chat-request-actions { gap: 8px; }
+html.msgr .chat-request-btn { flex: 1 1 0; justify-content: center; min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: var(--fill); color: var(--tint); font-size: calc(14px * var(--fs, 1)); font-weight: 600; }
+html.msgr .chat-request-btn.is-accept { background: var(--green); color: #fff; }
+html.msgr .chat-request-btn.is-block { color: var(--red); }
+
+/* ---- the header --------------------------------------------------------- */
+
+html.msgr body #mainApp #content-chat .chat-thread-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 56px;
+  padding: calc(env(safe-area-inset-top, 0px) + 6px) 8px 6px 8px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(190%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(190%);
+  border: 0;
+  border-bottom: 0.5px solid var(--sep);
+  box-shadow: none;
+  color: var(--label);
+  z-index: 5;
+}
+html.msgr .chat-thread-header > .flex { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
+html.msgr .chat-thread-header .chat-avatar {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  font-size: calc(16px * var(--fs, 1));
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(160deg, #6dcaff, #1b86e8);
+}
+html.msgr .chat-thread-header .chat-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+html.msgr .chat-thread-title {
+  margin: 0;
+  font-size: calc(17px * var(--fs, 1));
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+  color: var(--label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.msgr .chat-thread-meta {
+  margin: 1px 0 0;
+  font-size: calc(13px * var(--fs, 1));
+  line-height: 1.25;
+  color: var(--label-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The shield: a small mark beside the name, not a pill that says "Secure". */
+html.msgr .chat-secure-badge {
+  font-size: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--green);
+}
+html.msgr .chat-secure-badge i { font-size: calc(12px * var(--fs, 1)); }
+html.msgr .chat-peer-mood { display: none; }
+
+html.msgr .chat-back-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tint);
+  font-size: calc(20px * var(--fs, 1));
+  box-shadow: none;
+}
+@media (min-width: 768px) { html.msgr .chat-back-btn { display: none; } }
+
+html.msgr .chat-thread-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 0; }
+html.msgr .chat-head-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tint);
+  font-size: calc(19px * var(--fs, 1));
+  box-shadow: none;
+  cursor: pointer;
+}
+html.msgr .chat-head-btn:hover { background: var(--fill); }
+html.msgr .chat-head-btn:active { background: var(--fill-2); }
+html.msgr .chat-head-btn:disabled { color: var(--label-3); }
+html.msgr .chat-head-btn:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; }
+html.msgr .chat-thread-menu-wrap { position: relative; }
+
+/* ---- the messages -------------------------------------------------------- */
+
+html.msgr body #mainApp #content-chat .chat-messages-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (min-width: 768px) {
+  html.msgr body #mainApp #content-chat .chat-messages-panel { padding-inline: 8%; }
+}
+
+html.msgr .chat-jump-latest {
+  position: absolute;
+  inset-inline-end: 18px;
+  inset-block-end: 96px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--tint-fill);
+  color: var(--on-tint);
+  font: inherit;
+  font-size: calc(13px * var(--fs, 1));
+  font-weight: 650;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--tint) 28%, transparent);
+  cursor: pointer;
+}
+html.msgr .chat-jump-latest:hover { background: var(--tint-press); }
+html.msgr .chat-jump-latest:focus-visible { outline: 2px solid var(--tint); outline-offset: 3px; }
+
+html.msgr .chat-messages-panel .chat-message-bubble {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: min(80%, 560px);
+  min-width: 56px;
+  margin: 0;
+  padding: 7px 11px 6px;
+  border: 0;
+  border-radius: var(--ap-radius, var(--r-bubble));
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
+  font-size: calc(var(--ui-text, 16px) * var(--ap-zoom, 1));
+  line-height: 1.35;
+  letter-spacing: -0.2px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+html.msgr .chat-messages-panel .chat-message-bubble.me {
+  margin-left: auto;
+  margin-right: 0;
+  background: color-mix(in srgb, var(--ap-bubble-me, var(--bubble-out)) var(--ap-alpha, 100%), transparent);
+  color: var(--ap-text-me, var(--bubble-out-ink));
+  border-bottom-right-radius: var(--r-bubble-tail);
+}
+html.msgr .chat-messages-panel .chat-message-bubble.them {
+  margin-right: auto;
+  margin-left: 0;
+  background: color-mix(in srgb, var(--ap-bubble-them, var(--bubble-in)) var(--ap-alpha, 100%), transparent);
+  color: var(--ap-text-them, var(--bubble-in-ink));
+  border-bottom-left-radius: var(--r-bubble-tail);
+}
+/* A run from one side is a run: the next bubble closes up and the corner
+   that points at the speaker is only on the last. */
+html.msgr .chat-messages-panel .chat-message-bubble.me + .chat-message-bubble.me,
+html.msgr .chat-messages-panel .chat-message-bubble.them + .chat-message-bubble.them { margin-top: 0; }
+html.msgr .chat-messages-panel .chat-message-bubble.me:has(+ .chat-message-bubble.me) { border-bottom-right-radius: var(--r-bubble); }
+html.msgr .chat-messages-panel .chat-message-bubble.them:has(+ .chat-message-bubble.them) { border-bottom-left-radius: var(--r-bubble); }
+html.msgr .chat-messages-panel .chat-message-bubble.selected { outline: 2px solid var(--tint); outline-offset: 1px; }
+html.msgr .chat-messages-panel .chat-message-bubble.search-hit { box-shadow: 0 0 0 2px var(--yellow); }
+html.msgr .chat-messages-panel .chat-message-bubble.mentions-me { box-shadow: 0 0 0 1.5px var(--tint); }
+
+html.msgr .chat-message-text { display: block; font-size: calc(var(--ui-text, 16px) * var(--ap-zoom, 1)); line-height: 1.35; white-space: pre-wrap; color: inherit; }
+html.msgr .chat-message-text a { color: var(--tint); text-decoration: underline; text-underline-offset: 2px; }
+html.msgr .chat-message-bubble.me .chat-message-text a { color: inherit; }
+
+/* The time and the ticks, inside the bubble at its bottom corner, with room
+   left for them at the end of the last line of text — the way WhatsApp sets a
+   bubble. Only for a bubble that is nothing but text; anything with a picture,
+   a file, a poll or a reply keeps them on a line of their own. */
+html.msgr .chat-message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: calc(11.5px * var(--fs, 1));
+  line-height: 1;
+  color: var(--bubble-meta);
+  font-variant-numeric: tabular-nums;
+}
+html.msgr .chat-message-bubble.me .chat-message-meta { color: var(--bubble-out-meta); }
+html.msgr .chat-message-bubble:not(:has(> :not(.chat-message-text):not(.chat-message-toolbar):not(.chat-message-meta))) > .chat-message-text::after {
+  content: "";
+  display: inline-block;
+  width: 58px;
+  height: 1px;
+}
+html.msgr .chat-message-bubble.me:not(:has(> :not(.chat-message-text):not(.chat-message-toolbar):not(.chat-message-meta))) > .chat-message-text::after { width: 78px; }
+html.msgr .chat-message-bubble:not(:has(> :not(.chat-message-text):not(.chat-message-toolbar):not(.chat-message-meta))) > .chat-message-meta {
+  position: absolute;
+  inset-inline-end: auto;
+  right: 10px;
+  left: auto;
+  inset-block-end: 5px;
+  width: max-content;
+  min-width: 0;
+  max-width: calc(100% - 20px);
+  margin: 0;
+  direction: ltr;
+}
+/* Same weight as the placement above, or the base rule wins and the time lands on
+   the text in a right-to-left bubble (it did, in Safari). */
+html.msgr .chat-message-bubble:has(> .chat-message-text[dir="rtl"]):not(:has(> :not(.chat-message-text):not(.chat-message-toolbar):not(.chat-message-meta))) > .chat-message-meta { right: auto; left: 10px; direction: rtl; }
+html[dir="rtl"].msgr .chat-message-bubble:has(> .chat-message-text:not([dir])):not(:has(> :not(.chat-message-text):not(.chat-message-toolbar):not(.chat-message-meta))) > .chat-message-meta { right: auto; left: 10px; direction: rtl; }
+/* the time is a number: it keeps its own order inside a right-to-left line */
+html.msgr .chat-message-meta > span:not(.chat-msg-status) { unicode-bidi: isolate; direction: ltr; }
+
+/* Delivery: one tick sent, two delivered, two blue read — drawn, not typed,
+   so they are the same on every system font. */
+html.msgr .chat-msg-status {
+  display: inline-block;
+  position: relative;
+  width: 17px;
+  height: 11px;
+  font-size: 0;
+  line-height: 0;
+  color: var(--ap-sent-tick, var(--bubble-out-meta));
+  background-color: currentColor;
+  -webkit-mask: var(--tick-1) center / contain no-repeat;
+  mask: var(--tick-1) center / contain no-repeat;
+}
+html.msgr { --tick-1: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 11'%3E%3Cpath d='M1.5 6l3.2 3.2L11.5 1.5' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --tick-2: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 11'%3E%3Cpath d='M1 6l3.2 3.2L10.8 1.5M6.3 8.6l.9.9L15.8 1.5' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --tick-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 11'%3E%3Ccircle cx='8.5' cy='5.5' r='4.2' fill='none' stroke='black' stroke-width='1.5'/%3E%3Cpath d='M8.5 3.2v2.5l1.7 1' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  --tick-bang: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 11'%3E%3Ccircle cx='8.5' cy='5.5' r='4.6' fill='black'/%3E%3C/svg%3E"); }
+html.msgr .chat-msg-status.is-delivered, html.msgr .chat-msg-status.is-seen {
+  -webkit-mask-image: var(--tick-2);
+  mask-image: var(--tick-2);
+}
+html.msgr .chat-msg-status.is-delivered { color: var(--ap-delivered-tick, var(--ap-sent-tick, var(--bubble-out-meta))); }
+html.msgr .chat-msg-status.is-seen { color: var(--ap-seen-tick, var(--tick-read)); background-color: var(--ap-seen-tick, var(--tick-read)); }
+html.msgr .chat-msg-status.is-queued, html.msgr .chat-msg-status.is-pending, html.msgr .chat-msg-status.is-scheduled {
+  -webkit-mask-image: var(--tick-clock);
+  mask-image: var(--tick-clock);
+}
+html.msgr .chat-msg-status.is-failed {
+  -webkit-mask-image: var(--tick-bang);
+  mask-image: var(--tick-bang);
+  color: var(--red);
+  background-color: var(--red);
+}
+html.msgr .ui-row-tick { vertical-align: middle; margin-inline-end: 4px; }
+html.msgr .ui-row-tick.is-seen { background-color: var(--tick-read); }
+
+/* ---- what sits in the thread that is not a bubble -------------------------- */
+
+html.msgr .chat-session-banner:not(.hidden),
+html.msgr .chat-messages-panel .chat-empty-state {
+  align-self: center;
+  max-width: 88%;
+  margin: 8px auto;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--chip);
+  color: var(--chip-ink);
+  font-size: calc(12.5px * var(--fs, 1));
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: none;
+}
+html.msgr .chat-security-drawer { display: none; }
+html.msgr .chat-history-window-note {
+  align-self: center;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: var(--chip);
+  color: var(--chip-ink);
+  font-size: calc(12.5px * var(--fs, 1));
+}
+
+/* ---- the composer ----------------------------------------------------------- */
+
+html.msgr body #mainApp #content-chat .chat-composer-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px calc(env(safe-area-inset-bottom, 0px) + 8px);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  z-index: 4;
+  /* The legacy sheet capped the bar at 8.25rem while the field inside could
+     grow to 150px: past five lines the field hung out of the bar, over the
+     encryption line and under the keys. The bar is as tall as what it holds. */
+  max-height: none;
+}
+html.msgr .chat-composer-bar > .hidden { display: none; }
+html.msgr .chat-composer-bar > :not(.hidden):not(.chat-composer-surface):not(.chat-send-btn) { flex: 0 0 100%; order: -1; }
+html.msgr .chat-composer-bar .chat-composer-surface {
+  display: contents;
+}
+html.msgr .chat-composer-bar .chat-plus-wrap { order: 1; flex: 0 0 auto; position: relative; }
+html.msgr .chat-composer-bar #chatComposer {
+  order: 2;
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 44px;
+  /* As Telegram's box: it grows a line at a time, up to about seven lines or a
+     third of what is visible (less while the keys take half the screen), and
+     then scrolls inside itself. The header and the last messages stay. */
+  max-height: min(180px, calc(var(--app-live-height, 100dvh) * 0.34));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 11px 16px;
+  border: 0.5px solid var(--sep);
+  border-radius: 22px;
+  background: var(--cell);
+  color: var(--label);
+  font-family: inherit;
+  font-size: calc(var(--ui-text, 16px) + 1px);
+  line-height: 1.3;
+  letter-spacing: -0.3px;
+  resize: none;
+  box-shadow: none;
+}
+/* What is typed runs from its own side, whatever the page speaks, as in Telegram. */
+html.msgr .chat-composer-bar #chatComposer { text-align: start; unicode-bidi: plaintext; }
+html.msgr .chat-composer-bar #chatComposer::placeholder { color: var(--label-3); }
+html.msgr .chat-composer-bar #chatComposer:focus { outline: 0; border-color: color-mix(in srgb, var(--tint) 55%, transparent); }
+html.msgr .chat-composer-bar .chat-plus-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--cell);
+  color: var(--tint);
+  font-size: calc(18px * var(--fs, 1));
+  box-shadow: 0 0 0 0.5px var(--sep);
+  position: static;
+  inset: auto;
+  transform: none;
+}
+html.msgr .chat-composer-bar .chat-send-btn {
+  order: 3;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--tint-fill);
+  color: var(--on-tint);
+  font-size: calc(17px * var(--fs, 1));
+  box-shadow: none;
+  transition: transform 0.25s var(--spring);
+}
+html.msgr .chat-composer-bar .chat-send-btn:active { transform: scale(0.9); }
+/* The bar is not mirrored for right-to-left, as Telegram's is not: the plus is
+   on the left, the field between, and send (the microphone while the field is
+   empty) on the right, in every language. The text inside the field still runs
+   from its own side. */
+html[dir="rtl"].msgr body #mainApp #content-chat .chat-composer-bar { flex-direction: row-reverse; }
+
+/* What the messages are encrypted with, on the line under the field where the
+   home indicator's clearance used to sit empty. */
+html.msgr body #mainApp #content-chat .chat-composer-bar > .msgr-enc-note {
+  flex: 0 0 100%;
+  order: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: -2px 0 0;
+  padding: 0 8px;
+  /* label-2, not label-3: the line says what the messages are encrypted with, and at 55% it was 2:1 on the light theme */
+  color: var(--label-2);
+  font-size: calc(11px * var(--fs, 1));
+  line-height: 1.3;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+html.msgr .msgr-enc-note i { font-size: 0.9em; }
+html.msgr .msgr-enc-note bdi { unicode-bidi: isolate; }
+/* The line is information about the app, not part of what is typed: while the
+   keyboard is up it stays where it was (under the keys) instead of riding up
+   with the field and taking a line of the thread. */
+html.msgr.keyboard-open body #mainApp #content-chat .chat-composer-bar > .msgr-enc-note { display: none; }
+/* The keys cover the home indicator; the bar does not need its clearance then. */
+html.msgr.keyboard-open body #mainApp #content-chat .chat-composer-bar { padding-bottom: 6px; }
+html.msgr .chat-composer-bar .chat-send-btn i { margin: 0; }
+/* The actions behind + open upward from it, as a menu. */
+html.msgr .chat-actions-sheet {
+  /* A menu is a surface you read words on: solid, never translucent. */
+  background: var(--cell);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 0;
+  border-radius: 18px;
+  box-shadow: 0 0 0 0.5px var(--sep), 0 18px 48px rgba(0, 0, 0, 0.28);
+  color: var(--label);
+  padding: 6px;
+}
+html.msgr .chat-actions-sheet .chat-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--label);
+  font-size: calc(16px * var(--fs, 1));
+  text-align: start;
+}
+html.msgr .chat-actions-sheet .chat-action-row i { width: 22px; text-align: center; color: var(--tint); }
+html.msgr .chat-actions-sheet .chat-action-row:hover { background: var(--fill); }
+html.msgr .chat-actions-sheet .chat-danger-icon-btn, html.msgr .chat-actions-sheet .chat-danger-icon-btn i { color: var(--red); }
+
+html.msgr .chat-reaction-picker {
+  background: var(--cell);
+  background-image: none;
+  opacity: 1;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--sep);
+  box-shadow: 0 18px 50px rgba(2, 6, 23, 0.35);
+  isolation: isolate;
+  z-index: 100000;
+}
+
+/* A reaction sat on the bottom edge of the bubble, over the time. It is a row
+   of the bubble now, under the text, and the time follows it. */
+html.msgr .chat-message-bubble .chat-reaction-summary {
+  position: static;
+  inset: auto;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  border: 0;
+  box-shadow: none;
+}
+html.msgr .chat-message-bubble.me .chat-reaction-summary { background: rgba(255, 255, 255, 0.2); }
+
+/* ---- the live preview in Settings: the same bubbles on the same wallpaper ---------------------- */
+html.msgr .chat-live-preview {
+  position: relative;
+  isolation: isolate;
+  margin: 0;
+  border: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--ap-bg, var(--wall));
+  box-shadow: 0 0 0 0.5px var(--sep);
+}
+html.msgr .chat-live-preview-head { display: none; }
+html.msgr .chat-live-preview-thread { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 3px; padding: 10px; background: transparent; }
+html.msgr .chat-live-preview::after {
+  content: "";
+  position: absolute;
+  inset: calc(var(--ap-blur, 0px) * -2);
+  z-index: 0;
+  pointer-events: none;
+  background: var(--ap-image, none) center / cover no-repeat;
+  filter: blur(var(--ap-blur, 0px));
+}
+html.msgr .chat-live-preview-thread .chat-message-bubble {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 86%;
+  margin: 0;
+  padding: 7px 11px 6px;
+  border: 0;
+  border-radius: var(--ap-radius, var(--r-bubble));
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
+  font-size: calc(var(--ui-text, 16px) * var(--ap-zoom, 1));
+  line-height: 1.35;
+}
+html.msgr .chat-live-preview-thread .chat-message-bubble.me { margin-inline-start: auto; margin-left: auto; margin-right: 0; background: color-mix(in srgb, var(--ap-bubble-me, var(--bubble-out)) var(--ap-alpha, 100%), transparent); color: var(--ap-text-me, var(--bubble-out-ink)); }
+html.msgr .chat-live-preview-thread .chat-message-bubble.them { margin-right: auto; margin-left: 0; background: color-mix(in srgb, var(--ap-bubble-them, var(--bubble-in)) var(--ap-alpha, 100%), transparent); color: var(--ap-text-them, var(--bubble-in-ink)); }
+html.msgr .chat-live-preview-thread .chat-message-text { font-size: inherit; }
+html.msgr .chat-live-preview-thread .chat-message-meta { position: static; display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin: 2px 0 0; font-size: calc(11.5px * var(--fs, 1)); color: var(--bubble-meta); direction: ltr; }
+html.msgr .chat-live-preview-thread .chat-message-bubble.me .chat-message-meta { color: var(--bubble-out-meta); }
+/* kept in sight while the options under it are changed */
+html.msgr .msgr-block:has(> #chatLivePreview) { position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--bg); }
+html.msgr #chatLivePreview .chat-message-bubble:nth-child(n+3) { display: none; }
+
+/* Key transparency (js/chat/66-key-transparency.js): the one line above the
+   composer before a large file or a screen share to a contact whose safety
+   number was never compared, and the log line in the safety panel. */
+html.msgr .chat-key-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 6px 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--fill-2);
+  color: var(--label);
+  font-size: calc(14px * var(--fs, 1));
+  line-height: 1.4;
+}
+html.msgr .chat-key-banner[hidden] { display: none; }
+html.msgr .chat-key-banner > i { color: var(--tint); }
+html.msgr .chat-key-banner > span { flex: 1 1 220px; min-width: 0; }
+html.msgr .chat-key-banner .chat-soft-btn { flex: 0 0 auto; }
+.chat-safety-keylog.is-warning { color: rgb(220 38 38); }
+html.msgr .chat-safety-keylog { color: var(--label-2); }
+html.msgr .chat-safety-keylog.is-verified { color: var(--label); }
+html.msgr .chat-safety-keylog.is-warning { color: #c4141b; }
+
+/* The text tools over a selection in the field (bold, italic, strike, code,
+   hidden, clear), placed by positionFormatBar: above the composer and the
+   thread, in the theme's colours. */
+html.msgr body #mainApp #content-chat .chat-thread > .chat-format-bar { position: absolute; z-index: 40; background: var(--cell); border: 0.5px solid var(--sep); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28); }
+html.msgr body #mainApp #content-chat .chat-format-btn { color: var(--label); }
+html.msgr body #mainApp #content-chat .chat-format-btn[aria-pressed="true"] { color: var(--tint); background: var(--fill-2); box-shadow: none; }

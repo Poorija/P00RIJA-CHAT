@@ -1,0 +1,45 @@
+# Node 26.12.1, the newest release. Pinned to the exact version rather than
+# node:26-alpine: a build reuses whatever image the machine already holds, so a
+# floating tag kept running a months-old patch release without saying so, and
+# on the relay in Iran a pull can stall for good. Moving up is this one line.
+# By digest as well as by tag (roadmap 5.2): a tag can be moved to other
+# bytes; the digest cannot, so the same commit builds on the same base.
+FROM node:26.12.1-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797
+WORKDIR /app
+# What the relay runs is decided by config/relay-overrides.json alone: its
+# dependencies are pinned to exact versions, and config/relay-lock.json fixes
+# every package beneath them, so `npm ci` installs the same tree on any day on
+# any machine. Before, `npm install name@version` pinned the four by name and
+# let everything under them resolve to whatever was newest that day.
+#
+# Why pins matter here at all: an audit once found ws upgraded in the
+# repository and still at 8.20.0 in the image, with a HIGH advisory reached
+# through exactly what this process reads all day, WebSocket frames from
+# clients it does not trust. tools/check-relay-pins.cjs compares the pins with
+# the repository's and the lock with the pins, and the gate runs it.
+#
+# The overrides in the same file: peer@1.0.2 pulls express 4, body-parser and a
+# qs with two moderate advisories; an override pins the patched qs without
+# moving peer or express.
+#
+# npm's cache and logs are removed in the same layer: they carry dates and
+# random names, and would make two builds of one commit differ.
+COPY config/relay-overrides.json ./package.json
+COPY config/relay-lock.json ./package-lock.json
+RUN npm ci --omit=dev \
+ && npm audit --omit=dev --audit-level=high \
+ && rm -rf /root/.npm /tmp/*
+# The tree's real version, under a name of its own: package.json in this image
+# is config/relay-overrides.json and carries a placeholder version.
+COPY package.json ./app-version.json
+COPY scripts/server.js ./scripts/server.js
+# The relay's parts (roadmap 2.3): scripts/server.js joins scripts/server/ in
+# the order scripts/server/ORDER gives and runs them as itself.
+COPY scripts/server-main.js ./scripts/server-main.js
+COPY scripts/server ./scripts/server
+# Anything server.js requires has to come with it. Copying the one file
+# and nothing beside it is why adding a module took the relay down.
+COPY scripts/lib ./scripts/lib
+COPY vendor ./vendor
+EXPOSE 11220 11221
+CMD ["node", "--expose-gc", "scripts/server.js"]

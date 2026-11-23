@@ -1,0 +1,210 @@
+/*
+ * P00RIJA Chat — end-to-end encrypted messenger.
+ * Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+ *
+ * Licensed under the GNU Affero General Public License, version 3 only.
+ * See LICENSE for the full text. Section 13 matters here: run a modified
+ * version as a network service and its users are entitled to your source.
+ */
+
+/* The history half of device sync, end to end in two real browsers.
+ *
+ * Phase one proved on the wire that two sockets holding one identity
+ * coexist and both receive live frames. This is what a linked device is
+ * FOR: the machine that was linked yesterday, or was away this morning,
+ * collecting the conversations it never saw. One page holds a history;
+ * a second page adopts the same identity exactly the way the portable
+ * profile import does; the sibling's appearance is the trigger, and the
+ * bundle arrives sealed — same envelope machinery as offline mail, so
+ * the relay carries it and cannot read it.
+ *
+ * What has to hold:
+ *   - the text history arrives, entry for entry, without duplicates
+ *   - an attachment row arrives WITHOUT its session-local blob url
+ *   - the call log arrives
+ *   - the machine that sent it is unchanged by its own broadcast
+ */
+
+import { chromium } from 'playwright';
+import { createChecks } from './_check.mjs';
+
+const BASE_URL = process.env.PKG_URL || 'http://localhost:8123';
+const RELAY_FOR_PAGE = process.env.RELAY_URL
+  || (/^https:/i.test(BASE_URL) ? String(BASE_URL).replace(/\/+$/, '') : 'http://localhost:11220');
+const PASS = 'Harness#Pass2026!';
+
+const { results, check } = createChecks({ entry: (n, ok) => ({ n, ok }) });
+
+/* Two genuinely separate installs: a phone in portrait and a desktop in
+   landscape. The histories they hold must survive on shape alone. */
+const browser = await chromium.launch();
+async function makePage(tag, w, h, mobile = false) {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: w, height: h }, permissions: ['microphone', 'camera'], isMobile: mobile, hasTouch: mobile });
+  await ctx.addInitScript(() => { try { localStorage.setItem('poorija_lang', 'fa'); } catch (e) {} window.__clip = []; });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.log(`   ${tag}!! ${e.message.slice(0, 140)}`));
+  await page.goto(`${BASE_URL}/index.html`, { waitUntil: 'load' });
+  await page.waitForLoadState('load').catch(() => {});
+  await page.waitForTimeout(2200);
+  await page.evaluate(() => { if (typeof continueInBrowserExperience === 'function') continueInBrowserExperience(); });
+  await page.waitForTimeout(600);
+  await page.evaluate((pass) => {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); } };
+    set('setupPassword', pass); set('confirmPassword', pass);
+    document.querySelectorAll('#initialSetup select').forEach((s, i) => { if (s.options.length > i + 1) { s.selectedIndex = i + 1; s.dispatchEvent(new Event('change', { bubbles: true })); } });
+    document.querySelectorAll('#initialSetup input[type="text"]').forEach((inp, i) => { inp.value = 'answer' + i; inp.dispatchEvent(new Event('input', { bubbles: true })); });
+    const cb = document.getElementById('acceptTermsCheckbox'); if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+  }, PASS);
+  await page.waitForTimeout(400);
+  await page.evaluate(() => document.getElementById('setupBtn')?.click());
+  await page.waitForTimeout(2600);
+  await page.evaluate(() => {
+    const w = navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText = (t) => { window.__clip.push(t); return w(t).catch(() => {}); };
+    document.getElementById('mobileInstallGate')?.classList.add('hidden'); window.switchTab?.('chat');
+  });
+  await page.waitForTimeout(700);
+  await page.evaluate((RELAY_FOR_PAGE) => {
+    const url = document.getElementById('chatServerUrl');
+    if (url) { url.value = RELAY_FOR_PAGE; url.dispatchEvent(new Event('input', { bubbles: true })); url.dispatchEvent(new Event('change', { bubbles: true })); }
+    document.getElementById('chatConnectBtn')?.click();
+  }, RELAY_FOR_PAGE);
+  await page.waitForTimeout(6500);
+  return page;
+}
+
+const CONV = 'c'.repeat(64);
+
+console.log('\nDevice sync — the history half');
+
+/* The machine that already has the past. */
+const A = await makePage('A', 1440, 900);
+await A.evaluate((conv) => {
+  appendHistory(conv, { id: 'sync-text-1', direction: 'out', type: 'text', text: 'salam from A', status: 'delivered', createdAt: new Date().toISOString() });
+  appendHistory(conv, { id: 'sync-text-2', direction: 'in', type: 'text', text: 'the reply', status: 'seen', createdAt: new Date().toISOString() });
+  appendHistory(conv, { id: 'sync-file-1', direction: 'in', type: 'file', name: 'pic.jpg', size: 2048, mime: 'image/jpeg', status: 'delivered', downloadUrl: 'blob:fake-session-url', createdAt: new Date().toISOString() });
+  appendCall({ id: 'sync-call-1', name: 'Somebody', peerId: 'peer-x', mode: 'voice', status: 'missed', direction: 'in', createdAt: new Date(Date.now() - 60000).toISOString(), standalone: true });
+  storeHistory();
+  saveCalls();
+}, CONV);
+
+const identityOfA = await A.evaluate(() => (
+    /* The whole identity, as the portable profile carries it: both keys of a
+       v4 account (and the RSA key it moved from), or the RSA key of a v3 one. */
+    { ...portableIdentityFields(chatState.identity), origin: 'imported' }));
+check('the first device has an identity to share', Boolean(identityOfA.fingerprint));
+
+/* The machine that was linked: fresh install, then the identity the
+   portable profile import would have delivered, adopted the same way
+   the import adopts it. */
+const B = await makePage('B', 430, 932, true);
+await B.evaluate(async (ident) => {
+  chatState.shouldReconnect = false;
+  try { chatState.ws?.close(); } catch (_error) { /* already gone */ }
+  await new Promise((r) => setTimeout(r, 800));
+  chatState.identity = { ...ident, createdAt: String(ident.createdAt || new Date().toISOString()) };
+  saveEncrypted(CHAT_IDENTITY_STORAGE_KEY, chatState.identity);
+  chatState.shouldReconnect = true;
+  renderStaticUi();
+  await connectChatTransport();
+}, identityOfA);
+await B.waitForTimeout(1500);
+
+/* Nothing forces the sender here: the sibling appearing in the live
+   device list is the trigger, and the broadcast follows a few seconds
+   behind it. The envelopes are spaced out, so what is waited for is the
+   WHOLE outcome — history and call log — not the first bundle to land. */
+const arrived = await B.waitForFunction((conv) => {
+  const list = (typeof chatState !== 'undefined' && chatState.history && chatState.history[conv]) || [];
+  const calls = (typeof chatState !== 'undefined' && chatState.calls) || [];
+  return list.some((item) => item.id === 'sync-text-1') && calls.some((call) => call.id === 'sync-call-1')
+    ? list : false;
+}, CONV, { timeout: 30000 }).then((handle) => handle.jsonValue()).catch(() => null);
+
+check('the linked device collected the conversation history',
+  Array.isArray(arrived) && arrived.length >= 3,
+  Array.isArray(arrived) ? `${arrived.length} entries` : 'nothing arrived');
+check('and the attachment row arrived without the session-local blob url',
+  Array.isArray(arrived) && arrived.every((item) => item.id !== 'sync-file-1' || !item.downloadUrl));
+check('history arriving is not news arriving — nothing synced in as unread',
+  Array.isArray(arrived) && !arrived.some((item) => item.id === 'sync-text-1' && item.unread));
+
+const callsOnB = await B.evaluate(() => (chatState.calls || []).map((call) => call.id));
+check('the call log arrived too', callsOnB.includes('sync-call-1'));
+
+const unchangedOnA = await A.evaluate((conv) => (chatState.history[conv] || []).length, CONV);
+check('the sending device\'s own history is unchanged', unchangedOnA === 3, `${unchangedOnA} entries`);
+
+const fingerprints = await Promise.all([A, B].map((page) => page.evaluate(() => chatState.identity?.fingerprint || '')));
+check('both pages hold one identity', fingerprints[0] === fingerprints[1]);
+
+/* ---- phase three: the address book is an event ------------------------ */
+
+console.log('\n===== a contact made on one machine reaches the other =====');
+await A.evaluate(() => {
+  chatState.peers.push(normalizePeerRecord({
+    peerId: 'peer-zed', username: 'Zed', name: 'Zed',
+    fingerprint: 'd'.repeat(64), publicKeyData: '', manual: true,
+  }));
+  saveContacts();
+});
+const contactOnB = await B.waitForFunction(() => {
+  const hit = (typeof chatState !== 'undefined' && chatState.peers || []).find((peer) => peer.peerId === 'peer-zed');
+  return hit ? hit.username : false;
+}, undefined, { timeout: 20000 }).then((handle) => handle.jsonValue()).catch(() => null);
+check('the sibling learned the contact', contactOnB === 'Zed', String(contactOnB));
+const contactStoredOnB = await B.evaluate(() => {
+  saveContacts();
+  return (chatState.peers || []).some((peer) => peer.peerId === 'peer-zed' && isStoredContact(peer));
+});
+check('and it survives the storage rule on the receiving side', contactStoredOnB === true);
+
+/* ---- phase three: a file the bundle was too small to carry ------------- */
+
+console.log('\n===== a large file travels only when asked =====');
+/* Past the inline cap, so the row syncs and the bytes stay home. Past one
+   part, so the pull is reassembled from more than a single envelope. */
+const BIG_BYTES = 3 * 1024 * 1024 + 512 * 1024;
+await A.evaluate(async ({ conv, size }) => {
+  const bytes = new Uint8Array(size);
+  bytes.fill(7);
+  const blob = new Blob([bytes], { type: 'application/octet-stream' });
+  persistMessageMedia(conv, { id: 'sync-big-1', type: 'file', name: 'big.bin', mime: 'application/octet-stream', createdAt: new Date().toISOString() }, blob);
+  appendHistory(conv, {
+    id: 'sync-big-1', direction: 'in', type: 'file', name: 'big.bin', size: blob.size,
+    mime: 'application/octet-stream', status: 'delivered', createdAt: new Date().toISOString(),
+  });
+  setDeviceSyncFilesEnabled(true);
+  await sendDeviceSync();
+}, { conv: CONV, size: BIG_BYTES });
+
+const rowOnB = await B.waitForFunction((conv) => {
+  const entry = (typeof chatState !== 'undefined' && chatState.history && chatState.history[conv] || []).find((item) => item.id === 'sync-big-1');
+  return entry ? !entry.downloadUrl && !entry.mediaData : false;
+}, CONV, { timeout: 20000 }).then((handle) => handle.jsonValue()).catch(() => null);
+check('the row arrived, and the bytes did not ride along', rowOnB === true);
+
+await B.evaluate((conv) => { requestDeviceFile(conv, 'sync-big-1'); }, CONV);
+const pullLanded = await B.waitForFunction((conv) => {
+  if (typeof chatState === 'undefined') return false;
+  const entry = (chatState.history[conv] || []).find((item) => item.id === 'sync-big-1');
+  return Boolean(entry?.downloadUrl);
+}, CONV, { timeout: 30000 }).then(() => true).catch(() => false);
+/* The bytes themselves, read back out of the receiving device's vault the
+   way the player would read them. The vault write lands asynchronously, so
+   read a few times rather than racing it once. */
+let pulledSize = 0;
+for (let attempt = 0; attempt < 10 && pulledSize !== BIG_BYTES; attempt += 1) {
+  await B.waitForTimeout(500);
+  pulledSize = await B.evaluate(async () => {
+    const stored = await readMessageMedia('sync-big-1').catch(() => null);
+    return stored ? stored.blob.size : 0;
+  });
+}
+check('asking brought the whole file back, every byte of it', pulledSize === BIG_BYTES,
+  pulledSize ? `${pulledSize} bytes` : 'nothing came');
+
+await browser.close();
+const failed = results.filter((r) => !r.ok).length;
+console.log(`\n${results.length - failed}/${results.length} passed`);
+process.exit(failed ? 1 : 0);

@@ -1,0 +1,24 @@
+#!/bin/sh
+# P00RIJA Chat — end-to-end encrypted messenger.
+# Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+#
+# Licensed under the GNU Affero General Public License, version 3 only.
+# See LICENSE for the full text. Section 13 matters here: run a modified
+# version as a network service and its users are entitled to your source.
+#
+# Every commit in this repository is made by p00rija <p00rija@tutamail.com>,
+# as author and as committer. This refuses any other identity, whatever
+# user.name, user.email or the GIT_AUTHOR_* / GIT_COMMITTER_* variables say.
+# Turn it on in a clone with:  git config core.hooksPath tools/git-hooks
+want='p00rija <p00rija@tutamail.com> '
+for kind in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
+  who="$(git var "$kind" 2>/dev/null)" || who=''
+  case "$who" in
+    "$want"*) ;;
+    *)
+      echo "commit refused: $kind is '${who%% [0-9]*}', not p00rija <p00rija@tutamail.com>." >&2
+      echo "  git config user.name p00rija; git config user.email p00rija@tutamail.com; and unset GIT_AUTHOR_* / GIT_COMMITTER_*" >&2
+      exit 1 ;;
+  esac
+done
+exit 0

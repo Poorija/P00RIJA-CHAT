@@ -1,0 +1,5 @@
+/* The last word on `hidden`. Several rules above set `display` on things a
+   script hides with the class `hidden` (a button, an input, a panel); without
+   this one they would show. It is deliberately the most specific selector in
+   the layer that has no id in it. */
+html.msgr body .hidden:is(.hidden):is(.hidden):is(.hidden):is(.hidden) { display: none; }

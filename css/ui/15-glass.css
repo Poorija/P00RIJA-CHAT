@@ -1,0 +1,159 @@
+/* Liquid Glass, for the navigation layer: the bar of tabs. It is a pane of
+   glass over the content, with a specular rim along its top edge, and the lit
+   tab is a smaller piece of glass that slides to it with a spring, stretching a
+   little as it travels, and that a finger can pick up and carry. The glass is
+   only ever the bar; the content under it is never glass. Nothing here is
+   needed to read the labels: with less transparency asked for, or no blur, it
+   is a plain surface. */
+
+/* The recipe, read off the real thing (Safari's own tab bar in iOS 27 is the
+   reference on this machine): the pane is nearly clear, only a little frosted,
+   so what scrolls under it stays recognisable; its edge is a thin ring of light
+   that is brightest at two opposite corners and fades between them, as light
+   catching a bevel; a faint glow runs just inside the rim; and it sits on a
+   soft shadow. The lit tab is a second, brighter piece of the same glass.
+   Refraction proper (bending what is behind) needs an SVG filter inside
+   backdrop-filter, which Safari does not draw, so it is not attempted: the
+   blur, the saturation lift and the rim carry the look. */
+html.msgr {
+  --lg-fill: rgba(255, 255, 255, 0.52);
+  --lg-blur: 16px;
+  --lg-rim: rgba(255, 255, 255, 0.95);
+  --lg-rim-dim: rgba(255, 255, 255, 0.14);
+  --lg-glow: rgba(255, 255, 255, 0.5);
+  --lg-lens: rgba(255, 255, 255, 0.55);
+  --lg-lens-rim: rgba(255, 255, 255, 0.95);
+  --lg-shadow: 0 12px 32px rgba(15, 23, 42, 0.18), 0 2px 8px rgba(15, 23, 42, 0.1);
+}
+html.msgr.dark {
+  --lg-fill: rgba(30, 41, 59, 0.34);
+  --lg-blur: 18px;
+  --lg-rim: rgba(255, 255, 255, 0.6);
+  --lg-rim-dim: rgba(255, 255, 255, 0.08);
+  --lg-glow: rgba(255, 255, 255, 0.1);
+  --lg-lens: rgba(255, 255, 255, 0.17);
+  --lg-lens-rim: rgba(255, 255, 255, 0.62);
+  --lg-shadow: 0 14px 36px rgba(2, 6, 23, 0.55), 0 2px 8px rgba(2, 6, 23, 0.35);
+}
+
+html.msgr body #mobileTabBar.mobile-tab-bar {
+  isolation: isolate;
+  background: var(--lg-fill);
+  backdrop-filter: blur(var(--lg-blur)) saturate(190%) brightness(1.06);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(190%) brightness(1.06);
+  box-shadow:
+    inset 0 0 14px var(--lg-glow),
+    inset 0 1px 1px rgba(255, 255, 255, 0.18),
+    var(--lg-shadow);
+}
+/* the ring of light: a 1.2px border painted with a two-peaked gradient */
+html.msgr body #mobileTabBar.mobile-tab-bar::before {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  padding: 1.2px;
+  pointer-events: none;
+  background: linear-gradient(135deg, var(--lg-rim) 0%, var(--lg-rim-dim) 28%, var(--lg-rim-dim) 72%, var(--lg-rim) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+
+html.msgr body #mobileTabBar .msgr-lens {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  left: 0;
+  right: auto;
+  top: 0;
+  z-index: 0;
+  width: var(--lw, 0);
+  height: var(--lh, 0);
+  border-radius: 999px;
+  pointer-events: none;
+  transform: translate(var(--lx, 0), var(--ly, 0));
+  background: var(--lg-lens);
+  backdrop-filter: blur(6px) saturate(210%) brightness(1.18);
+  -webkit-backdrop-filter: blur(6px) saturate(210%) brightness(1.18);
+  box-shadow:
+    inset 0 0 0 1px var(--lg-lens-rim),
+    inset 0 -6px 10px -4px rgba(255, 255, 255, 0.18),
+    inset 0 6px 10px -4px rgba(255, 255, 255, 0.22),
+    0 6px 16px rgba(2, 6, 23, 0.22);
+  transition: transform 0.62s cubic-bezier(0.3, 1.35, 0.5, 1), width 0.45s var(--ease), height 0.45s var(--ease), scale 0.3s var(--spring);
+}
+html.msgr:not(.dark) body #mobileTabBar .msgr-lens {
+  box-shadow:
+    inset 0 0 0 1px var(--lg-lens-rim),
+    inset 0 6px 10px -4px rgba(255, 255, 255, 0.9),
+    0 6px 16px rgba(15, 23, 42, 0.14);
+}
+html.msgr body #mobileTabBar .msgr-lens.is-moving { animation: msgr-lens-stretch 0.62s cubic-bezier(0.3, 1.35, 0.5, 1); }
+@keyframes msgr-lens-stretch {
+  0% { scale: var(--stretch, 1.2) 0.9; }
+  45% { scale: 1.03 1.04; }
+  100% { scale: 1 1; }
+}
+/* a finger on the bar: the lens rises under it and goes where the finger goes */
+html.msgr body #mobileTabBar.is-pressed .msgr-lens { scale: 1.1 1.14; }
+html.msgr body #mobileTabBar.is-dragging .msgr-lens { transition: width 0.3s, height 0.3s, scale 0.3s var(--spring); }
+
+html.msgr body #mobileTabBar .mobile-tab-btn { position: relative; z-index: 1; -webkit-tap-highlight-color: transparent; }
+html.msgr body #mobileTabBar .mobile-tab-btn.is-active,
+html.msgr body #mobileTabBar .mobile-tab-btn.active,
+html.msgr body #mobileTabBar .mobile-tab-btn:active { background: transparent; }
+html.msgr body #mobileTabBar .mobile-tab-btn i { transition: transform 0.3s var(--spring), color 0.25s; transform-origin: center 60%; }
+html.msgr body #mobileTabBar .mobile-tab-btn:active i { transform: scale(0.88); }
+html.msgr body #mobileTabBar .mobile-tab-btn.is-popping i { animation: msgr-tab-pop 0.5s var(--spring); }
+@keyframes msgr-tab-pop { 0% { transform: scale(1); } 38% { transform: scale(1.24) translateY(-1px); } 100% { transform: scale(1); } }
+html.msgr body #mobileTabBar .mobile-tab-btn span { transition: color 0.25s, font-weight 0.2s; }
+html.msgr body #mobileTabBar .mobile-tab-btn.is-active span { font-weight: 700; }
+
+/* Content scrolls under the bar and fades into the ground behind it. */
+@media (max-width: 767px) {
+  html.msgr body::after {
+    content: "";
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    height: calc(var(--tabbar-h) + var(--bar-gap) + 28px);
+    background: linear-gradient(to top, var(--edge-bg, var(--bg)) 28%, transparent);
+    pointer-events: none;
+    z-index: 55;
+  }
+  html.msgr[data-msgr="chats"] { --edge-bg: var(--plain); }
+  html.msgr[data-msgr="groups"] { --edge-bg: var(--plain); }
+  html.msgr[data-msgr="calls"] { --edge-bg: var(--plain); }
+  html.msgr.chat-screen-active.chat-conversation-active body::after,
+  html.msgr.chat-composer-focused body::after { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.msgr body #mobileTabBar .msgr-lens { transition: none; }
+  html.msgr body #mobileTabBar .msgr-lens.is-moving, html.msgr body #mobileTabBar .mobile-tab-btn.is-popping i { animation: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  html.msgr body #mobileTabBar.mobile-tab-bar, html.msgr body #mobileTabBar .msgr-lens { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  html.msgr body #mobileTabBar .msgr-lens { background: var(--fill-2); }
+}
+
+/* On a wide window the bar is a rail down the side: a flat surface, not glass,
+   with the lit tab a rounded square. (The glass above is for the floating bar of a phone.) */
+@media (min-width: 768px) {
+  html.msgr body #mobileTabBar.mobile-tab-bar {
+    background: var(--cell);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    border-radius: 0;
+    grid-auto-rows: 58px;
+    align-content: start;
+  }
+  html.msgr body #mobileTabBar.mobile-tab-bar::before { display: none; }
+  html.msgr body #mobileTabBar .mobile-tab-btn { height: 58px; }
+  html.msgr body #mobileTabBar .msgr-lens { border-radius: 16px; max-height: 64px; }
+  html.msgr body::after { display: none; }
+}

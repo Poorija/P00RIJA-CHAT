@@ -1,0 +1,64 @@
+/* The screens before the app: language, install, the first password, the lock.
+   They sit on a dark gradient whatever the theme is (that is the page behind
+   them, set long before the shell exists), and their text is written for it:
+   white and light grey. In the light theme the card between them was turned
+   white, which left white words on white. The card stays the dark glass it is
+   in the dark theme, so the words are readable in both. */
+
+/* The ground is one flat colour, the same as the strip above it. It was a
+   135-degree gradient, so the top edge of the screen was a different tone from
+   the band the phone paints under its clock. */
+html.msgr :is(#langScreen, #lockScreen, #mobileInstallGate),
+html.msgr.dark :is(#langScreen, #lockScreen, #mobileInstallGate),
+html.msgr :is(#lockScreen, #mobileInstallGate):has(#loginSection:not(.hidden)),
+html.msgr :is(#lockScreen, #mobileInstallGate):has(#unlockForm:not(.hidden)) {
+  background: #0f172a;
+}
+/* And the page behind them, whatever the theme. In a light theme the html and
+   body paint the theme's pale colour (css/ui/10-shell.css), which is what the
+   phone's band reads, so a dark lock screen under it had a pale strip above. */
+html.msgr:has(#lockScreen:not(.hidden)),
+html.msgr:has(#langScreen:not(.hidden)),
+html.msgr:has(#mobileInstallGate:not(.hidden)),
+html.msgr:has(#lockScreen:not(.hidden)) body,
+html.msgr:has(#langScreen:not(.hidden)) body,
+html.msgr:has(#mobileInstallGate:not(.hidden)) body {
+  background: #0f172a;
+}
+html.msgr:not(.dark) :is(#langScreen, #lockScreen, #mobileInstallGate) :is(.glass, .lock-screen-card) {
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+}
+html.msgr:not(.dark) :is(#langScreen, #lockScreen, #mobileInstallGate) :is(h1, h2, h3, label, summary) { color: #f8fafc; }
+html.msgr:not(.dark) :is(#langScreen, #lockScreen, #mobileInstallGate) button.text-brand-400,
+html.msgr:not(.dark) :is(#langScreen, #lockScreen, #mobileInstallGate) .text-brand-400 { color: var(--tint); }
+
+/* The fields were turned white by the light theme too: put them back. */
+html.msgr:not(.dark) :is(#langScreen, #lockScreen, #mobileInstallGate) :is(input, select, textarea) {
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  border-color: #334155;
+}
+html.msgr:not(.dark) :is(#langScreen, #lockScreen, #mobileInstallGate) :is(input, textarea)::placeholder { color: #94a3b8; }
+html.msgr:not(.dark) :is(#langScreen, #lockScreen, #mobileInstallGate) select option { background: #0f172a; color: #f8fafc; }
+
+/* A button that is light grey in the light theme and says so in dark grey. */
+html.msgr:not(.dark) :is(#langScreen, #lockScreen, #mobileInstallGate) button.bg-slate-200 { background: #334155; color: #e2e8f0; }
+
+/* The mark and the name, the same in both themes. */
+html.msgr :is(#langScreen, #lockScreen) .app-logo-img { border-radius: 22%; }
+
+/* The screens before the app can be taller than a phone (the install guide, the
+   password form under the keyboard), and they were centred with plain `center`,
+   which spills a tall card equally above and below: the top of it, the logo and
+   the first line, sat above the window where nothing can scroll to. `safe center`
+   centres when there is room and starts at the top when there is not. */
+html.msgr :is(#langScreen, #lockScreen, #mobileInstallGate) {
+  align-items: safe center;
+  justify-content: safe center;
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
+html.msgr, html.msgr body { overscroll-behavior: none; }

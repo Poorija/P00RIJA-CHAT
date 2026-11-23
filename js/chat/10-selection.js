@@ -1,0 +1,293 @@
+/*
+ * P00RIJA Chat — end-to-end encrypted messenger.
+ * Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+ *
+ * Licensed under the GNU Affero General Public License, version 3 only.
+ * See LICENSE for the full text. Section 13 matters here: run a modified
+ * version as a network service and its users are entitled to your source.
+ */
+
+/* Part 10 of 36 of the Secure Chat module.
+   Split out of the original single-file js/chat.js — see js/chat/README.md.
+   These files share one global scope and are loaded in order; the numbering is
+   that order and must not be changed.
+
+   Swipe to reply, and selecting several messages at once
+*/
+
+/* =====================================================================
+   Swipe to reply, and selecting several messages at once
+   ---------------------------------------------------------------------
+   Replying took three taps: open the toolbar, find the arrow, hit it.
+   Forwarding more than one message was not possible at all - you did it
+   one message at a time, and each one opened its own destination picker.
+   ===================================================================== */
+/* Pointer capture is best-effort. Calling it for a pointer the browser does not
+   consider active throws InvalidStateError, and letting that escape aborts the
+   rest of the handler — the swipe armed but the reply never opened. */
+function capturePointerSafely(element, pointerId) {
+  try { element.setPointerCapture?.(pointerId); } catch (_error) { /* not capturable */ }
+}
+function releasePointerSafely(element, pointerId) {
+  try { element.releasePointerCapture?.(pointerId); } catch (_error) { /* already gone */ }
+}
+const SWIPE_TRIGGER_PX = 56;
+const SWIPE_MAX_PX = 88;
+
+/* Drag a bubble toward the reply direction and let go: the further it goes the
+   more the arrow shows, and past the trigger it snaps back and arms the reply.
+   Bound per bubble on every render, guarded so a re-render cannot stack them. */
+function bindSwipeToReply(panel) {
+  const rtl = document.documentElement.dir === 'rtl';
+  panel.querySelectorAll('.chat-message-bubble:not([data-swipe-bound])').forEach((bubble) => {
+    bubble.dataset.swipeBound = '1';
+    let startX = 0;
+    let startY = 0;
+    let dragging = false;
+    let horizontal = null;
+
+    const reset = (animate = true) => {
+      bubble.style.transition = animate ? 'transform 0.18s cubic-bezier(0.22, 1, 0.36, 1)' : '';
+      bubble.style.setProperty('--swipe-x', '0px');
+      bubble.classList.remove('is-swiping', 'is-swipe-armed');
+      window.setTimeout(() => { bubble.style.transition = ''; }, 200);
+    };
+
+    bubble.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (event.target.closest('button, a, input, textarea, .chat-poll-option, .modern-audio-player')) return;
+      if (chatState.selectionMode) return;
+      dragging = true;
+      horizontal = null;
+      startX = event.clientX;
+      startY = event.clientY;
+    });
+    bubble.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (horizontal === null) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        /* Decide once. Guessing again mid-gesture is what makes a swipe fight
+           the scroll. */
+        horizontal = Math.abs(dx) > Math.abs(dy) * 1.4;
+        if (!horizontal) { dragging = false; return; }
+        bubble.classList.add('is-swiping');
+        capturePointerSafely(bubble, event.pointerId);
+      }
+      /* Reply pulls toward the start edge, which is the right in Persian. */
+      const travel = rtl ? Math.max(0, dx) : Math.max(0, -dx);
+      const clamped = Math.min(SWIPE_MAX_PX, travel);
+      bubble.style.setProperty('--swipe-x', `${rtl ? clamped : -clamped}px`);
+      bubble.classList.toggle('is-swipe-armed', clamped >= SWIPE_TRIGGER_PX);
+    });
+    const finish = (event) => {
+      if (!dragging) return;
+      dragging = false;
+      releasePointerSafely(bubble, event.pointerId);
+      const armed = bubble.classList.contains('is-swipe-armed');
+      reset();
+      if (!armed) return;
+      const id = bubble.getAttribute('data-id');
+      if (id) {
+        handleReplyMessage(id);
+        navigator.vibrate?.(12);
+      }
+    };
+    bubble.addEventListener('pointerup', finish);
+    bubble.addEventListener('pointercancel', finish);
+  });
+}
+
+/* ---------------- selecting several messages ----------------------- */
+function selectionCount() {
+  return chatState.selectedMessages.size;
+}
+/* The selection bar sits above the thread, so showing or hiding it resizes the
+   pane. Do that first and the thread re-renders against the layout it will
+   actually end up in, which is what keeps the scroll position exact. */
+/* Picking marks bubbles; it does not redraw the thread. A redraw rebuilt
+   every bubble, WebKit decoded every picture again, and with GIFs in view the
+   thread slid each time a message was picked. Only a message toolbar left
+   open needs the redraw, to take it away. */
+function markSelectionInThread() {
+  const panel = document.getElementById('chatMessages');
+  if (!panel) return;
+  panel.querySelectorAll('.chat-message-bubble[data-id]').forEach((bubble) => {
+    const id = bubble.getAttribute('data-id');
+    bubble.classList.toggle('is-selectable', chatState.selectionMode);
+    bubble.classList.toggle('is-selected', chatState.selectionMode && chatState.selectedMessages.has(id));
+  });
+}
+function enterSelectionMode(firstId) {
+  const toolbarOpen = Boolean(chatState.activeMessageId || chatState.activeReactionMessageId);
+  chatState.selectionMode = true;
+  chatState.selectedMessages.clear();
+  if (firstId) chatState.selectedMessages.add(firstId);
+  /* A message toolbar left open would sit over the very messages being
+     picked. */
+  chatState.activeMessageId = '';
+  chatState.activeReactionMessageId = '';
+  if (typeof closeReactionPopup === 'function') closeReactionPopup();
+  syncSelectionBar();
+  if (toolbarOpen) renderMessages();
+  else markSelectionInThread();
+}
+function exitSelectionMode() {
+  chatState.selectionMode = false;
+  chatState.selectedMessages.clear();
+  syncSelectionBar();
+  markSelectionInThread();
+}
+function toggleMessageSelected(id) {
+  if (!chatState.selectionMode) return;
+  if (chatState.selectedMessages.has(id)) chatState.selectedMessages.delete(id);
+  else chatState.selectedMessages.add(id);
+  if (!chatState.selectedMessages.size) {
+    exitSelectionMode();
+    return;
+  }
+  syncSelectionBar();
+  markSelectionInThread();
+}
+/* The bar sits above the thread, so showing it pushed every message down by
+   its height, and hiding it pulled them back. The thread's scroll takes the
+   difference, so the message under the finger stays under it. */
+function syncSelectionBar() {
+  const bar = document.getElementById('chatSelectionBar');
+  if (!bar) return;
+  const thread = document.getElementById('chatMessages');
+  const topBefore = thread ? thread.getBoundingClientRect().top : 0;
+  bar.classList.toggle('hidden', !chatState.selectionMode);
+  if (thread) {
+    const shift = thread.getBoundingClientRect().top - topBefore;
+    if (Math.abs(shift) > 0.5 && typeof scrollThreadTo === 'function') scrollThreadTo(thread, thread.scrollTop + shift);
+  }
+  const count = document.getElementById('chatSelectionCount');
+  if (count) count.textContent = String(selectionCount());
+  const download = document.getElementById('chatSelectionDownloadBtn');
+  if (download) download.classList.toggle('hidden', !selectedMediaEntries().length);
+}
+/* The picked messages that carry a file of their own: attachments, voice
+   notes, stickers, GIFs. */
+function selectedMediaEntries() {
+  if (!chatState.selectionMode) return [];
+  return selectedEntriesInOrder().filter((entry) => isMediaEntry(entry) && !entry.viewOnce && !entry.viewOnceConsumed);
+}
+
+/* Every picked file at once. One goes as itself; several go as one zip, since
+   a browser asks before letting a page start a run of downloads and a phone
+   would scatter them. An iPhone gets the share sheet with all of them instead,
+   where photos can go straight to Photos. */
+async function downloadSelection() {
+  const entries = selectedMediaEntries();
+  if (!entries.length) return;
+  const files = [];
+  const used = new Set();
+  for (const entry of entries) {
+    let blob = null;
+    try {
+      if (entry.downloadUrl) blob = await (await fetch(entry.downloadUrl)).blob();
+      if (!blob) blob = (await readMessageMedia(entry.id))?.blob || null;
+    } catch (_error) { blob = null; }
+    if (!blob) continue;
+    let base = String(entry.name || '').split('/').pop() || `${entry.type || 'file'}-${entry.id}`;
+    if (!/\.[a-z0-9]{1,6}$/i.test(base)) {
+      const ext = (blob.type.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 6) || 'bin';
+      base = `${base}.${ext}`;
+    }
+    let name = base;
+    for (let n = 2; used.has(name.toLowerCase()); n += 1) name = base.replace(/(\.[^.]+)?$/, ` (${n})$1`);
+    used.add(name.toLowerCase());
+    files.push(new File([blob], name, { type: blob.type || entry.mime || 'application/octet-stream' }));
+  }
+  if (!files.length) {
+    notify(t('هیچ‌کدام از فایل‌های انتخاب‌شده روی این دستگاه نیست.', 'None of the selected files is on this device.'), 'warning');
+    return;
+  }
+  const missing = entries.length - files.length;
+  if (files.length === 1 || chatIsAppleMobile() || typeof window.JSZip !== 'function') {
+    await saveFilesToDevice(files);
+  } else {
+    const zip = new window.JSZip();
+    files.forEach((file) => zip.file(file.name, file));
+    const archive = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    chatDownloadBlob(archive, `poorija-files-${stamp}.zip`);
+  }
+  notify(missing
+    ? t(`${files.length} فایل ذخیره شد؛ ${missing} فایل روی این دستگاه نبود.`, `${files.length} file(s) saved; ${missing} were not on this device.`)
+    : t(`${files.length} فایل ذخیره شد.`, `${files.length} file(s) saved.`), missing ? 'warning' : 'success');
+}
+function selectedEntriesInOrder() {
+  const history = chatState.history[chatState.activeConversationId] || [];
+  return history.filter((entry) => chatState.selectedMessages.has(entry.id));
+}
+
+async function forwardSelectionTo(destinationKey) {
+  const entries = selectedEntriesInOrder();
+  if (!entries.length || !destinationKey) return;
+  closeForwardModal();
+  const total = entries.length;
+  let sent = 0;
+  for (const entry of entries) {
+    /* Sequential on purpose: each forward re-points the active conversation,
+       and racing them would interleave two sends into the wrong threads. */
+    // eslint-disable-next-line no-await-in-loop
+    await forwardEntryToDestination(entry, destinationKey);
+    sent += 1;
+    setTransferBanner(t(`هدایت ${sent} از ${total}…`, `Forwarding ${sent} of ${total}…`), (sent / total) * 100);
+  }
+  clearTransferBanner();
+  exitSelectionMode();
+  notify(t(`${sent} پیام هدایت شد.`, `${sent} messages forwarded.`), 'success');
+}
+
+async function deleteSelection() {
+  const entries = selectedEntriesInOrder();
+  if (!entries.length) return;
+  if (!await PoorijaDialogs.confirm(t(`${entries.length} پیام حذف شود؟`, `Delete ${entries.length} messages?`))) return;
+  const conversationId = chatState.activeConversationId;
+  const directPeer = activePeer();
+  entries.forEach((entry) => {
+    deleteMessageEntry(conversationId, entry.id, { broadcast: Boolean(directPeer), peerRecord: directPeer });
+  });
+  exitSelectionMode();
+}
+
+function copySelection() {
+  const entries = selectedEntriesInOrder();
+  if (!entries.length) return;
+  const text = entries
+    .map((entry) => entry.text || mediaEntryLabel(entry) || richEntryLabel(entry) || '')
+    .filter(Boolean)
+    .join('\n');
+  if (!text) {
+    notify(t('این پیام‌ها متنی برای کپی ندارند.', 'Those messages have no text to copy.'), 'warning');
+    return;
+  }
+  navigator.clipboard?.writeText(text)
+    .then(() => notify(t(`${entries.length} پیام کپی شد.`, `${entries.length} messages copied.`), 'success'))
+    .catch(() => notify(t('کپی ناموفق بود.', 'Copy failed.'), 'warning'));
+}
+
+/* ---- published to globalThis (roadmap 2.1, tools/esm-chat.cjs) ---- */
+Object.defineProperties(globalThis, {
+  "capturePointerSafely": { get() { return capturePointerSafely; }, set(value) { capturePointerSafely = value; }, configurable: true },
+  "releasePointerSafely": { get() { return releasePointerSafely; }, set(value) { releasePointerSafely = value; }, configurable: true },
+  "SWIPE_TRIGGER_PX": { get() { return SWIPE_TRIGGER_PX; }, set() { throw new TypeError('Assignment to constant variable SWIPE_TRIGGER_PX.'); }, configurable: true },
+  "SWIPE_MAX_PX": { get() { return SWIPE_MAX_PX; }, set() { throw new TypeError('Assignment to constant variable SWIPE_MAX_PX.'); }, configurable: true },
+  "bindSwipeToReply": { get() { return bindSwipeToReply; }, set(value) { bindSwipeToReply = value; }, configurable: true },
+  "selectionCount": { get() { return selectionCount; }, set(value) { selectionCount = value; }, configurable: true },
+  "markSelectionInThread": { get() { return markSelectionInThread; }, set(value) { markSelectionInThread = value; }, configurable: true },
+  "enterSelectionMode": { get() { return enterSelectionMode; }, set(value) { enterSelectionMode = value; }, configurable: true },
+  "exitSelectionMode": { get() { return exitSelectionMode; }, set(value) { exitSelectionMode = value; }, configurable: true },
+  "toggleMessageSelected": { get() { return toggleMessageSelected; }, set(value) { toggleMessageSelected = value; }, configurable: true },
+  "syncSelectionBar": { get() { return syncSelectionBar; }, set(value) { syncSelectionBar = value; }, configurable: true },
+  "selectedMediaEntries": { get() { return selectedMediaEntries; }, set(value) { selectedMediaEntries = value; }, configurable: true },
+  "downloadSelection": { get() { return downloadSelection; }, set(value) { downloadSelection = value; }, configurable: true },
+  "selectedEntriesInOrder": { get() { return selectedEntriesInOrder; }, set(value) { selectedEntriesInOrder = value; }, configurable: true },
+  "forwardSelectionTo": { get() { return forwardSelectionTo; }, set(value) { forwardSelectionTo = value; }, configurable: true },
+  "deleteSelection": { get() { return deleteSelection; }, set(value) { deleteSelection = value; }, configurable: true },
+  "copySelection": { get() { return copySelection; }, set(value) { copySelection = value; }, configurable: true },
+});

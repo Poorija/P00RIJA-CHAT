@@ -1,0 +1,3791 @@
+/*
+ * P00RIJA Chat — end-to-end encrypted messenger.
+ * Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+ *
+ * Licensed under the GNU Affero General Public License, version 3 only.
+ * See LICENSE for the full text. Section 13 matters here: run a modified
+ * version as a network service and its users are entitled to your source.
+ */
+
+/* Part 30 of 36 of the Secure Chat module.
+   Split out of the original single-file js/chat.js — see js/chat/README.md.
+   These files share one global scope and are loaded in order; the numbering is
+   that order and must not be changed.
+
+   Streaming file transfer
+*/
+
+/* This install's own peer id on an account whose address a sibling device
+   holds: the account's id, "-", and the end of this install's device id. Both
+   parts are cut down to what PeerJS accepts in an id — letters and digits in
+   runs joined by single "-", "_" or " " — so the result is always one it
+   takes, and the same one on every reconnect. */
+function devicePeerId(accountPeerId) {
+  const device = String(getDeviceId()).replace(/[^A-Za-z0-9]/g, '').slice(-6) || 'device';
+  const account = String(accountPeerId || '').replace(/[^A-Za-z0-9_ -]/g, '-')
+    .replace(/[ _-]{2,}/g, '-').replace(/^[ _-]+|[ _-]+$/g, '');
+  return `${account || 'poorija-peer'}-${device}`;
+}
+function rebuildPeerTransport() {
+clearPeerHealTimers();
+chatState.peerHealInFlight = false;
+const peer = chatState.peer;
+// Detach first: destroy() fires 'close' synchronously, and a close handler
+// that still recognises this peer would queue yet another reconnect.
+chatState.peer = null;
+chatState.peerId = '';
+chatState.sessions.clear();
+if (peer && !peer.destroyed) {
+try { peer.destroy(); } catch (_error) { /* already gone */ }
+}
+connectChatTransport().catch(console.error);
+}
+// When the signalling socket dies the Peer object survives in an unusable
+// state: destroyed === false but open === false. Nothing used to cover that,
+// so the P2P layer stayed dead until the user reconnected by hand. Prefer
+// reconnect() over a rebuild because it keeps the same peer id, and every
+// stored contact is keyed on that id.
+function healPeerTransport(reason = '') {
+/* Relay-only platforms have no peer to heal — the presence socket is the
+   whole transport, and it never left. */
+if (chatState.p2pUnavailable) return;
+if (!chatState.shouldReconnect || !isUnlocked()) return;
+if (hasActiveServerRestriction()) return;
+const peer = chatState.peer;
+if (!peer || peer.destroyed) {
+rebuildPeerTransport();
+return;
+}
+if (peer.open && !peer.disconnected) {
+chatState.peerHealAttempt = 0;
+return;
+}
+// Still negotiating its first connection. Tearing it down here is what turns
+// a single blip into a destroy/create loop, because connectChatTransport()
+// discards any peer that is not open yet.
+if (!peer.disconnected && !peer.open
+&& Date.now() - (chatState.peerConnectStartedAt || 0) < 20000) return;
+if (chatState.peerHealInFlight) return;
+chatState.peerHealInFlight = true;
+const attempt = chatState.peerHealAttempt;
+chatState.peerHealAttempt += 1;
+console.log(`[Transport] Healing peer (attempt ${attempt + 1}) after: ${reason || 'unknown'}`);
+clearPeerHealTimers();
+chatState.peerHealTimer = setTimeout(() => {
+chatState.peerHealTimer = null;
+try {
+peer.reconnect();
+} catch (error) {
+console.warn('[Transport] peer.reconnect() failed, rebuilding:', error);
+rebuildPeerTransport();
+return;
+}
+// reconnect() is fire-and-forget, so confirm it actually landed.
+chatState.peerVerifyTimer = setTimeout(() => {
+chatState.peerVerifyTimer = null;
+chatState.peerHealInFlight = false;
+if (chatState.peer !== peer) return;
+if (peer.open && !peer.disconnected) {
+chatState.peerHealAttempt = 0;
+return;
+}
+if (chatState.peerHealAttempt >= 4) {
+rebuildPeerTransport();
+return;
+}
+healPeerTransport('reconnect-did-not-open');
+}, 6000);
+}, attempt === 0 ? 0 : backoffDelay(attempt, 800, 15000));
+}
+function scheduleReconnect() {
+clearReconnectTimer();
+if (!chatState.shouldReconnect || !transportMayRun()) return;
+/* Relay-only platforms have no peer to heal; the presence socket is the
+   whole transport, and connectPresence() already no-ops while it is up. */
+if (chatState.p2pUnavailable) {
+connectPresence();
+return;
+}
+const delay = backoffDelay(chatState.reconnectAttempt);
+chatState.reconnectAttempt += 1;
+chatState.reconnectTimer = setTimeout(async () => {
+chatState.reconnectTimer = null;
+try {
+if (!chatState.peer || chatState.peer.destroyed) {
+chatState.peer = null;
+await connectChatTransport();
+return;
+}
+// The presence socket and the peer socket fail independently, so repair
+// both instead of assuming a live presence socket means a live peer.
+healPeerTransport('scheduled-reconnect');
+connectPresence();
+} catch (error) {
+console.error(error);
+}
+}, delay);
+}
+/* Telling the relay we are going away, before the platform stops us.
+ *
+ * An iOS web app that is backgrounded keeps its WebSocket — the OS answers the
+ * TCP ping from inside the network stack — while the page's JavaScript is
+ * frozen and nothing reads a byte off it. The relay saw a live socket, chose
+ * the live path, and sent no push: the sender was shown "online" and the phone
+ * stayed silent. That is the one combination that loses a message without
+ * telling anybody.
+ *
+ * visibilitychange and pagehide both fire while there is still a moment to
+ * send, so this reaches the relay ahead of the heartbeat lapsing and the very
+ * next message is pushed. The relay also treats a heartbeat that has stopped
+ * as away, which covers the case where the freeze wins the race. */
+function tellRelayPresenceState(state) {
+try {
+if (chatState.ws?.readyState !== WebSocket.OPEN) return;
+chatState.ws.send(JSON.stringify({ type: 'presence-state', state }));
+} catch (error) {
+/* Going away is exactly when a send is most likely to fail; the relay's
+   own heartbeat rule is the answer when it does. */
+}
+}
+window.addEventListener('pagehide', () => tellRelayPresenceState('away'));
+/* Safari fires freeze on the way into the back/forward cache and on an iOS
+   web app being suspended, and it is the last callback before the page stops
+   running at all. */
+document.addEventListener('freeze', () => tellRelayPresenceState('away'));
+document.addEventListener('resume', () => tellRelayPresenceState('active'));
+
+/* Whatever coming back to the app (or the network coming back) has to settle.
+ *
+ * The transport used to wait for the browser to say a socket had died. It does
+ * not always say so: a phone that slept leaves a socket that reports OPEN and
+ * carries nothing, a connection that began just before the app went away can
+ * sit in CONNECTING for good, and a connect that was suspended between two
+ * awaits never returns — and while one is "in flight" every later request to
+ * connect is queued behind it. Each of those is the app showing Disconnected
+ * until it is closed completely and opened again. So on every return the state
+ * is looked at, not trusted: a stuck connect is dropped, a stuck socket is
+ * abandoned (its late events are ignored, see connectPresence), a socket that
+ * says OPEN has to answer a ping, and then the connection is made again. */
+function abandonSocket(socket) {
+if (!socket) return;
+if (chatState.ws === socket) chatState.ws = null;
+try { socket.close(); } catch (_error) { /* already gone */ }
+if (chatState.heartbeatTimer) clearInterval(chatState.heartbeatTimer);
+}
+function transportStallCheck(reason = 'check') {
+if (!chatState.shouldReconnect || chatState.manualOffline || !transportMayRun()) return false;
+if (hasActiveServerRestriction()) return false;
+const now = Date.now();
+let repaired = false;
+if (chatState.transportConnectInFlight && now - (chatState._transportInFlightSince || now) > 25000) {
+console.warn(`[Transport] A connect has been in flight for ${Math.round((now - chatState._transportInFlightSince) / 1000)}s (${reason}); dropping it.`);
+chatState.transportConnectInFlight = false;
+chatState.transportConnectQueued = false;
+chatState._transportInFlightSince = 0;
+repaired = true;
+}
+const ws = chatState.ws;
+if (ws && ws.readyState === WebSocket.CONNECTING && now - (chatState.wsConnectStartedAt || now) > 12000) {
+console.warn(`[Transport] A socket stayed in CONNECTING (${reason}); abandoning it.`);
+abandonSocket(ws);
+repaired = true;
+} else if (ws && ws.readyState === WebSocket.CLOSING) {
+abandonSocket(ws);
+repaired = true;
+}
+return repaired;
+}
+function recoverTransport(reason = 'resume') {
+if (!chatState.shouldReconnect || chatState.manualOffline || !transportMayRun()) return;
+if (hasActiveServerRestriction()) return;
+transportStallCheck(reason);
+const ws = chatState.ws;
+if (ws && ws.readyState === WebSocket.OPEN) {
+/* Open is not alive. Any frame back, the pong included, counts. */
+const asked = Date.now();
+try { ws.send(JSON.stringify({ type: 'ping', timestamp: asked })); } catch (_error) { /* the check below handles it */ }
+setTimeout(() => {
+if (chatState.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+if ((chatState.lastInboundAt || 0) >= asked) return;
+console.warn(`[Transport] The socket said open but did not answer (${reason}); reconnecting.`);
+abandonSocket(ws);
+setConnectionState(false, ['در حال اتصال...', 'Connecting...']);
+chatState.reconnectAttempt = 0;
+clearReconnectTimer();
+connectChatTransport().catch(console.error);
+}, 4500);
+} else if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+chatState.reconnectAttempt = 0;
+clearReconnectTimer();
+setConnectionState(false, ['در حال اتصال...', 'Connecting...']);
+connectChatTransport().catch(console.error);
+}
+const peer = chatState.peer;
+if (peer && !peer.destroyed && (peer.disconnected || !peer.open)) healPeerTransport(reason);
+}
+/* A tab that is in front and not connected, with nothing scheduled to change
+   that, is a state nothing else is watching for. */
+setInterval(() => {
+if (document.hidden) return;
+if (!chatState.shouldReconnect || chatState.manualOffline || !transportMayRun()) return;
+if (transportStallCheck('interval')) { connectChatTransport().catch(console.error); return; }
+const ws = chatState.ws;
+if ((!ws || ws.readyState === WebSocket.CLOSED) && !chatState.reconnectTimer && !chatState.transportConnectInFlight) scheduleReconnect();
+}, 10000);
+window.addEventListener('pageshow', (event) => { if (event.persisted) recoverTransport('pageshow'); });
+document.addEventListener('resume', () => recoverTransport('page-resume'));
+
+// Handle mobile background/foreground transitions
+document.addEventListener('visibilitychange', () => {
+if (document.visibilityState === 'hidden') {
+tellRelayPresenceState('away');
+flushHistoryStore();
+}
+if (document.visibilityState === 'visible') {
+tellRelayPresenceState('active');
+}
+if (document.visibilityState === 'visible') {
+// Coming back to the foreground is the moment anything already on screen
+// counts as read.
+flushSeenReceipts();
+if (hasActiveServerRestriction()) {
+probeServerRestrictionLifted({ silent: true }).catch(console.error);
+return;
+}
+if (!chatState.shouldReconnect) return;
+// Backgrounded tabs stop sending heartbeats, so the relay drops the peer
+// after its keep-alive window. Both sockets have to be checked on return,
+// not just the presence one.
+chatState.reconnectAttempt = 0;
+chatState.peerHealAttempt = 0;
+clearReconnectTimer();
+if (!chatState.ws || chatState.ws.readyState === WebSocket.CLOSED) {
+console.log('[Presence] App returned to foreground, triggering reconnection...');
+connectChatTransport().catch(console.error);
+} else {
+/* It was assumed alive here, on no evidence: the state of the socket is
+   found out below instead. */
+}
+recoverTransport('foreground-return');
+const peer = chatState.peer;
+if (peer && !peer.destroyed && (peer.disconnected || !peer.open)) {
+console.log('[Transport] Peer was dropped while backgrounded; healing.');
+healPeerTransport('foreground-return');
+}
+}
+});
+window.addEventListener('focus', () => {
+if (hasActiveServerRestriction()) {
+probeServerRestrictionLifted({ silent: true }).catch(console.error);
+return;
+}
+if (chatState.ws?.readyState !== WebSocket.OPEN) recoverTransport('focus');
+});
+/* Wi-Fi to mobile data (or back) moves the phone to another address without
+   the browser going offline in between: no 'online' event comes, and the
+   socket on the old address is dead while it still reads OPEN, until the
+   watchdog notices half a minute later. Android Chrome says so through
+   navigator.connection; the socket is asked at once. */
+try {
+  let lastNet = '';
+  const net = navigator.connection;
+  net?.addEventListener?.('change', () => {
+    const now = `${net.type || ''}/${net.effectiveType || ''}`;
+    if (now === lastNet) return;
+    const first = !lastNet;
+    lastNet = now;
+    if (first || document.hidden || !chatState.shouldReconnect || hasActiveServerRestriction()) return;
+    recoverTransport('network-change');
+  });
+  lastNet = net ? `${net.type || ''}/${net.effectiveType || ''}` : '';
+} catch (_error) { /* no Network Information API */ }
+window.addEventListener('online', () => {
+if (hasActiveServerRestriction()) {
+probeServerRestrictionLifted({ silent: true }).catch(console.error);
+return;
+}
+if (!chatState.shouldReconnect) return;
+// The OS knows about the handover before any socket times out; use it.
+console.log('[Transport] Network came back, reconnecting immediately.');
+chatState.reconnectAttempt = 0;
+chatState.peerHealAttempt = 0;
+clearReconnectTimer();
+healPeerTransport('network-online');
+if (!chatState.ws || chatState.ws.readyState === WebSocket.CLOSED) {
+connectChatTransport().catch(console.error);
+} else {
+/* A socket that says it rode out the interruption is asked, not believed. */
+recoverTransport('network-online');
+}
+});
+window.addEventListener('offline', () => {
+if (!chatState.shouldReconnect) return;
+setConnectionState(false, ['شبکه در دسترس نیست', 'Network unavailable']);
+});
+window.addEventListener('pagehide', flushHistoryStore);
+/* Browsers cannot block a screenshot, but they can make one worthless: the
+   moment the app loses focus — which is when the system screenshot UI, the app
+   switcher or a screen recorder takes over — protected media is blurred out. */
+const setObscured = (on) => document.documentElement.classList.toggle('app-obscured', on);
+window.addEventListener('blur', () => setObscured(true));
+window.addEventListener('focus', () => setObscured(false));
+document.addEventListener('visibilitychange', () => setObscured(document.hidden));
+function stopTransportWatchdog() {
+if (chatState.wsWatchdogTimer) {
+clearInterval(chatState.wsWatchdogTimer);
+chatState.wsWatchdogTimer = null;
+}
+}
+// readyState === OPEN is not proof of a working socket. A half-open TCP
+// connection (carrier NAT drop, sleeping Wi-Fi, dead proxy) reports OPEN
+// forever while nothing flows, which is the "connected but nothing arrives"
+// state users read as an unstable network. Track real inbound traffic and
+// tear the socket down ourselves when it goes quiet.
+function startTransportWatchdog() {
+stopTransportWatchdog();
+chatState.lastInboundAt = Date.now();
+chatState.lastWatchdogTickAt = Date.now();
+chatState.wsWatchdogTimer = setInterval(() => {
+if (!chatState.shouldReconnect) return;
+const now = Date.now();
+// Background tabs have their timers throttled, so our own heartbeat stops
+// too. Waking up to a long gap means we were frozen, not that the socket
+// died -- tearing it down here would reconnect on every foreground return.
+const sinceLastTick = now - (chatState.lastWatchdogTickAt || now);
+chatState.lastWatchdogTickAt = now;
+if (sinceLastTick > 20000) {
+chatState.lastInboundAt = now;
+return;
+}
+const ws = chatState.ws;
+if (ws?.readyState === WebSocket.OPEN && now - (chatState.lastInboundAt || 0) > 32000) {
+console.warn('[Transport] Presence socket went silent; forcing a reconnect.');
+try { ws.close(4001, 'liveness-timeout'); } catch (_error) { /* already gone */ }
+}
+// A peer that quietly lost its signalling socket looks fine to the UI but
+// can no longer place or receive calls, so re-check it on every tick.
+const peer = chatState.peer;
+if (!peer) {
+// No peer object at all is the worst state to sit in: every composer control
+// keys off it. Rebuild rather than wait for something else to notice.
+if (chatState.shouldReconnect && transportMayRun() && !chatState.transportConnectInFlight) {
+console.warn('[Transport] No peer object; rebuilding the transport.');
+connectChatTransport().catch(console.error);
+}
+return;
+}
+if (!peer.destroyed
+&& (peer.disconnected
+|| (!peer.open && Date.now() - (chatState.peerConnectStartedAt || 0) > 20000))) {
+healPeerTransport('watchdog');
+}
+}, 8000);
+}
+function startHeartbeat() {
+if (chatState.heartbeatTimer) clearInterval(chatState.heartbeatTimer);
+startTransportWatchdog();
+chatState.heartbeatTimer = setInterval(() => {
+if (chatState.ws?.readyState === WebSocket.OPEN) {
+chatState.ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+}
+// Also ping active P2P data connections
+chatState.sessions.forEach((session) => {
+if (session.connection?.open) {
+try {
+safeConnectionSend(session.connection, { type: 'ping', timestamp: Date.now() }, 'heartbeat');
+} catch (_e) { /* noop */ }
+}
+});
+}, 10000);
+}
+/* What this device signs to prove its identity to a relay. The label comes
+   first and nothing else the identity key signs begins with it, so a
+   signature made here is a proof to a relay and cannot be passed off as a
+   prekey, a card or an envelope. */
+function relayProofBytes(purpose, nonceBase64) {
+return new TextEncoder().encode(['relay-proof/1', String(purpose), chatState.identity?.fingerprint || '', String(nonceBase64)].join('\n'));
+}
+async function signRelayProof(purpose, nonceBase64) {
+/* A nonce is base64 and nothing else: one with a line break in it would be
+   more fields than the four above. */
+if (!/^[A-Za-z0-9+/=]{16,128}$/.test(String(nonceBase64 || ''))) throw new Error('not a nonce');
+const signature = await identitySignBytes(relayProofBytes(purpose, nonceBase64));
+return app().arrayBufferToBase64(signature);
+}
+/* Answers the relay's proof-of-identity challenge — by SIGNING the nonce it
+   sent, never by opening anything.
+
+   It used to open: the relay sealed a nonce to our public key and we sent
+   back what was inside. But a message's key, for somebody who is away, is
+   sealed to that same key the same way, and is the same 32 bytes long. A
+   relay that stores such an envelope could send its seal here, call it a
+   challenge, and receive the message's key from the very device it was
+   sealed for. Nothing in the bytes tells the two apart, so nothing sealed is
+   opened for a relay at all: a challenge with nothing to sign is from a relay
+   too old to ask safely, and goes unanswered. */
+async function handleIdentityChallenge(message) {
+try {
+if (!message?.sign) {
+console.warn('[Chat] this relay asked for its challenge to be opened rather than signed; it was not answered.');
+return;
+}
+const nonce = String(message.sign);
+const sig = await signRelayProof('socket', nonce);
+/* The same nonce, signed with this install's own key. */
+const deviceSig = typeof deviceChallengeSignature === 'function' ? await deviceChallengeSignature(nonce).catch(() => '') : '';
+if (chatState.ws?.readyState === WebSocket.OPEN) {
+chatState.ws.send(JSON.stringify({ type: 'id-proof', sig, deviceSig }));
+}
+} catch (error) {
+console.warn('[Chat] could not answer the relay identity challenge:', error);
+}
+}
+/* A space record, on its own turn of the sender's queue.
+ *
+ * The relay stamps the sender from an unauthenticated hello, so the sender
+ * claim is the only thing vouching for a roster that can dissolve a group
+ * and purge session keys. Only the space's owner (or this device) may push
+ * one at an existing space — and over transit, where the envelope's sender
+ * is deliberately blank, the record itself names its author and the
+ * author's signature is checked against the owner's pinned key. Without
+ * that second half, every cross-relay member refused every edit: the
+ * owner's renames, permissions and removals simply never arrived, and a
+ * removed member kept a ghost group others kept encrypting to. */
+async function handleSpaceSyncMessage(message, payload) {
+const senderFingerprint = String(message.fromFingerprint || '');
+const senderPeerId = String(message.fromClientId || message.fromPeerId || '');
+const existingSpace = (chatState.spaces?.groups || []).find((space) => space.conversationId === payload.space.conversationId)
+|| (chatState.spaces?.channels || []).find((space) => space.conversationId === payload.space.conversationId)
+|| null;
+let authorized = typeof isSpaceUpdateAuthorized !== 'function'
+|| isSpaceUpdateAuthorized(existingSpace, senderFingerprint, senderPeerId);
+if (!authorized && existingSpace && payload.fromFingerprint) {
+const ownerKey = existingSpace.ownerFingerprint
+? String((typeof findPeerByAnyKey === 'function' ? findPeerByAnyKey(existingSpace.ownerFingerprint) : null)?.publicKeyData || '') : '';
+authorized = payload.fromFingerprint === String(existingSpace.ownerFingerprint || '')
+&& Boolean(ownerKey)
+&& typeof verifySpaceSyncSender === 'function'
+&& await verifySpaceSyncSender(payload, ownerKey);
+}
+if (!authorized) {
+console.warn('[Chat] refused a space-sync from a non-owner sender');
+ackRelayMessage(message.relayId);
+return;
+}
+/* Being dropped from the members list of a newer revision means we were
+removed; keeping the thread around would show a group we can no longer
+post to. */
+if (handleSpaceRemoval(payload.space)) {
+ackRelayMessage(message.relayId);
+return;
+}
+/* Who put this account in a group it did not know yet: the relay-proven
+   sender, or the author the record names when that author's pinned key
+   signed it (over transit the relay's word is blank by design). */
+let addedBy = senderFingerprint;
+if (!addedBy && payload.fromFingerprint && typeof verifySpaceSyncSender === 'function') {
+const authorKey = String(findPeerByAnyKey(payload.fromFingerprint)?.publicKeyData || '');
+if (authorKey && await verifySpaceSyncSender(payload, authorKey)) addedBy = String(payload.fromFingerprint);
+}
+const merged = upsertSharedSpace(payload.space, { addedBy });
+/* Only for a group this device is actually in - a note about a group we are
+not a member of would be a thread appearing out of nowhere. */
+if (merged && payload.note) appendSpaceNote(merged, String(payload.note).slice(0, 300));
+/* The owner's cards for every member: what lets this device seal to members
+   it has never met, on this relay or another. */
+if (merged && Array.isArray(payload.memberCards) && typeof ingestMemberCards === 'function') {
+  await ingestMemberCards(payload.memberCards, merged);
+}
+renderPeers();
+renderActivePeer();
+renderMessages();
+ackRelayMessage(message.relayId);
+}
+/* A relay about to update (scripts/lib/relay-updates.js) says so a couple of
+   minutes before it restarts. The banner stays until the relay is back — its
+   welcome on the new connection — so the pause reads as an update and not a
+   failure; twenty minutes at most, in case it never comes back. */
+let serverUpdateTimer = null;
+function hideServerUpdateNotice() {
+const banner = document.getElementById('serverUpdateBanner');
+if (banner) banner.hidden = true;
+chatState.serverUpdating = false;
+clearTimeout(serverUpdateTimer);
+}
+function showServerUpdateNotice(notice = {}) {
+let banner = document.getElementById('serverUpdateBanner');
+if (!banner) {
+banner = document.createElement('div');
+banner.id = 'serverUpdateBanner';
+banner.className = 'server-update-banner';
+banner.setAttribute('role', 'status');
+banner.setAttribute('aria-live', 'polite');
+document.body.appendChild(banner);
+}
+const minutes = Math.max(1, Math.min(30, Math.round(Number(notice.minutes) || 5)));
+banner.textContent = t(
+`سرور در حال به‌روزرسانی است. لطفاً چند دقیقه (حدود ${minutes} دقیقه) صبر کنید تا به‌روزرسانی کامل شود؛ پیام‌ها پس از بازگشت سرور فرستاده می‌شوند.`,
+`The server is updating. Please wait a few minutes (about ${minutes}) for the update to finish; messages go out once it is back.`);
+banner.hidden = false;
+chatState.serverUpdating = true;
+clearTimeout(serverUpdateTimer);
+serverUpdateTimer = setTimeout(hideServerUpdateNotice, 20 * 60 * 1000);
+}
+/* The two frames that move it, for the socket handler below. */
+function handleServerUpdateFrame(message) {
+if (message?.type === 'server-update') { showServerUpdateNotice(message); return true; }
+if (message?.type === 'welcome' && chatState.serverUpdating) hideServerUpdateNotice();
+return false;
+}
+window.PoorijaServerUpdateNotice = { show: showServerUpdateNotice, hide: hideServerUpdateNotice, handleFrame: handleServerUpdateFrame };
+
+function connectPresence() {
+if (chatState.ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(chatState.ws.readyState)) {
+return;
+}
+if (chatState.manualOffline) return;
+/* The handlers below belong to THIS socket. A socket that was abandoned
+   (frozen in the background, or never opened) can still fire its close or its
+   error long after a new one is up, and those events used to tear the new
+   connection's heartbeat down, print "disconnected" over a live socket and
+   leave the app there until it was closed completely. */
+const socket = new WebSocket(wsUrl());
+chatState.ws = socket;
+chatState.wsConnectStartedAt = Date.now();
+setConnectionState(false, ['در حال اتصال...', 'Connecting...']);
+socket.addEventListener('open', () => {
+if (chatState.ws !== socket) { try { socket.close(); } catch (_error) { /* already gone */ } return; }
+clearReconnectTimer();
+chatState.reconnectAttempt = 0;
+chatState.lastInboundAt = Date.now();
+chatState.lastTransportNoticeAt = 0;
+chatState.serverReachable = true;
+chatState.waitingNoted = false;
+setConnectionState(true, ['متصل به سرور چت', 'Connected to chat server']);
+renderStaticUi();
+startHeartbeat();
+retryQueuedMessages();
+});
+chatState.ws.addEventListener('message', (event) => {
+// Any frame at all is proof the path is still live; the watchdog reads this.
+chatState.lastInboundAt = Date.now();
+let message;
+try {
+message = JSON.parse(event.data);
+} catch (error) {
+console.warn('Invalid chat signal payload:', error);
+return;
+}
+	if (message.type === 'pong') return;
+	if (handleServerUpdateFrame(message)) return;
+	/* The relay checks that the client it is talking to holds the private half
+	   of the identity it claimed on the query string. Only the holder can
+	   answer, and a failure here is logged rather than fatal: an old server
+	   that never sends challenges is fine, and a client that cannot answer has
+	   bigger problems than this frame. */
+	if (message.type === 'id-challenge' && (message.sign || message.cipher)) {
+	handleIdentityChallenge(message).catch((error) => {
+	console.warn('[Chat] identity challenge failed:', error);
+	});
+	return;
+	}
+	/* A room on this relay's group-call SFU, asked for by 68-sfu-call.js. */
+	if (message.type === 'sfu-room') {
+	if (typeof settleSfuRoom === 'function') settleSfuRoom(message);
+	return;
+	}
+	if (message.type === 'welcome') {
+chatState.clientId = message.clientId || '';
+/* Which kinds of account key this relay can prove (identity v4). A v3
+   account moves only once its relay can prove the new key; told here,
+   before the hello, so the hello can carry the move. */
+chatState.relayIdentityKinds = Array.isArray(message.identity) ? message.identity.map(String).slice(0, 4) : [];
+/* The hello waits for the move, so the first hello already says hello as
+   the moved account and carries the continuation. */
+const identityMove = (chatState.relayIdentityKinds.includes('v4') && chatState.identity && chatState.identity.v !== 4 && typeof settleIdentityVersion === 'function')
+? (() => {
+const before = chatState.identity;
+return settleIdentityVersion(before).then((after) => {
+/* chatState.identity may already be the moved one (identity loading got
+   there first, through the same shared move): adopt only once. */
+if (after && after !== before && after.v === 4 && (chatState.identity === before || (chatState.identity?.v !== 4))) {
+chatState.identity = after;
+if (typeof adoptMovedIdentity === 'function') adoptMovedIdentity(after);
+/* The hello below carries the prekey, so it waits for the new signature. */
+return typeof ensurePrekey === 'function' ? ensurePrekey().catch(() => null) : null;
+}
+return null;
+}).catch((error) => console.warn('[Chat] identity move failed:', error));
+})()
+: Promise.resolve();
+renderStaticUi();
+/* With this install's own key in it (58-device-roster.js) — loaded first,
+   which takes a moment only the first time, so the hello goes once rather
+   than twice. */
+identityMove.finally(() => {
+if (typeof ensureDeviceKey === 'function') ensureDeviceKey().catch(() => null).finally(() => broadcastHello());
+else broadcastHello();
+});
+/* The relay is up and answering, which is the cheap moment to re-read its
+   TURN block. An operator who re-runs the relay setup gets a fresh TURN
+   password, and until now a client holding the old one lost every relayed
+   call with nothing on screen to say why — the credentials were fetched once
+   and then kept forever. Not awaited: the connection is already up, and a
+   relay that has nothing new to say costs two small requests at most once
+   every five minutes. */
+hydrateRelayTurnConfig({ force: true }).catch(() => {});
+return;
+}
+/* The relay's presence table, kept here: the whole of it arrives once per
+   connection, then only what changed (peers-delta) — the whole table to
+   every client on every change was what capped how many a relay could hold.
+   A change is applied to the copy and the result handled exactly as a whole
+   table always was, so nothing downstream knows the difference. */
+if (message.type === 'peers') {
+chatState.presenceTable = new Map((message.peers || []).filter((peer) => peer?.clientId).map((peer) => [peer.clientId, peer]));
+}
+if (message.type === 'peers-delta') {
+const table = chatState.presenceTable instanceof Map ? chatState.presenceTable : new Map();
+for (const clientId of Array.isArray(message.remove) ? message.remove : []) table.delete(clientId);
+for (const peer of Array.isArray(message.upsert) ? message.upsert : []) {
+if (peer?.clientId) table.set(peer.clientId, { ...(table.get(peer.clientId) || {}), ...peer });
+}
+chatState.presenceTable = table;
+message = { type: 'peers', peers: [...table.values()] };
+}
+if (message.type === 'peers') {
+/* Everyone this relay did not mention goes offline -- EXCEPT somebody whose
+   presence is not this relay's business.
+ *
+ * A relay lists its own clients and nobody else's, so a contact on another relay
+ * is absent from every one of these broadcasts. Marking them offline here and
+ * waiting for the transit answer to mark them back made the status flicker, and
+ * flicker towards offline, because the broadcast arrives far more often than the
+ * question is asked. It is also simply wrong: this relay has not said that person
+ * is away, it has said nothing about them at all.
+ *
+ * So presence for a contact with a routable home relay elsewhere is owned by the
+ * answer from that relay, and is left alone here. staleTransitPresence is what
+ * stops that becoming a status that never goes offline again. */
+chatState.peers.forEach((peer) => {
+if (peer.type) return;
+if (typeof presenceAnsweredElsewhere === 'function' && presenceAnsweredElsewhere(peer)) return;
+peer.status = 'offline';
+});
+	/* Every record is checked against its own key before it is believed. */
+	Promise.all((message.peers || []).map((peer) => withVerifiedFingerprint(peer)))
+	.then((verified) => {
+	/* Other machines holding this same identity are family, not contacts. The
+	   fingerprint half of isSelfPeerRecord still drops them from chatState.peers
+	   below — correctly, or every device would list its siblings as contacts —
+	   so they are set aside here for the devices panel and the identity strip.
+	   The relay table names live sockets, so presence in this list means the
+	   device is connected right now; an away device is simply absent. */
+	const myFingerprint = chatState.identity?.fingerprint || '';
+	chatState.linkedDevices = myFingerprint
+	? verified
+	/* A device the account's primary revoked is not one of the family, even
+	   for the moment before the relay closes it. */
+	.filter((peer) => peer.fingerprint === myFingerprint && !(typeof deviceRevoked === 'function' && deviceRevoked(String(peer.deviceId || ''))))
+	.map((peer) => ({
+	deviceId: String(peer.deviceId || ''),
+	clientId: String(peer.clientId || ''),
+	/* Where to reach it device to device: a file is fetched from a sibling
+	   straight from its peer (57-sibling-files.js). */
+	peerId: String(peer.peerId || ''),
+	name: String(peer.username || ''),
+	}))
+	: [];
+	/* Sticky, not live: "this account has siblings" must survive every one of
+	   them being away, because the ACK policy below needs to keep protecting
+	   their mailbox copies exactly then. Persisted so a reload knows it too. */
+	if (chatState.linkedDevices.length >= 2 && !chatState.hasLinkedDevices) {
+	chatState.hasLinkedDevices = true;
+	chatState.profile.hasLinkedDevices = true;
+	saveEncrypted(CHAT_PROFILE_STORAGE_KEY, chatState.profile);
+	}
+	/* Everyone is here: whatever mail was held back for the sibling that was
+	   away can be acknowledged out of the shared box now. */
+	if (chatState.hasLinkedDevices && chatState.linkedDevices.length >= 2) flushDeferredMailAcks();
+	/* Which fingerprint the relay vouches for behind each peer id it lists —
+	   how a call from a contact's second device is recognised as theirs
+	   without trusting anything the caller wrote (49-message-requests.js). */
+	chatState.presenceFingerprints = new Map(verified
+	.filter((peer) => peer.peerId && peer.fingerprint)
+	.map((peer) => [String(peer.peerId), String(peer.fingerprint)]));
+	/* Never a photograph from here: the presence table does not carry one, and
+   what an older relay still sent was its own copy cut at 100,000 characters,
+   which replaced the whole picture a card had delivered with half of one.
+   The status, though, is the person's own word repeated by their relay. */
+verified.forEach((peer) => mergePeerRecord({ ...peer, avatarData: '' }, { online: true, moodFromPresence: true }));
+	chatState.peers = chatState.peers.filter((peer) => !isSelfPeerRecord(peer));
+	dropStaleSessionChannels();
+	saveContacts();
+	/* A photograph travels on the card, and this broadcast — which carries
+	   who is HERE but never what they look like — is the moment a same-relay
+	   contact becomes known to be here. That is the moment a card held back
+	   for an absent contact may finally go out: the version map inside makes
+	   this a no-op once each contact is current. */
+	(chatState.peers || []).forEach((peer) => {
+	announceProfileCardIfStale(peer);
+	/* A contact here without a photograph on this device is asked for one;
+	   the version map and the ask's own throttle keep this to once. */
+	if (!peer.avatarData) askForProfileIfMissing(peer);
+	});
+	renderPeers();
+	renderActivePeer();
+	/* The live device list just changed: the strip count follows it, an
+	   open devices pane redraws so the list stays current while watched,
+	   and a sibling appearing is the moment to offer them the history. */
+	if (typeof noteSeenAccountDevices === 'function') noteSeenAccountDevices();
+	renderLinkedDeviceCount();
+	maybeAnnounceDeviceSync(chatState.linkedDevices.length);
+	/* A sibling here and "sync all content" on: whatever this device lacks
+	   comes over now (57-sibling-files.js). */
+	if (chatState.linkedDevices.length >= 2 && typeof scheduleSiblingAutoPull === 'function') scheduleSiblingAutoPull();
+	if (chatState.settingsPane === 'devices' && typeof renderDevicesCard === 'function') renderDevicesCard();
+/* Somebody being rung while they were away may have just walked in. */
+if (chatState.offlineRing) {
+const arrived = chatState.peers.find((peer) => peer.peerId === chatState.offlineRing.peerId && peer.status === 'online');
+if (arrived) offlineRingPeerArrived(arrived);
+}
+// Retry sending queued messages when peers list updates (potential reconnection)
+retryQueuedMessages();
+});
+return;
+}
+/* Somebody may be waiting for exactly this answer — a route or TURN
+   question, a presence probe. Handing it to them does not stop the ordinary
+   handling below. */
+if (typeof settleTransitAnswer === 'function') settleTransitAnswer(message);
+if (message.type === 'route' || message.type === 'turn' || message.type === 'withdrawn') return;
+/* The account's device beacons (44-device-beacon.js). */
+if (message.type === 'beacons') {
+if (typeof handleBeacons === 'function') handleBeacons(message.items).catch((error) => console.warn('[Devices] beacons unreadable:', error?.message || error));
+return;
+}
+if (message.type === 'beacon-changed') {
+if (typeof requestBeacons === 'function') window.setTimeout(requestBeacons, 1500);
+return;
+}
+if (message.type === 'beacon-stored' || message.type === 'beacon-dropped') return;
+/* Guest mode (62-guest-mode.js). */
+if (typeof handleGuestFrame === 'function' && /^(guest-|home-move)/.test(String(message.type || '')) && handleGuestFrame(message)) return;
+/* The account's device roster (58-device-roster.js). */
+if (message.type === 'roster') {
+if (typeof handleRelayRoster === 'function') handleRelayRoster(message.roster || null, { guest: message.guest === true }).catch((error) => console.warn('[Devices] roster unreadable:', error?.message || error));
+return;
+}
+if (message.type === 'roster-refused') {
+if (typeof handleRosterRefused === 'function') handleRosterRefused(message).catch((error) => console.warn('[Devices] roster refusal unreadable:', error?.message || error));
+return;
+}
+if (message.type === 'roster-stored') {
+if (typeof handleRosterStored === 'function') handleRosterStored(message);
+return;
+}
+if (message.type === 'device-revoked') {
+if (typeof handleDeviceRevokedNotice === 'function') handleDeviceRevokedNotice(message).catch((error) => console.warn('[Devices] revocation unreadable:', error?.message || error));
+return;
+}
+/* What a sibling left with the relay for this device while it was away. */
+if (message.type === 'sibling-held') {
+if (typeof handleSiblingHeld === 'function') handleSiblingHeld(message).catch((error) => console.warn('[Devices] held sync unreadable:', error?.message || error));
+return;
+}
+if (message.type === 'sibling-hold-ok') return;
+if (message.type === 'queued') {
+/* The relay stored an envelope we asked it to keep. The tag is the outbound
+   message id we sent it with; matching it back moves that message to
+   'relayed' — "handed to the server, waiting for the peer" — rather than
+   leaving it on the ambiguous ✓ of a blind send. */
+const queuedTag = String(message.tag || '');
+const carried = typeof transitTagInFlight === 'function' && transitTagInFlight(queuedTag);
+if (carried) {
+  transitSendSettled(queuedTag);
+  transitLinkAnswered();
+}
+/* Queued for somebody that relay has never met: the message may be waiting
+   where its recipient never comes. It stays "queued" rather than earning the
+   relayed tick, and the right relay is looked for. */
+if (message.known === false && typeof noteQueuedForStranger === 'function') {
+  noteQueuedForStranger(message, { carried });
+  chatState.pendingRelayTags?.delete(queuedTag);
+  return;
+}
+const entry = chatState.pendingRelayTags?.get(queuedTag);
+if (entry) {
+markMessageStatus(entry.conversationKey, entry.messageId, 'relayed');
+chatState.pendingRelayTags.delete(queuedTag);
+}
+chatState.pendingTransit?.delete(queuedTag);
+return;
+}
+/* The far relay answered a question about one of its own clients. */
+if (message.type === 'presence' && message.toFingerprint) {
+chatState.pendingTransit?.delete(String(message.tag || ''));
+if (typeof transitLinkAnswered === 'function') transitLinkAnswered();
+/* A relay from 2.13 also says whether the app is in front of them
+   (awake); an older one only that a socket is open. */
+notePeerPresenceAnswer(String(message.toFingerprint), message.up === true, typeof message.awake === 'boolean' ? message.awake : null);
+return;
+}
+if (message.type === 'error') {
+/* The carrier could not take it: the link redialling, a backlog, or the far
+   relay refusing to open it. A tagged envelope stays queued in the outbox and
+   goes again by itself; nothing about a message to a contact on another relay
+   is ever sent through this relay instead. */
+if (String(message.reason || '').startsWith('transit-')) {
+const refusedTag = String(message.tag || '');
+if (typeof transitSendRefused === 'function' && transitSendRefused(refusedTag, String(message.reason))) {
+  chatState.pendingTransit?.delete(refusedTag);
+  return;
+}
+const waiting = chatState.pendingTransit?.get(refusedTag);
+if (waiting) {
+chatState.pendingTransit.delete(refusedTag);
+const peerRecord = chatState.peers.find((peer) => peer.peerId === waiting.peerId) || null;
+fallBackToDirect(waiting.frame, peerRecord, message.reason);
+return;
+}
+/* A refusal for something nobody tracks — a typing flag, a question whose
+   asker already gave up — is not worth a "message failed" toast. */
+return;
+}
+if (message.reason === 'identity-unverified') {
+notify(t(
+'سرور این نسخه از برنامه را تأیید نمی‌کند؛ لطفاً برنامه را دوباره بارگذاری یا به‌روزرسانی کنید.',
+'The server does not accept this version of the app; please reload or update it.',
+), 'error');
+}
+const entry = chatState.pendingRelayTags?.get(String(message.tag || ''));
+if (entry) {
+markMessageStatus(entry.conversationKey, entry.messageId, 'failed');
+chatState.pendingRelayTags.delete(String(message.tag || ''));
+notify(t('ارسال یک پیام به سرور ناموفق بود.', 'A message could not be handed to the server.'), 'warning');
+}
+return;
+}
+if (message.type === 'server-suspended' || message.type === 'server-kicked') {
+let defaultMsg = '';
+if (message.permanent) {
+defaultMsg = message.type === 'server-suspended'
+? t('شما موقتاً تعلیق شده اید.', 'You are temporarily suspended.')
+: t('دسترسی شما در سیستم محدود شده است، لطفاً برای رفع محدودیت با ادمین سرور و یا پشتیبانی تماس بگیرید.', 'Your access is permanently restricted, please contact support.');
+} else {
+let untilText = '';
+if (message.until) {
+const d = new Date(message.until);
+untilText = ' تا ' + d.toLocaleString('fa-IR') + ' (' + d.toLocaleString('en-US') + ')';
+}
+defaultMsg = message.type === 'server-suspended'
+? t(`شما موقتاً تعلیق شده اید.${untilText}`, `You are temporarily suspended${untilText}.`)
+: t(`اتصال شما از سرور قطع شد و${untilText} امکان اتصال ندارید.`, `You were kicked from this server${untilText}.`);
+}
+setServerRestriction({
+type: message.type === 'server-suspended' ? 'suspended' : 'kicked',
+message: defaultMsg,
+until: message.until || null,
+permanent: Boolean(message.permanent),
+});
+const text = message.type === 'server-suspended' ? restrictionText() : defaultMsg;
+if (message.silent) {
+try { chatState.ws?.close(); } catch (_error) {}
+return;
+}
+notifyRestrictionOnce(text);
+appendHistory('system', {
+id: generateId('sys'),
+type: 'text',
+kind: 'text',
+text,
+senderName: t('سیستم', 'System'),
+direction: 'in',
+timestamp: message.timestamp || Date.now(),
+createdAt: new Date(message.timestamp || Date.now()).toISOString(),
+system: true
+});
+try { chatState.ws?.close(); } catch (_error) {}
+return;
+}
+if (message.type === 'system-broadcast') {
+const conversationId = 'system';
+const entry = {
+id: generateId('sys'),
+type: message.kind === 'voice' ? 'voice' : (message.kind === 'file' ? 'file' : 'text'),
+kind: message.kind || 'text',
+text: message.message || '',
+name: message.fileName || (message.kind === 'voice' ? t('صدای سیستم', 'System Voice') : t('فایل سیستم', 'System File')),
+downloadUrl: message.fileData || '',
+senderName: t('سیستم', 'System'),
+direction: 'in',
+timestamp: message.timestamp || Date.now(),
+createdAt: new Date(message.timestamp || Date.now()).toISOString(),
+system: true
+};
+appendHistory(conversationId, entry);
+return;
+}
+/* The relay could not keep something long enough. Saying so is the whole
+   point of the expiry log: without it the recipient never learns that anyone
+   wrote to them, which is worse than knowing a file was missed. */
+/* Somebody reached for us while we were away. */
+/* Two devices being linked with a QR code (59-device-link.js): a short,
+   encrypted exchange between devices that do not share an account yet. */
+if (message.type === 'relay' && message.payload?.type === 'device-link') {
+if (typeof handleDeviceLinkEnvelope === 'function') handleDeviceLinkEnvelope(message).catch((error) => console.warn('[Link] unreadable:', error?.message || error));
+ackRelayMessage(message.relayId);
+return;
+}
+if (message.type === 'relay' && message.payload?.type === 'session-offer') {
+const identity = message.payload.identity || {};
+if (identity.fingerprint || identity.peerId) {
+const known = findPeerByAnyKey(identity.fingerprint || identity.peerId);
+if (!known) {
+addIdentityAsConversation(identity, { startSession: false }).then((record) => {
+if (!record) return;
+notify(t(
+`${identity.name || 'یک مخاطب'} در نبود شما درخواست گفتگو داده بود.`,
+`${identity.name || 'Someone'} asked to start a conversation while you were away.`,
+), 'info');
+}).catch(console.error);
+	} else {
+	/* The key in a session-offer used to be written straight onto the known
+	   record, bypassing the TOFU pinning every other identity update goes
+	   through. The same merge decides here: a differing key is held as
+	   pendingKey with the key-change note, and the pinned key survives. */
+	mergePeerRecord({
+	peerId: known.peerId,
+	clientId: known.clientId,
+	publicKeyData: identity.publicKeyData || known.publicKeyData,
+	fingerprint: identity.fingerprint || known.fingerprint,
+	conversationId: known.conversationId,
+	status: known.status,
+	});
+	saveContacts();
+	}
+renderPeers();
+}
+ackRelayMessage(message.relayId);
+return;
+}
+if (message.type === 'expired-notice') {
+const items = Array.isArray(message.items) ? message.items : [];
+for (const item of items) {
+const peer = findPeerByAnyKey(item.from);
+const conversationId = peer ? getConversationKey(peer) : (item.from || 'system');
+const when = item.queuedAt ? new Date(item.queuedAt).toLocaleString(language() === 'fa' ? 'fa-IR' : 'en-GB') : '';
+const reasonText = item.reason === 'quota' || item.reason === 'mailbox-full'
+? t('به‌دلیل پر شدن فضای نگهداری سرور', 'because the server ran out of room for it')
+: t('چون بیش از ۷ روز تحویل گرفته نشد', 'because it went uncollected for more than 7 days');
+appendHistory(conversationId, {
+id: generateId('expired'),
+direction: 'in',
+type: 'text',
+system: true,
+text: t(
+`یک ${item.class === 'media' ? 'فایل' : 'پیام'} در ${when} برای شما فرستاده شد و روی سرور پاک شد ${reasonText}. متن آن هرگز رمزگشایی نشد؛ فقط سابقهٔ ارسالش مانده بود.`,
+`A ${item.class === 'media' ? 'file' : 'message'} was sent to you on ${when} and was removed from the server ${reasonText}. Its contents were never decrypted — only the record that it existed.`,
+),
+status: 'delivered',
+createdAt: item.expiredAt || new Date().toISOString(),
+});
+}
+if (items.length) {
+renderPeers();
+renderMessages();
+notify(t(
+`${items.length} پیام یا فایل پیش از دریافت شما از سرور پاک شده بود.`,
+`${items.length} message(s) or file(s) had been removed from the server before you collected them.`,
+), 'warning');
+}
+return;
+}
+if (message.type === 'relay') {
+const payload = message.payload;
+if (!payload) {
+ackRelayMessage(message.relayId);
+return;
+}
+/* Somebody on another relay told us their name, their photograph and their
+   prekey -- everything a hello would have carried if a relay broadcast reached
+   across. */
+if (payload.type === 'profile-card') {
+const known = findPeerByAnyKey(payload.fingerprint || payload.peerId || message.fromClientId || '');
+/* The relay's own word on who sent it, where it has one (a sender connected
+   to this relay); blank over transit, where the card's signature has to say. */
+noteProfileCard(payload, known, { relayFingerprint: String(message.fromFingerprint || '') })
+.catch((error) => console.warn('[chat] profile card could not be read:', error));
+ackRelayMessage(message.relayId);
+return;
+}
+
+if (payload.type === 'call-invite') {
+const queuedAt = message.queuedAt ? Date.parse(message.queuedAt) : 0;
+if (queuedAt && Date.now() - queuedAt > CALL_RING_TIMEOUT_MS) {
+appendCall({
+name: payload.name || message.fromClientId,
+peerId: payload.peerId || message.fromClientId,
+mode: payload.mode || 'voice',
+status: 'missed',
+direction: 'in',
+createdAt: message.queuedAt,
+});
+ackRelayMessage(message.relayId);
+return;
+}
+const incomingPeerId = payload.peerId || message.fromClientId;
+if (chatState.pendingIncomingInvite?.peerId === incomingPeerId ||
+chatState.pendingIncomingCall?.peer === incomingPeerId ||
+chatState.currentCall?.peer === incomingPeerId) {
+/* Acknowledged, or the mailbox holds it for ever and every reconnect rings
+   the same dead invitation again. */
+ackRelayMessage(message.relayId);
+return;
+}
+if (chatState.currentCall || chatState.pendingIncomingCall || chatState.pendingIncomingInvite) {
+const busyPeer = findPeerRecordByPeerId(incomingPeerId);
+if (busyPeer) {
+sendRelayEnvelope(busyPeer, {
+type: 'call-busy',
+mode: payload.mode || 'voice',
+name: chatState.profile.name || t('کاربر P00RIJA', 'P00RIJA User'),
+peerId: chatState.peerId,
+});
+}
+/* Same as above: answered is answered, whatever the answer was. */
+ackRelayMessage(message.relayId);
+notify(t('در حال حاضر در تماس دیگری هستید و تماس جدید رد شد.', 'You are already in another call, so the new request was rejected.'), 'warning');
+return;
+}
+showIncomingCall(null, {
+peerId: incomingPeerId,
+mode: payload.mode || 'voice',
+name: payload.name || message.fromClientId,
+groupId: payload.groupId || null,
+/* The relay's own word for who is calling, for screening a caller whose
+   device id this side has never seen (49-message-requests.js). */
+provenFingerprint: message.fromFingerprint || '',
+});
+appendCall({
+name: payload.name || message.fromClientId,
+peerId: incomingPeerId,
+mode: payload.mode,
+status: 'ringing',
+direction: 'in',
+logToChat: false,
+});
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'call-busy') {
+const peer = findPeerRecordByPeerId(payload.peerId || message.fromClientId || '');
+appendCall({
+name: payload.name || peer?.username || message.fromClientId,
+peerId: peer?.peerId || payload.peerId || message.fromClientId,
+mode: payload.mode || chatState.currentCallMode || 'voice',
+status: 'failed',
+direction: chatState.currentCallDirection || 'out',
+});
+notify(t('کاربر مقصد در حال حاضر در تماس دیگری است.', 'The target user is already on another call.'), 'warning');
+endCurrentCall({ logCall: false });
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'call-reject') {
+const peer = findPeerRecordByPeerId(payload.peerId || message.fromClientId || '') || activePeer();
+appendCall({
+name: payload.name || peer?.username || message.fromClientId,
+peerId: peer?.peerId || payload.peerId || message.fromClientId,
+mode: payload.mode || chatState.currentCallMode || 'voice',
+status: 'rejected',
+direction: chatState.currentCallDirection || 'out',
+});
+notify(t('تماس شما رد شد.', 'Your call was rejected.'), 'info');
+endCurrentCall({ logCall: false });
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'call-missed') {
+appendCall({
+name: payload.name || message.fromClientId,
+peerId: payload.peerId || message.fromClientId,
+mode: payload.mode || 'voice',
+status: 'missed',
+direction: 'in',
+createdAt: payload.createdAt || message.queuedAt || new Date().toISOString(),
+});
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'call-cancel') {
+const peerId = payload.peerId || message.fromClientId;
+if (chatState.pendingIncomingCall?.peer === peerId || chatState.pendingIncomingInvite?.peerId === peerId) {
+clearIncomingCall();
+}
+appendCall({
+name: payload.name || message.fromClientId,
+peerId: payload.peerId || message.fromClientId,
+mode: payload.mode || 'voice',
+status: 'missed',
+direction: 'in',
+createdAt: payload.createdAt || new Date().toISOString(),
+});
+ackRelayMessage(message.relayId);
+return;
+}
+	if (payload.type === 'call-ended') {
+appendCall({
+name: payload.name || message.fromClientId,
+peerId: payload.peerId || message.fromClientId,
+mode: payload.mode || 'voice',
+status: 'ended',
+durationMs: Number(payload.durationMs || 0),
+createdAt: payload.createdAt || new Date().toISOString(),
+/* Updates the row this call already has; never opens one. */
+updateOnly: true,
+});
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'call-renegotiate') {
+handleCallRenegotiateOffer(payload, message).catch(console.error);
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'call-path-relay') {
+if (typeof handleCallPathRelayRequest === 'function') handleCallPathRelayRequest(payload, message);
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'call-renegotiate-answer') {
+handleCallRenegotiateAnswer(payload, message).catch(console.error);
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'call-ice') {
+handleCallRemoteCandidate(payload, message).catch(console.error);
+ackRelayMessage(message.relayId);
+return;
+}
+/* The offer, the answer and the candidates of a call whose two ends are on
+   different relays. They travel this way because a PeerJS id is only meaningful
+   on the server that issued it; see js/chat/39-relay-call.js. Handled before
+   anything that could mistake them for chat, and named call-relay-* rather than
+   reusing call-ice so a build that predates them ignores them instead of
+   feeding a candidate to a negotiation that has none. */
+/* The same, for a live data channel to somebody on another relay
+   (43-relay-link.js). Never stored, never read late. */
+if (String(payload.type || '').startsWith('link-relay-')) {
+const queuedAt = message.queuedAt ? Date.parse(message.queuedAt) : 0;
+if (!queuedAt || Date.now() - queuedAt < 60000) {
+if (typeof handleRelayLinkSignal === 'function') handleRelayLinkSignal(message);
+}
+ackRelayMessage(message.relayId);
+return;
+}
+if (String(payload.type || '').startsWith('call-relay-')) {
+/* An offer that was waiting in a mailbox is not a call, it is a recording of
+   one. Three defences stop it being stored at all -- the client marks these
+   ephemeral, and both relays refuse to queue them -- and this is the fourth,
+   for an envelope queued by a build that predates those. call-invite has had
+   the same check since the offline ring was written; without it here, a
+   reconnect rang the phone with a dead description behind it: declining logged
+   a missed call that never happened, answering gave a call with no sound. */
+const queuedAt = message.queuedAt ? Date.parse(message.queuedAt) : 0;
+if (queuedAt && Date.now() - queuedAt > CALL_RING_TIMEOUT_MS) {
+ackRelayMessage(message.relayId);
+return;
+}
+if (typeof handleRelayCallSignal === 'function') handleRelayCallSignal(message);
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'server-draining') {
+/* The relay is going away for a redeploy and has told us when to come back.
+   Obeying its jitter is the whole point: every peer reconnecting the instant
+   the socket drops is a self-inflicted stampede on whatever replaces it. */
+const delay = Math.max(250, Math.min(30000, Number(payload.reconnectAfterMs) || 1500));
+setConnectionState(false, ['سرور در حال به‌روزرسانی است…', 'The server is updating…']);
+chatState.shouldReconnect = true;
+clearReconnectTimer();
+chatState.reconnectTimer = setTimeout(() => {
+connectChatTransport().catch(console.error);
+}, delay);
+return;
+}
+if (payload.type === 'call-state') {
+const activePeer = chatState.currentCall ? activeCallPeerRecord() : null;
+if (activePeer && (payload.peerId === activePeer.peerId || message.fromFingerprint === activePeer.fingerprint)) {
+applyRemoteCallState(payload.state || {});
+}
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'call-screenshot') {
+const activePeer = chatState.currentCall ? activeCallPeerRecord() : null;
+const inActiveCall = Boolean(activePeer && (payload.peerId === activePeer.peerId || message.fromFingerprint === activePeer.fingerprint));
+if (inActiveCall) {
+showScreenshotWarning(payload.name);
+}
+notify(t(
+`${payload.name || 'طرف مقابل'} در حین تماس اسکرین‌شات گرفت.`,
+`${payload.name || 'The other side'} took a screenshot during the call.`,
+), 'warning');
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'space-dissolve-request') {
+/* Asked, not done: the owner is shown the request and decides. */
+const target = chatState.spaces.groups.find((item) => item.conversationId === payload.spaceId);
+if (target && localSpaceRole(target) === 'owner') {
+appendHistory(target.conversationId, {
+id: generateId('sys'),
+direction: 'in',
+type: 'system-note',
+text: t(`${payload.fromName || 'یک ادمین'} درخواست انحلال این گروه را داد. اگر موافقید از «انحلال گروه برای همه» استفاده کنید.`,
+  `${payload.fromName || 'An admin'} asked for this group to be dissolved. Use "Dissolve for everyone" if you agree.`),
+status: 'delivered',
+createdAt: payload.createdAt || new Date().toISOString(),
+});
+storeHistory({ immediate: true });
+renderMessages();
+notify(t(`درخواست انحلال «${target.name}» رسید.`, `A request to dissolve "${target.name}" arrived.`), 'warning');
+}
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'space-sync' && payload.space) {
+/* Through the same per-sender queue offline mail uses: a space record's
+   revision is only meaningful in order, and a signature check that resolves
+   asynchronously must not let a later revision overtake an earlier one. */
+const fromKey = message.fromFingerprint || payload.fromFingerprint || message.fromClientId || 'unknown';
+if (!chatState.wsMessageQueues.has(fromKey)) {
+chatState.wsMessageQueues.set(fromKey, Promise.resolve());
+}
+chatState.wsMessageQueues.set(fromKey, chatState.wsMessageQueues.get(fromKey).then(async () => {
+try {
+await handleSpaceSyncMessage(message, payload);
+} catch (error) {
+console.error('Failed to process a space record:', error);
+}
+}));
+return;
+}
+if (payload.type === 'device-sync') {
+/* Serialised behind the sibling's queue like mail is, so a large
+   history cannot interleave with an arriving message from the same
+   machine. */
+const syncFrom = payload.fromDeviceId || message.fromFingerprint || 'device-sync';
+if (!chatState.wsMessageQueues.has(syncFrom)) {
+chatState.wsMessageQueues.set(syncFrom, Promise.resolve());
+}
+chatState.wsMessageQueues.set(syncFrom, chatState.wsMessageQueues.get(syncFrom).then(async () => {
+try {
+await handleDeviceSyncEnvelope(message);
+} catch (error) {
+console.error('Failed to process a device-sync envelope:', error);
+}
+}));
+ackRelayMessage(message.relayId);
+return;
+}
+if (payload.type === 'offline-chat') {
+const fromId = message.fromFingerprint || message.fromClientId || 'unknown';
+if (!chatState.wsMessageQueues.has(fromId)) {
+chatState.wsMessageQueues.set(fromId, Promise.resolve());
+}
+chatState.wsMessageQueues.set(fromId, chatState.wsMessageQueues.get(fromId).then(async () => {
+try {
+if (await handleOfflineRelayMessage(message)) {
+ackRelayMessage(message.relayId);
+}
+} catch (error) {
+console.error('Failed to process offline relay message in queue:', error);
+}
+}));
+return;
+}
+/* Seen announcements live in localStorage, not memory: a page refresh or a
+   second tab wipes an in-memory set, and the mailbox copy that arrives
+   after the reset renders (and rings) a second time — exactly what the
+   desktop showed while the phone, which never reloads, stayed quiet. The
+   store is shared by every tab of this origin and survives restarts. */
+function seenAnnouncementIds() {
+  try { return new Set(JSON.parse(localStorage.getItem('poorija-seen-announcements') || '[]')); }
+  catch (_error) { return new Set(); }
+}
+function markAnnouncementSeen(id) {
+  if (!id) return;
+  const ids = seenAnnouncementIds();
+  ids.add(id);
+  const kept = Array.from(ids).slice(-200);
+  try { localStorage.setItem('poorija-seen-announcements', JSON.stringify(kept)); } catch (_error) { /* private mode */ }
+}
+if (payload.type === 'system-note') {
+/* Live frame now, mailbox copy on the next reconnect: both carry the same
+   announceId, and the second one is a receipt, not a new message. */
+if (payload.announceId) {
+  if (seenAnnouncementIds().has(payload.announceId)) { ackRelayMessage(message.relayId); return; }
+  markAnnouncementSeen(payload.announceId);
+}
+/* The attribution check can await a signature, the listener cannot: the
+   whole note runs in its own turn and is acknowledged from inside. */
+handleSystemNote(message, payload).catch((error) => console.error('Failed to process a system note:', error));
+return;
+}
+if (payload.type === 'typing') {
+/* The payload's name first: over transit the envelope-level fingerprint is
+   blank by design, and the payload is where the sender put it. */
+handleRemoteTyping(payload.fromFingerprint || message.fromFingerprint);
+ackRelayMessage(message.relayId);
+return;
+}
+ackRelayMessage(message.relayId);
+}
+});
+socket.addEventListener('close', () => {
+if (chatState.ws !== socket) return;
+if (hasActiveServerRestriction()) {
+renderRestrictionStatus();
+if (chatState.heartbeatTimer) clearInterval(chatState.heartbeatTimer);
+return;
+}
+setConnectionState(false, ['ارتباط با سرور چت قطع شد', 'Chat server disconnected']);
+chatState.serverReachable = false;
+/* Whose presence this socket may speak for: its own relay's clients and
+   nobody else's. The peers broadcast applies the same rule when it marks
+   people offline; a socket blip used to apply it to contacts whose presence
+   is answered elsewhere, so a reconnect overwrote a cross-relay contact's
+   good answer with this relay's silence — and wrote it into the saved
+   contacts, where it outlived the blip. Their answer stays as it was. */
+chatState.peers.forEach((peer) => {
+if (!peer.type
+&& !(typeof presenceAnsweredElsewhere === 'function' && presenceAnsweredElsewhere(peer))) {
+peer.status = 'offline';
+}
+});
+saveContacts();
+if (chatState.heartbeatTimer) clearInterval(chatState.heartbeatTimer);
+stopTransportWatchdog();
+renderPeers();
+renderActivePeer();
+if (!chatState.shouldReconnect) return;
+scheduleReconnect();
+});
+socket.addEventListener('error', () => {
+if (chatState.ws !== socket) return;
+if (hasActiveServerRestriction()) {
+renderRestrictionStatus();
+return;
+}
+chatState.serverReachable = false;
+setConnectionState(false, ['سرور چت در دسترس نیست', 'Chat server is unreachable']);
+});
+}
+// Overlapping builds were racing each other: the second call reached the
+// teardown branch while the first peer was still handshaking, discarded it and
+// started over. Serialise them.
+async function connectChatTransport() {
+/* With the screen locked only the relay socket is made again.
+ *
+ * That is all the lock needs repaired (see transportMayRun), and it is all it
+ * may do: a full build probes the relay, can stop to ask whether to trust a
+ * relay that answers with a new identity, and rebuilds the peer — questions
+ * for the person, who is not there, and decisions that must not be taken by
+ * whoever is holding a locked phone. */
+if (!isUnlocked() && transportMayRun()) {
+connectPresence();
+return;
+}
+if (chatState.transportConnectInFlight) {
+// Dropping this call silently is what killed the composer: rebuildPeerTransport()
+// nulls chatState.peer and then asks for a rebuild, and if a build happened to
+// be in flight the request vanished — leaving peer null for good, which the
+// send/file/voice buttons read as "no transport" and stay disabled forever.
+chatState.transportConnectQueued = true;
+return;
+}
+chatState.transportConnectInFlight = true;
+chatState._transportInFlightSince = Date.now();
+try {
+return await buildChatTransport();
+} finally {
+chatState.transportConnectInFlight = false;
+chatState._transportInFlightSince = 0;
+if (chatState.transportConnectQueued) {
+chatState.transportConnectQueued = false;
+setTimeout(() => connectChatTransport().catch(console.error), 250);
+}
+}
+}
+async function buildChatTransport() {
+/* A Disconnect pressed while this build is between its awaits must win: the
+   build resuming afterwards used to clear the offline latch and dial again,
+   so the button quietly undid itself a few seconds later. */
+const disconnectEpoch = chatState.disconnectEpoch || 0;
+if (!isUnlocked()) {
+notify(t('برای فعال‌سازی چت ابتدا باید برنامه را باز کنید', 'Unlock the app before enabling chat'), 'warning');
+return;
+}
+/* The master switch is the single choke point: every connect path — the
+ * auto-connect triggers, the reconnect timers, the manual buttons — funnels
+ * through here, and when it is off nothing dials, whatever asked. */
+if (chatState.profile.chatEnabled === false) {
+setConnectionState(false, ['چت امن خاموش است', 'Secure chat is off']);
+return;
+}
+await ensureIdentity();
+if (hasActiveServerRestriction()) {
+const restrictionLifted = await probeServerRestrictionLifted({ silent: true, reconnect: false });
+if (!restrictionLifted && hasActiveServerRestriction()) {
+notifyRestrictionOnce();
+return;
+}
+}
+if (chatState.profile.autoDiscovery && !isUsableRelayOrigin(chatState.profile.serverUrl)) {
+await discoverLocalRelayServer({ fullScan: false, silent: true });
+}
+await hydrateRelayTurnConfig();
+if (!await ensureRelayTransportReady()) return;
+if ((chatState.disconnectEpoch || 0) !== disconnectEpoch) return;
+chatState.shouldReconnect = true;
+/* Asking for a transport is the opposite of having asked to be offline, so it
+   lifts the latch disconnectChat() set. It is safe to do it here and not
+   earlier: the master switch above has already returned if secure chat is off,
+   which is the other thing that sets this flag, and every connectPresence()
+   below reads it. */
+chatState.manualOffline = false;
+renderStaticUi();
+const nextPeerOrigin = peerTransportOrigin();
+const canReusePeer = Boolean(
+chatState.peer
+&& !chatState.peer.destroyed
+&& chatState.peer.open
+&& chatState.peerTransportOrigin === nextPeerOrigin
+);
+if (!canReusePeer && chatState.peer && !chatState.peer.destroyed) {
+const stalePeer = chatState.peer;
+chatState.peer = null;
+chatState.peerId = '';
+chatState.sessions.clear();
+stalePeer.destroy();
+}
+if (canReusePeer) {
+connectPresence();
+return;
+}
+/* Whether a proxy is set has to be known before the first peer connection:
+   behind one, a direct path would show this device's address
+   (53-native-proxy.js). */
+if (window.nativeProxyReady) await window.nativeProxyReady;
+const PeerCtor = window.Peer;
+if (!PeerCtor || !webRTCSupported()) {
+/* Relay-only transport. Constructing a Peer on an engine without WebRTC
+   (WebKitGTK) aborts it instantly with browser-incompatible, and the heal
+   loop then destroys and rebuilds forever — green for a second, "recovering"
+   the next. Everything the relay carries — presence, messages, offline
+   queue — works with no peer at all, so run without one and say so once. */
+chatState.p2pUnavailable = true;
+chatState.shouldReconnect = true;
+if (chatState.peer && !chatState.peer.destroyed) {
+const deadPeer = chatState.peer;
+chatState.peer = null;
+chatState.peerId = '';
+try { deadPeer.destroy(); } catch (_error) { /* already gone */ }
+}
+if (!chatState.ws || chatState.ws.readyState !== WebSocket.OPEN) {
+connectPresence();
+} else {
+setConnectionState(true, ['متصل به سرور چت', 'Connected to chat server']);
+}
+if (!chatState.p2pNoticeShown) {
+chatState.p2pNoticeShown = true;
+notify(t('تماس‌های مستقیم (P2P) در این پلتفرم پشتیبانی نمی‌شوند؛ چت از طریق رله فعال است.', 'Direct (P2P) calls are unavailable on this platform; chat works through the relay.'), 'warning');
+}
+renderStaticUi();
+refreshCallControls();
+return;
+}
+if (!PeerCtor) {
+notify(t('کتابخانه PeerJS لود نشده است', 'PeerJS client failed to load'), 'error');
+return;
+}
+	/* The account's address, or this install's own when a sibling device
+	   already holds the account's — see the unavailable-id handler below.
+	   The device part is joined with "-" and is letters and digits only:
+	   PeerJS accepts nothing else in an id, and the "~" it was joined with
+	   made every suffixed id invalid. The peer then never opened, the flag
+	   that asked for the suffix is kept in the profile, and the device stayed
+	   off P2P on every try and every restart until it was wiped. */
+	const accountPeerId = chatState.profile.stablePeerId || generateId('poorija-peer').replace(/[^a-zA-Z0-9_-]/g, '-');
+	const stablePeerId = chatState.profile.peerIdSuffix ? devicePeerId(accountPeerId) : accountPeerId;
+	chatState.profile.stablePeerId = chatState.profile.stablePeerId || accountPeerId;
+	saveEncrypted(CHAT_PROFILE_STORAGE_KEY, chatState.profile);
+// Add a small delay to ensure identity and other async states are fully hydrated
+if (chatState.reconnectAttempt === 0) {
+await new Promise(r => setTimeout(r, 500));
+}
+const peer = new PeerCtor(stablePeerId, peerOptions());
+chatState.peer = peer;
+/* What this device will be called on PeerJS, known before the peer has opened:
+   the address a hello and the relay socket announce until then. The account's
+   own id may be a sibling's — it is the one this peer was built with. */
+chatState.pendingPeerId = stablePeerId;
+chatState.peerConnectStartedAt = Date.now();
+chatState.peerTransportOrigin = nextPeerOrigin;
+/* The relay socket does not wait for the peer.
+ *
+ * It was opened from the peer's 'open' event, so the whole connection — the
+ * label, presence, sealed messages, the offline mailbox — sat behind PeerJS's
+ * own signalling socket. On a network where that one is slow or never answers
+ * (a different path on the same host, a filter, a captive hop) the app said
+ * "Connecting…" for good with the relay itself reachable, and nothing could be
+ * sent or received. The peer is the direct-call layer; the relay is the
+ * messenger. Each now comes up on its own. */
+connectPresence();
+peer.on('open', (peerId) => {
+chatState.reconnectAttempt = 0; // Reset on success
+chatState.peerHealAttempt = 0;
+chatState.peerHealInFlight = false;
+chatState.lastTransportNoticeAt = 0;
+chatState.peerIdRetryAttempt = 0;
+clearPeerHealTimers();
+chatState.peerId = peerId;
+renderStaticUi();
+connectPresence();
+// connectPresence() is a no-op when the presence socket is already up, so it
+// would leave the status stuck on "restoring" after every successful heal.
+if (chatState.ws?.readyState === WebSocket.OPEN) {
+setConnectionState(true, ['متصل به سرور چت', 'Connected to chat server']);
+}
+broadcastHello();
+});
+	peer.on('connection', (connection) => {
+	/* A device of this account asking for a file (57-sibling-files.js) is
+	   not a conversation; it proves who it is there or is closed. */
+	if (connection.metadata?.purpose === 'sibling-file') {
+	if (typeof serveSiblingFileConnection === 'function') serveSiblingFileConnection(connection);
+	else connection.close();
+	return;
+	}
+	const remotePeer = {
+	clientId: connection.metadata?.clientId || connection.peer,
+	peerId: connection.peer,
+	username: connection.metadata?.username || connection.peer,
+	publicKeyData: connection.metadata?.publicKeyData || '',
+	fingerprint: connection.metadata?.fingerprint || '',
+	status: 'online',
+	};
+	/* The connection metadata carries a public key, and binding the session to
+	   the raw record let an unverified key negotiate directly — the TOFU merge
+	   had only seen it as a side effect. The merged record (pinned key intact,
+	   conflicts held as pending) is what the session must be built from. */
+	const mergedRecord = mergePeerRecord(remotePeer, { online: true }) || remotePeer;
+	onPeerDiscovered(remotePeer);
+	bindDataConnection(mergedRecord, connection, false);
+	});
+peer.on('call', async (call) => {
+/* A leg of a group call the user already joined must not raise the 1:1
+   incoming screen — they already said yes. */
+if (handleIncomingGroupCallLeg(call)) return;
+appendCall({
+name: call.metadata?.username || call.peer,
+peerId: call.peer,
+mode: call.metadata?.mode || 'voice',
+status: 'incoming',
+direction: 'in',
+logToChat: false,
+});
+showIncomingCall(call);
+if (chatState.pendingIncomingAccept) {
+acceptIncomingCall().catch(console.error);
+}
+});
+peer.on('error', (error) => {
+console.error(error);
+const errorText = String(`${error?.type || ''} ${error?.message || error || ''}`);
+const missingPeer = errorText.match(/Could not connect to peer\s+([A-Za-z0-9_-]+)/i)?.[1];
+if (missingPeer || /peer-unavailable/i.test(errorText)) {
+markPeerUnavailable(missingPeer || activePeer()?.peerId || '', t('Peer انتخاب‌شده آنلاین نیست یا دیگر در دسترس نیست؛ فهرست را به‌روزرسانی کردیم.', 'The selected peer is not online or is no longer reachable; the list was refreshed.'));
+setConnectionState(Boolean(chatState.ws?.readyState === WebSocket.OPEN), ['متصل به رله؛ Peer مقصد در دسترس نیست', 'Relay connected; target peer is unreachable']);
+return;
+}
+	/* An id PeerJS will not take. It can only be the suffixed one (the
+	   account's own has always been valid); rather than retry the same id
+	   forever, go back to the account's id once — if a sibling holds it, the
+	   unavailable-id path below brings the suffix back, built valid. */
+	if (errorText.includes('invalid-id')) {
+	console.warn('[Transport] PeerJS refused the peer id as invalid:', errorText);
+	if (chatState.profile.peerIdSuffix && !chatState.invalidPeerIdRetried) {
+	chatState.invalidPeerIdRetried = true;
+	chatState.profile.peerIdSuffix = false;
+	saveEncrypted(CHAT_PROFILE_STORAGE_KEY, chatState.profile);
+	setTimeout(() => rebuildPeerTransport(), 500);
+	return;
+	}
+	}
+	if (errorText.includes('unavailable-id')) {
+	/* Who is holding the id decides what happens next. The portable profile
+	   carries the account's stablePeerId, so a LINKED sibling online on this
+	   relay holds it — contesting it can never win, and the old answer
+	   (regenerate the id outright) forked the account's address into two,
+	   with contacts' records flapping between them forever. A second device
+	   instead takes its own DETERMINISTIC id — the account's id plus this
+	   install's device suffix — which is stable across reconnects, visibly
+	   belongs to the same account, and leaves the primary address to the
+	   device that already holds it.
+	   The other holder can also be this device's own ghost socket after an
+	   unclean reload; for that one the suffixed id works just as well, and
+	   the reaper clears the ghost on its own. */
+	if (!chatState.profile.peerIdSuffix) {
+	chatState.profile.peerIdSuffix = true;
+	saveEncrypted(CHAT_PROFILE_STORAGE_KEY, chatState.profile);
+	console.warn('[Transport] Peer id held by another device of this account; taking the per-device id.');
+	setTimeout(() => rebuildPeerTransport(), 500);
+	return;
+	}
+	/* Already on the per-device id and still contested: retry the same id —
+	   every stored contact is keyed on it, and regenerating silently
+	   orphans the whole contact list. */
+	chatState.peerIdRetryAttempt += 1;
+	if (chatState.peerIdRetryAttempt <= 3) {
+	console.warn(`Peer ID busy, retrying the same id (${chatState.peerIdRetryAttempt}/3)...`);
+	setConnectionState(Boolean(chatState.ws?.readyState === WebSocket.OPEN), ['در حال بازیابی شناسه...', 'Reclaiming identity...']);
+	setTimeout(() => rebuildPeerTransport(), 4000 * chatState.peerIdRetryAttempt);
+	return;
+	}
+	console.warn('Peer ID still in use after retries, regenerating...');
+	chatState.peerIdRetryAttempt = 0;
+	chatState.profile.stablePeerId = generateId('poorija-peer').replace(/[^a-zA-Z0-9_-]/g, '-');
+	/* A regenerated id belongs to this device alone; the suffix flag has
+	   nothing to say about it any more. */
+	chatState.profile.peerIdSuffix = false;
+	saveEncrypted(CHAT_PROFILE_STORAGE_KEY, chatState.profile);
+	// Force immediate reconnect with new ID
+	setTimeout(() => connectChatTransport(), 500);
+	return;
+	}
+// PeerJS reports ordinary transport hiccups down the same channel as fatal
+// configuration errors. Treating every one of them as fatal is what put a red
+// toast on screen for each network blip while leaving the peer unrepaired.
+if (/browser-incompatible/i.test(errorText)) {
+/* No WebRTC in this engine — the peer can never come up here. Latch the
+   relay-only mode instead of letting the heal loop destroy and rebuild a
+   peer that will always abort. */
+chatState.p2pUnavailable = true;
+chatState.shouldReconnect = true;
+console.warn('[Transport] No WebRTC in this engine; switching to relay-only chat.');
+if (chatState.peer && !chatState.peer.destroyed) {
+const deadPeer = chatState.peer;
+chatState.peer = null;
+chatState.peerId = '';
+try { deadPeer.destroy(); } catch (_error) { /* already gone */ }
+}
+if (!chatState.ws || chatState.ws.readyState !== WebSocket.OPEN) {
+connectPresence();
+} else {
+setConnectionState(true, ['متصل به سرور چت', 'Connected to chat server']);
+}
+if (!chatState.p2pNoticeShown) {
+chatState.p2pNoticeShown = true;
+notify(t('تماس‌های مستقیم (P2P) در این پلتفرم پشتیبانی نمی‌شوند؛ چت از طریق رله فعال است.', 'Direct (P2P) calls are unavailable on this platform; chat works through the relay.'), 'warning');
+}
+renderStaticUi();
+refreshCallControls();
+return;
+}
+if (/network|socket-error|socket-closed|server-error/i.test(errorText)) {
+console.warn('[Transport] Transient peer error, healing:', errorText);
+setConnectionState(Boolean(chatState.ws?.readyState === WebSocket.OPEN), ['در حال بازیابی اتصال...', 'Restoring connection...']);
+healPeerTransport(errorText);
+return;
+}
+if (/webrtc|negotiat/i.test(errorText)) {
+// Media-plane failure: it belongs to the call, not to the transport.
+console.warn('[Transport] WebRTC error during a call:', errorText);
+return;
+}
+notifyTransportTrouble(t('اتصال PeerJS با خطا مواجه شد', 'PeerJS connection failed'));
+setConnectionState(Boolean(chatState.ws?.readyState === WebSocket.OPEN), ['رله متصل است؛ لایه P2P خطا دارد', 'Relay connected; P2P layer has an error']);
+scheduleReconnect();
+});
+// PeerJS fires this the moment the signalling socket closes. This is the state
+// the old code had no handler for at all: destroyed stays false, so the
+// reconnect path skipped it and the P2P layer stayed dead until a manual
+// reconnect. Every "randomly disconnects and never comes back" report lands here.
+peer.on('disconnected', () => {
+if (chatState.peer !== peer) return;
+console.warn('[Transport] Peer signalling socket closed; reconnecting.');
+setConnectionState(Boolean(chatState.ws?.readyState === WebSocket.OPEN), ['در حال بازیابی اتصال...', 'Restoring connection...']);
+healPeerTransport('peer-disconnected');
+});
+peer.on('close', () => {
+if (chatState.peer !== peer) return;
+chatState.peerId = '';
+if (chatState.shouldReconnect) scheduleReconnect();
+});
+}
+async function startSecureSession(targetPeer = null, { silent = false } = {}) {
+if (hasActiveServerRestriction()) {
+notifyRestrictionOnce();
+return null;
+}
+const peerRecord = targetPeer || activePeer();
+/* A group record has no peerId to dial. */
+if (peerRecord?.type === 'group') {
+  if (!silent) {
+    notify(t('در گروه، سشن با هر عضو جداگانه ساخته می‌شود و خودکار انجام می‌شود.',
+             'In a group each member has their own session, set up automatically.'), 'info');
+  }
+  return null;
+}
+if (!peerRecord) {
+  if (!silent) notify(t('اول یک گفتگو را باز کنید.', 'Open a conversation first.'), 'info');
+  return null;
+}
+const existing = chatState.sessions.get(peerRecord.peerId);
+if (existing?.connection?.open) {
+if (!existing.cryptoKey) await ensureSessionKey(existing, peerRecord);
+renderActivePeer();
+return existing;
+}
+/* Somebody on another relay: PeerJS cannot dial them, so the channel is
+   negotiated over the relays instead (43-relay-link.js) and handed to the
+   same session machinery an ordinary connection goes through. */
+if (typeof sessionNeedsRelayLink === 'function' && sessionNeedsRelayLink(peerRecord)) {
+  const link = await openRelayDataLink(peerRecord);
+  if (!link) {
+    if (!silent) notify(t('کانال مستقیم با مخاطب رلهٔ دیگر برقرار نشد؛ پیام‌ها از مسیر رله می‌روند.', 'A direct channel to the contact on the other relay could not be opened; messages go through the relays.'), 'info');
+    return chatState.sessions.get(peerRecord.peerId) || null;
+  }
+  const linked = bindDataConnection(peerRecord, link, true);
+  linked.silent = Boolean(silent);
+  return chatState.sessions.get(peerRecord.peerId) || null;
+}
+if (!chatState.peer) {
+  if (!silent) notify(t('هنوز به سرور چت وصل نشده‌اید.', 'Not connected to the chat server yet.'), 'warning');
+  return null;
+}
+/* A data channel takes the same TURN a call does when the direct path does
+   not open, so its credentials are refreshed and ordered first. */
+if (typeof ensureFreshTurnCredentials === 'function') await ensureFreshTurnCredentials();
+if (typeof prepareIceForContact === 'function') prepareIceForContact(peerRecord);
+const connection = chatState.peer.connect(peerRecord.peerId, {
+reliable: true,
+metadata: {
+clientId: chatState.clientId || chatState.peerId,
+username: chatState.profile.name,
+publicKeyData: chatState.identity?.publicKeyData || '',
+fingerprint: chatState.identity?.fingerprint || '',
+},
+});
+const session = bindDataConnection(peerRecord, connection, true);
+session.silent = Boolean(silent);
+return chatState.sessions.get(peerRecord.peerId) || null;
+}
+
+/* Conversations already advised this session. Held on chatState so it dies
+   with the tab: the advice is about the channel's state right now, and a
+   preference that outlived a restart would suppress it when it is true. */
+const secureSessionAdvised = new Set();
+
+/* Offers to open the live session before a large attachment goes out, and
+   returns whatever session the send should then use.
+
+   The condition is narrow on purpose. It has to be a direct conversation with
+   somebody the roster says is online, the file has to be big enough that the
+   route matters, and — the part that makes it advice rather than noise —
+   there must be no open channel already. When a channel is up this does
+   nothing at all, which is the ordinary case.
+
+   Returning the session matters: startSecureSession() is what opens the
+   channel, and the caller's own `session` is a stale handle after it. */
+async function offerSecureSessionBeforeLargeSend(peer, session, file) {
+  const size = Number(file?.size || 0);
+  if (!peer || peer.type === 'group' || isSelfPeerRecord(peer)) return session;
+  if (session?.connection?.open) return session;
+  /* peerLooksOnline, not the raw field — a cross-relay contact answers to
+     their own relay, and the raw status here says 'offline' for ever. */
+  const reachable = typeof peerLooksOnline === 'function' ? peerLooksOnline(peer) : peer.status === 'online';
+  if (!reachable) return session;
+  if (size < LARGE_FILE_CONFIRM_BYTES) return session;
+  const key = getConversationKey(peer) || peer.peerId || '';
+  if (!key || secureSessionAdvised.has(key)) return session;
+  secureSessionAdvised.add(key);
+
+  const sizeText = app().formatBytes?.(size) || `${size} B`;
+  const open = await PoorijaDialogs.confirm(t(
+    `برای اطمینان از ارسال صحیح و جلوگیری از دریافت خطای ارسال، «ساخت سشن امن» را در منو بالای چت بزنید تا برای ارسال فایل‌های حجیم آماده شوید.\n\n«${file.name || 'فایل'}» (${sizeText}) الان بدون سشن زندهٔ مستقیم فرستاده می‌شود. همین حالا بسازم؟`,
+    `To make sure this goes through and to avoid a send error, tap "Create secure session" in the chat's top menu so you are ready to send large files.\n\n"${file.name || 'This file'}" (${sizeText}) would otherwise go without a live direct session. Create one now?`,
+  ), {
+    title: t('ارسال فایل حجیم', 'Sending a large file'),
+    okLabel: t('ساخت سشن امن', 'Create secure session'),
+    cancelLabel: t('بدون آن بفرست', 'Send without it'),
+  });
+  if (!open) return session;
+
+  notify(t('در حال ساخت سشن امن…', 'Creating the secure session…'), 'info');
+  const opened = await startSecureSession(peer, { silent: true });
+  /* startSecureSession returns as soon as the connection is being dialled, so
+     the channel is usually not open yet on the next line. Wait for it rather
+     than handing the send a session that is still coming up — but briefly,
+     because a send the user is watching must not hang on a peer that is not
+     answering. */
+  const deadline = Date.now() + 8000;
+  let live = opened || chatState.sessions.get(peer.peerId) || null;
+  while (Date.now() < deadline && !live?.connection?.open) {
+    await new Promise((resolve) => window.setTimeout(resolve, 150));
+    live = chatState.sessions.get(peer.peerId) || live;
+  }
+  if (!live?.connection?.open) {
+    notify(t(
+      'سشن امن در این مهلت باز نشد؛ ارسال با مسیر موجود ادامه می‌یابد.',
+      'The secure session did not open in time; the send continues on the route available.',
+    ), 'warning');
+  }
+  return live || session;
+}
+
+async function sendMessage() {
+if (!guardGroupSend('sendMessages')) return;
+if (chatState.voiceDraft) {
+await sendVoiceDraft();
+return;
+}
+const composer = document.getElementById('chatComposer');
+const text = composer?.value.trim();
+if (!text) return;
+if (chatState.editingMessageId) {
+await finalizeMessageEdit(chatState.editingMessageId, text);
+return;
+}
+/* Saved Messages: written here and nowhere else (46-saved-messages.js). */
+if (getActiveConversation()?.type === 'saved' && typeof keepTextInSaved === 'function') {
+await keepTextInSaved(text);
+return;
+}
+let session = activeSession();
+const peer = getActiveConversation();
+const directPeer = activePeer();
+if (!peer || !composer) return;
+const messageId = generateId('msg');
+const timerSeconds = Number(chatState.timerSeconds || 0);
+/* One-shot: marking a message hidden applies to this send only, the same way
+   the self-destruct timer badge does not persist across messages. */
+const hiddenMessage = isHiddenComposeActive();
+chatState.hiddenNext = false;
+syncHiddenToggleUi();
+
+if (timerSeconds > 0 && directPeer) {
+// Same ordering trap as the file path: without this the first self-destruct
+// message of a conversation is refused because its session does not exist yet.
+if (!session?.cryptoKey) {
+session = await ensureDirectSession(directPeer);
+}
+const liveChannel = Boolean(session?.connection?.open);
+/* peerLooksOnline, not the raw field: a cross-relay contact is answered by
+   their own relay, and the raw status on this side says 'offline' forever —
+   which made every self-destruct message to one refuse to send while their
+   dot was green. */
+const peerReachable = typeof peerLooksOnline === 'function'
+? peerLooksOnline(directPeer) : directPeer.status === 'online';
+if (!session?.cryptoKey || (!liveChannel && !peerReachable)) {
+const reason = !session?.cryptoKey
+? t('سشن امن هنوز آماده نیست', 'the secure session is not ready yet')
+: t('کاربر آفلاین است', 'the peer is offline');
+notify(t(`پیام خودتخریب ارسال نشد — ${reason}.`, `Self-destruct message not sent — ${reason}.`), 'warning');
+return;
+}
+}
+
+const replyToId = chatState.replyToId;
+const createdAt = new Date().toISOString();
+const clearComposer = () => {
+composer.value = '';
+/* The draft store is written from the composer's input event, and clearing the
+   box in code fires no such event — so the text that was just sent stayed
+   filed as a draft and came back the next time the conversation was opened. */
+setDraft(chatState.activeConversationId, '');
+syncComposerHeight(composer);
+clearMessageContext();
+};
+if (peer.type === 'group') {
+/* No write-back. groupDeliveryMemberKeys resolves each member to whatever key
+   they are reachable by right now — usually a peerId, which changes between
+   sessions. Persisting that replaced the stable fingerprint roster the group
+   was created with, so removals matched nothing and a reconnected peer looked
+   like a stranger. The delivery list is derived; it stays derived. */
+const preview = typeof takeComposerPreview === 'function' ? takeComposerPreview(text) : null;
+const entry = appendHistory(peer.conversationId, {
+id: messageId,
+direction: 'out',
+type: 'text',
+text,
+...(preview ? { preview } : {}),
+hidden: hiddenMessage,
+senderName: chatState.profile.name || t('شما', 'You'),
+senderPeerId: chatState.peerId || '',
+senderFingerprint: chatState.identity?.fingerprint || '',
+status: 'queued',
+expiresAt: '',
+timerSeconds,
+replyToId,
+createdAt,
+});
+clearComposer();
+await deliverTextEntry(peer, entry || { id: messageId, text, timerSeconds, replyToId, hidden: hiddenMessage, createdAt, preview });
+return;
+}
+const targetPeer = directPeer || (peer && !peer.type ? peer : null);
+if (!targetPeer) return;
+if (isSelfPeerRecord(targetPeer)) {
+notify(t('ارسال پیام به خود همین سشن مجاز نیست.', 'Sending a message to the current session itself is not allowed.'), 'warning');
+return;
+}
+const directPreview = typeof takeComposerPreview === 'function' ? takeComposerPreview(text) : null;
+const entry = appendHistory(getConversationKey(targetPeer), {
+id: messageId,
+direction: 'out',
+type: 'text',
+text,
+...(directPreview ? { preview: directPreview } : {}),
+status: 'queued',
+expiresAt: '',
+hidden: hiddenMessage,
+timerSeconds,
+replyToId,
+createdAt,
+});
+clearComposer();
+await deliverTextEntry(targetPeer, entry || { id: messageId, text, timerSeconds, replyToId, hidden: hiddenMessage, createdAt, preview: directPreview });
+}
+
+/* Encrypts and sends one text message already written into history.
+ *
+ * Split out of sendMessage so that a message sent later — a scheduled one
+ * (47-scheduled-send.js) — takes exactly the path a message sent now takes:
+ * the same session, the same relay fallback, the same status ticks. Two
+ * copies of this logic would be two places for the next fix to miss.
+ * `interactive` is false when nobody just pressed send: the toasts that
+ * explain a slow first send are then left out. */
+async function deliverTextEntry(conversation, entry, { interactive = true, forceRelay = false } = {}) {
+if (!conversation || !entry?.id) return false;
+const messageId = entry.id;
+const text = String(entry.text || '');
+const timerSeconds = Number(entry.timerSeconds || 0);
+const replyToId = entry.replyToId || '';
+const hiddenMessage = Boolean(entry.hidden);
+const createdAt = entry.createdAt || new Date().toISOString();
+/* A sender-made link preview (54-link-preview.js) travels inside the
+   encryption with the text it belongs to. */
+const preview = typeof sanitizeLinkPreview === 'function' ? sanitizeLinkPreview(entry.preview) : null;
+if (conversation.type === 'group') {
+const peer = conversation;
+const members = groupDeliveryMemberKeys(peer);
+let delivered = 0;
+/* Roster keys this device cannot seal to — no record, or no key on it. They
+   used to be skipped without a word; now the message remembers who it missed
+   and their cards are asked for, so it reaches them when the cards arrive. */
+const skippedMembers = [];
+/* Sender Keys (roadmap 3.1, js/crypto/sender-keys.js): what is said is sealed
+   ONCE, under the next key of this device's chain for the group and signed
+   with its group key; every member who reads 'sk1' gets that one sealed copy
+   and the chain to open it with, inside the pairwise ratchet. The chain is
+   renewed as soon as anyone it was handed to has left. A member on an older
+   build gets the message as before, sealed to them alone. */
+let groupSealed = null;
+const sealOnceForGroup = async () => {
+  if (groupSealed !== null) return groupSealed;
+  groupSealed = false;
+  try {
+    if (typeof PoorijaSenderKeys !== 'object' || !chatState.identity?.fingerprint) return groupSealed;
+    const memberFps = members.map((key) => findPeerByAnyKey(key)).filter((m) => m && !isSelfPeerRecord(m) && m.fingerprint).map((m) => m.fingerprint);
+    const content = { text, replyToId, hidden: hiddenMessage, timerSeconds, senderName: chatState.profile.name || t('شما', 'You'), ...(preview ? { preview } : {}) };
+    groupSealed = await PoorijaSenderKeys.sealForGroup(peer.conversationId, chatState.identity.fingerprint, memberFps, new TextEncoder().encode(JSON.stringify(content)));
+  } catch (error) {
+    console.warn('[Sender keys] sealed per member instead:', error?.message || error);
+    groupSealed = false;
+  }
+  return groupSealed;
+};
+for (const memberId of members) {
+const member = findPeerByAnyKey(memberId);
+if (member && isSelfPeerRecord(member)) continue;
+if (!member || !member.publicKeyData) { skippedMembers.push(member?.fingerprint || memberId); continue; }
+let memberSession = await ensureStoredSession(member);
+if (!memberSession?.cryptoKey) {
+/* An offline member used to be skipped here, leaving holes in their copy
+   of the group. ensureDirectSession mints an offline key instead. */
+memberSession = await ensureDirectSession(member, { silent: true });
+}
+if (!memberSession?.cryptoKey) { skippedMembers.push(member.fingerprint || memberId); continue; }
+const spacePayload = {
+spaceId: peer.conversationId,
+spaceType: 'group',
+spaceName: peer.name,
+/* Stored roster, not the derived delivery list — see sendRichMessage. */
+members: normalizeSpaceMembers(peer.members),
+ownerPeerId: peer.ownerPeerId || chatState.peerId || '',
+ownerClientId: peer.ownerClientId || chatState.clientId || '',
+ownerFingerprint: peer.ownerFingerprint || '',
+messageId,
+text,
+senderName: chatState.profile.name || t('شما', 'You'),
+senderPeerId: chatState.peerId || '',
+senderFingerprint: chatState.identity?.fingerprint || '',
+createdAt,
+expiresAt: '',
+timerSeconds,
+replyToId,
+hidden: hiddenMessage,
+...(preview ? { preview } : {}),
+};
+const sealedOnce = typeof peerSupports === 'function' && peerSupports(member, 'sk1') ? await sealOnceForGroup() : false;
+if (sealedOnce) {
+  /* The words travel in the one sealed copy; this member's copy carries it
+     and the chain, under the pairwise ratchet as before. */
+  for (const field of ['text', 'replyToId', 'hidden', 'timerSeconds', 'senderName', 'preview']) delete spacePayload[field];
+  spacePayload.sk = sealedOnce.wire;
+  spacePayload.skd = sealedOnce.distribution;
+}
+const payload = await encryptForSession(memberSession, new TextEncoder().encode(JSON.stringify(spacePayload)), 'space-message');
+const outbound = { id: messageId, type: 'space-message', createdAt, payload };
+/* `open` does not mean `send succeeded`: PeerJS can throw on a congested
+   channel and swallow it. Only a true return counts as delivered, so the
+   relay fallback gets its chance instead of a silent loss wearing a ✓. */
+if (memberSession.connection?.open
+&& safeConnectionSend(memberSession.connection, outbound, 'group-message')) {
+delivered += 1;
+} else if (await sendSealedRelay(member, memberSession, outbound, { createdAt: outbound.createdAt, scope: 'group' })) {
+delivered += 1;
+} else if (typeof prekeyHybridMissing === 'function' && await prekeyHybridMissing(member)) {
+/* Not sealed for this member: they are owed a seal with a post-quantum half
+   and no prekey of theirs is in hand. Their copy is remembered as missed and
+   goes when one arrives, the way a member with no card is caught up. */
+skippedMembers.push(member.fingerprint || memberId);
+}
+}
+markMessageStatus(peer.conversationId, messageId, delivered ? 'sent' : 'queued');
+if (skippedMembers.length) {
+const sentEntry = (chatState.history[peer.conversationId] || []).find((item) => item.id === messageId);
+if (sentEntry) { sentEntry.skippedMembers = skippedMembers; storeHistory(); }
+if (typeof requestMemberCards === 'function') requestMemberCards(peer, skippedMembers);
+}
+if (interactive && !delivered && members.length && !skippedMembers.length) {
+notify(t('پیام گروه ذخیره شد؛ بعد از آماده شدن سشن اعضا دوباره تلاش کنید.', 'Group message was saved; retry after member sessions are ready.'), 'warning');
+}
+return delivered > 0;
+}
+const targetPeer = conversation;
+const conversationKey = getConversationKey(targetPeer);
+/* The gate checked whoever was open; this is whoever it is going to. */
+if (typeof refuseIfVerifiedKeyChanged === 'function' && refuseIfVerifiedKeyChanged(targetPeer, { quiet: !interactive })) {
+markMessageStatus(conversationKey, messageId, 'failed');
+return false;
+}
+let session = chatState.sessions.get(targetPeer.peerId) || null;
+if (!session?.cryptoKey) {
+if (interactive) notify(t('در حال ساخت سشن امن برای ارسال پیام...', 'Creating secure session before sending...'), 'info');
+session = await ensureDirectSession(targetPeer);
+}
+/* The live channel did not come up in time. That used to end the send with
+   "not ready yet, try again", and the message sat marked failed until
+   somebody pressed send a second or third time, or the other person wrote
+   first. The relay needs no channel: the key is made here and travels sealed
+   to their identity key inside the envelope, the way a message to somebody
+   offline always has. */
+if (!session?.cryptoKey) session = await relaySessionFor(targetPeer);
+if (!session?.cryptoKey) {
+markMessageStatus(conversationKey, messageId, 'failed');
+if (interactive) notify(t('برای این مخاطب کلیدی در دست نیست؛ پیام فرستاده نشد. کارت مخاطب را دوباره اضافه کنید.', 'There is no key for this contact, so the message was not sent. Add their contact card again.'), 'warning');
+return false;
+}
+/* A key from before, no channel, and they are online: a channel is dialled
+   for the message now, and waited for briefly. Only when it does not open
+   does the message take the relay — and the sender is told. */
+if (!forceRelay && !session.connection?.open) session = await dialForSend(targetPeer, session);
+/* The channel that came up may be in the middle of exchanging its key, and
+   has none until that ends: a session is keyed by the exchange or not at
+   all, and there is no longer a second way that would have filled the gap.
+   The message does not wait on it, and must not be encrypted under nothing —
+   it goes by the relay, sealed, like any other sent with no channel.
+   Under a session of its own, made for this one message: giving the live
+   session a stand-in key would have this side send down the channel under a
+   key the other end does not hold, and would leave that key sitting where
+   the exchange is about to put the real one. */
+if (!session?.cryptoKey) {
+session = await prepareOfflineSession({ peerId: targetPeer.peerId, conversationId: conversationKey }, targetPeer).catch(() => null);
+}
+if (!session?.cryptoKey) {
+markMessageStatus(conversationKey, messageId, 'failed');
+return false;
+}
+const payload = await encryptForSession(session, new TextEncoder().encode(text), 'text');
+const outbound = {
+type: 'text',
+id: messageId,
+createdAt: new Date().toISOString(),
+expiresAt: '',
+timerSeconds,
+replyToId,
+hidden: hiddenMessage,
+payload,
+};
+if (preview) outbound.previewPayload = await encryptForSession(session, new TextEncoder().encode(JSON.stringify(preview)), 'text.preview');
+/* Same rule as the group path: a data-channel send that throws must not be
+   reported as sent. Fall through to the relay queue so the message survives
+   a flaky channel instead of dying with a confident tick. */
+if (!forceRelay && session.connection?.open
+&& safeConnectionSend(session.connection, outbound, 'text-message')) {
+markMessageStatus(conversationKey, messageId, 'sent');
+/* "Sent" on a live channel means handed to it, not received: a channel
+   can look open after the other end has gone, and a message the other end
+   could not open is dropped there. Neither comes back as anything, so an
+   answer is waited for, and without one the message goes again through
+   the relay (watchLiveDelivery). */
+watchLiveDelivery(targetPeer, messageId, () => deliverTextEntry(targetPeer, entry, { interactive: false, forceRelay: true }));
+} else {
+const relayed = await sendSealedRelay(targetPeer, session, outbound, { createdAt: outbound.createdAt });
+/* The copy in the history is the one that is kept; `entry` may be a stand-in. */
+const kept = (chatState.history[conversationKey] || []).find((item) => item.id === messageId) || null;
+if (!relayed && typeof prekeyHybridMissing === 'function' && await prekeyHybridMissing(targetPeer)) {
+/* Not sealed at all: this contact is owed a seal with a post-quantum half
+   and there is no prekey of theirs in hand to make one with. It waits here
+   and goes when one arrives (releaseHeldForPrekey). */
+if (kept && kept.heldFor !== 'prekey') { kept.heldFor = 'prekey'; storeHistory(); }
+markMessageStatus(conversationKey, messageId, 'queued');
+noteHeldForPrekey(targetPeer);
+return true;
+}
+if (kept?.heldFor) { delete kept.heldFor; storeHistory(); }
+markMessageStatus(conversationKey, messageId, 'queued');
+/* Said only of what happened: handed to the relay is "went through the relay";
+   not handed to anything is "waiting for the connection". */
+if (interactive && !forceRelay) { if (relayed) noteRelayRoute(targetPeer); else noteWaitingForConnection(); }
+}
+return true;
+}
+
+/* A message written while there is no connection waits for it. Said once for
+   each time the connection is lost, and not at all while it is up (a relay that
+   is merely slow is not "no connection"). */
+function noteWaitingForConnection() {
+if (chatState.connected && chatState.ws?.readyState === WebSocket.OPEN) return;
+if (chatState.waitingNoted) return;
+chatState.waitingNoted = true;
+notify(t('اتصال برقرار نیست؛ پیام ذخیره شد و با برگشتن اتصال خودش فرستاده می‌شود.', 'There is no connection; the message is kept and goes by itself when it is back.'), 'info');
+}
+/* Said once for a contact, not once for a message. */
+const heldForPrekeyNoted = new Set();
+function noteHeldForPrekey(peerRecord) {
+const key = getConversationKey(peerRecord);
+if (!key || heldForPrekeyNoted.has(key)) return;
+heldForPrekeyNoted.add(key);
+const name = peerRecord.username || peerRecord.name || t('این مخاطب', 'this contact');
+notify(t(
+`پیام برای «${name}» روی همین دستگاه نگه داشته شد: کلید پساکوانتومی تازه‌ای از او در دست نیست و پیام با رمزنگاری ضعیف‌تر فرستاده نمی‌شود. با رسیدن کلید، خودش می‌رود.`,
+`The message for "${name}" is being held on this device: there is no current post-quantum key of theirs to seal it with, and it is not sent with weaker encryption. It goes by itself when one arrives.`,
+), 'info');
+}
+/* A prekey with both halves came in for this contact: what was held for it
+   is sent, oldest first, one pass at a time. */
+async function releaseHeldForPrekey(peerRecord) {
+const conversationKey = getConversationKey(peerRecord);
+if (!conversationKey || releaseHeldForPrekey.busy?.has(conversationKey)) return;
+(releaseHeldForPrekey.busy ||= new Set()).add(conversationKey);
+try {
+const held = (chatState.history[conversationKey] || []).filter((item) => item.direction === 'out' && item.heldFor === 'prekey' && item.status === 'queued');
+for (const entry of held) {
+if (entry.type && entry.type !== 'text') continue;
+await deliverTextEntry(peerRecord, entry, { interactive: false, forceRelay: true });
+}
+heldForPrekeyNoted.delete(conversationKey);
+/* And the group messages their copy was skipped for. */
+if (typeof noteMemberReachable === 'function') noteMemberReachable(peerRecord);
+} finally {
+releaseHeldForPrekey.busy.delete(conversationKey);
+}
+}
+
+const SEND_DIAL_WAIT_MS = 5000;
+async function dialForSend(peerRecord, session) {
+const online = typeof peerLooksOnline === 'function' ? peerLooksOnline(peerRecord) : peerRecord?.status === 'online';
+if (!online || !chatState.connected || !chatState.peer) return session;
+try {
+if (!session.connection) await startSecureSession(peerRecord, { silent: true });
+const startedAt = Date.now();
+while (Date.now() - startedAt < SEND_DIAL_WAIT_MS) {
+const current = chatState.sessions.get(peerRecord.peerId) || session;
+/* Open, and its key agreed on this connection — sending under the old key
+   down a new channel would only be refused at the other end. */
+if (current.connection?.open && current.cryptoKey && current.keyNegotiatedFor === current.connection) return current;
+await new Promise((resolve) => setTimeout(resolve, 150));
+}
+} catch (error) {
+console.warn('[Chat] dialling for a send failed:', error);
+}
+return chatState.sessions.get(peerRecord.peerId) || session;
+}
+
+/* A session that can send whatever the channel. When no live channel came up,
+   the key is minted here for the relay route (prepareOfflineSession); null
+   only when there is no public key to seal it to. */
+async function relaySessionFor(peerRecord) {
+const session = await ensureStoredSession(peerRecord);
+/* A live channel with no key is one exchanging its key. It is not given a
+   stand-in: the message would then go down the channel under a key the other
+   end does not hold, and the stand-in would be sitting where the exchange is
+   about to put the real one. The message gets a session of its own, with no
+   channel, so it can only go by the relay. */
+if (session && !session.cryptoKey && session.connection?.open) {
+const relayOnly = await prepareOfflineSession({
+peerId: session.peerId, conversationId: session.conversationId, remoteFingerprint: session.remoteFingerprint,
+}, peerRecord).catch(() => null);
+return relayOnly?.cryptoKey ? relayOnly : null;
+}
+if (session && !session.cryptoKey) {
+try { await prepareOfflineSession(session, peerRecord); } catch (error) { console.warn('[Chat] a relay session could not be made:', error); }
+}
+return session?.cryptoKey ? session : null;
+}
+
+/* Said once per conversation per run, and only while they look online: going
+   through the relay to somebody who is away is the normal road, not news. */
+const relayRouteNoted = new Set();
+function noteRelayRoute(peerRecord) {
+const key = getConversationKey(peerRecord);
+if (!key || relayRouteNoted.has(key)) return;
+const online = typeof peerLooksOnline === 'function' ? peerLooksOnline(peerRecord) : peerRecord?.status === 'online';
+if (!online) return;
+relayRouteNoted.add(key);
+const name = peerRecord.username || peerRecord.name || t('این مخاطب', 'this contact');
+notify(t(
+`کانال امن مستقیم با «${name}» برقرار نشد؛ پیام از راه رله فرستاده شد و همچنان رمزنگاری سرتاسری است.`,
+`A direct secure channel to "${name}" could not be opened; the message went through the relay and is still end-to-end encrypted.`,
+), 'info');
+}
+
+/* Waits for a message handed to a live channel to be acknowledged, and sends
+   it again through the relay when it is not. The far side keeps one copy of a
+   message it gets twice (by id), so a late answer costs a duplicate envelope,
+   never a duplicate message. */
+const LIVE_DELIVERY_WAIT_MS = 10000;
+function watchLiveDelivery(peerRecord, messageId, resend, waitMs = LIVE_DELIVERY_WAIT_MS) {
+const conversationKey = getConversationKey(peerRecord);
+if (!conversationKey || !messageId || typeof resend !== 'function') return;
+setTimeout(() => {
+const entry = (chatState.history[conversationKey] || []).find((item) => item.id === messageId);
+if (!entry || entry.direction !== 'out') return;
+if (chatStatusRank(entry.status) >= chatStatusRank('delivered')) return;
+if (entry.status === 'failed') return;
+console.warn(`[Chat] no answer for ${messageId} on the live channel; sending it again through the relay`);
+Promise.resolve(resend()).catch((error) => console.warn('[Chat] resending through the relay failed:', error));
+}, waitMs);
+}
+// A file upload used to happen in complete silence, so a slow transfer looked
+// like nothing was happening at all. Telegram shows progress at the top of the
+// thread; so do we.
+/* Which transfer the banner is currently showing. A send and a receive can
+   overlap, and without this the one that finishes first hides the banner out
+   from under the one still running. */
+let transferBannerOwner = '';
+function setTransferBanner(label, percent = null, options = {}) {
+const { detail = '', owner = '', incoming = false } = typeof options === 'string' ? { detail: options } : options;
+const banner = document.getElementById('chatTransferBanner');
+const text = document.getElementById('chatTransferBannerText');
+const detailNode = document.getElementById('chatTransferBannerDetail');
+const icon = document.getElementById('chatTransferBannerIcon');
+const fill = document.getElementById('chatTransferBarFill');
+if (!banner || !text) return;
+transferBannerOwner = owner;
+banner.classList.remove('hidden');
+text.textContent = label;
+if (detailNode) {
+detailNode.textContent = detail;
+detailNode.classList.toggle('hidden', !detail);
+}
+if (icon) icon.className = incoming ? 'fas fa-download' : 'fas fa-arrow-up-from-bracket';
+if (fill) fill.style.width = percent === null ? '0%' : `${Math.max(0, Math.min(100, Math.round(percent)))}%`;
+banner.classList.toggle('is-indeterminate', percent === null);
+banner.classList.toggle('is-incoming', Boolean(incoming));
+/* A send in progress is one tap from stopped. Picking the wrong
+   multi-gigabyte file used to mean watching it grind or reloading the
+   app; the decline path had a flag all along and only the recipient
+   could set it. */
+banner.onclick = null;
+banner.title = '';
+banner.style.cursor = '';
+if (!incoming && typeof owner === 'string' && owner.startsWith('send:')
+&& typeof cancelOutgoingTransfer === 'function') {
+const messageId = owner.slice('send:'.length);
+banner.title = t('برای لغو ارسال کلیک کنید', 'Click to cancel the transfer');
+banner.style.cursor = 'pointer';
+banner.onclick = () => {
+for (const [transferId, entry] of chatState.outgoingFiles.entries()) {
+if ((entry?.messageId || '') === messageId) { cancelOutgoingTransfer(transferId); break; }
+}
+};
+}
+}
+function clearTransferBanner(delay = 700, owner = '') {
+window.setTimeout(() => {
+if (owner && transferBannerOwner !== owner) return;
+transferBannerOwner = '';
+document.getElementById('chatTransferBanner')?.classList.add('hidden');
+}, delay);
+}
+async function sendFile(file) {
+return sendEncryptedBlob(file, 'file', 0);
+}
+/* `extra` rides along on both the local history entry and the wire message so a
+   sticker keeps its emoji and its animation kind on the far side. Files and
+   voice notes pass nothing and behave exactly as before. */
+/* Cleaning a file on its way out.
+ *
+ * A format the module does not recognise is passed through untouched - saying
+ * "cleaned" about a file nothing was read from is the promise this project
+ * does not make. And when the setting is off, a file that really is carrying a
+ * location or a name says so once, rather than leaving silently. */
+/* Turning a photograph the cleaner cannot open into one it can.
+ *
+ * A HEIC has its picture data indexed by byte offsets, so nothing can be
+ * removed from it without moving the picture out from under its own index.
+ * Re-encoding sidesteps that entirely: the pixels are decoded and written out
+ * again as a fresh JPEG, and a fresh JPEG carries nothing but the pixels - no
+ * camera, no location, no timestamps, because none of it was ever put in.
+ *
+ * The catch is decoding. Safari and iOS read HEIC; Chrome and Firefox on the
+ * desktop do not, and there is no polyfill here worth its weight. So this
+ * tries, and says plainly when it cannot rather than pretending.
+ *
+ * It is offered, never automatic: re-encoding is lossy, and quietly turning
+ * somebody's photograph into a smaller different one is not a decision to make
+ * on their behalf. */
+async function canDecodeImage(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    bitmap.close?.();
+    return true;
+  } catch (_error) { /* the engine cannot; the container still might */ }
+  /* WebKit decodes HEIC and Chromium does not, so this used to answer no on
+     Android and Linux and the photograph went out with its metadata intact --
+     the one outcome the offer exists to avoid. A HEIC carries a finished JPEG
+     beside its HEVC data, and that is enough to re-encode from. */
+  try {
+    await window.PoorijaImageFormats?.toDrawableDataUrl(file);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+async function convertImageToJpeg(file, quality = 0.92) {
+  /* Through the format module rather than straight to createImageBitmap: on
+     an engine that cannot read the container it returns the embedded preview,
+     which re-encodes just as well and is the difference between converting
+     the photograph and sending it untouched. */
+  const drawable = window.PoorijaImageFormats
+    ? await fetch((await window.PoorijaImageFormats.toDrawableDataUrl(file)).dataUrl).then((r) => r.blob())
+    : file;
+  const bitmap = await createImageBitmap(drawable);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const paint = canvas.getContext('2d');
+  paint.drawImage(bitmap, 0, 0);
+  bitmap.close?.();
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+  if (!blob) throw new Error('the picture could not be re-encoded');
+  const name = file.name ? file.name.replace(/\.[^.]+$/, '') : 'photo';
+  return new File([blob], `${name}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+}
+/* Asked once per file, and only for a format nothing can clean. */
+async function offerJpegConversion(file, formatLabel) {
+  if (!await canDecodeImage(file)) {
+    notify(t(`متادیتای ${formatLabel} پاک نمی‌شود و این مرورگر هم نمی‌تواند بازش کند تا تبدیلش کند؛ فایل همان‌طور که هست فرستاده شد.`,
+      `Metadata in ${formatLabel} is not removed, and this browser cannot decode it to convert either; the file was sent as it is.`), 'warning');
+    return file;
+  }
+  const choice = await PoorijaDialogs.choose(
+    t(`متادیتای ${formatLabel} پاک نمی‌شود. تبدیل به JPEG متادیتا را کامل حذف می‌کند، ولی کیفیت کمی کم می‌شود و فایل عوض می‌شود.`,
+      `Metadata in ${formatLabel} cannot be removed. Converting to JPEG removes it completely, at the cost of a re-encode.`),
+    [
+      { value: 'convert', label: t('تبدیل به JPEG و ارسال', 'Convert to JPEG and send'), hint: t('متادیتا کامل می‌رود', 'nothing carries over') },
+      { value: 'asis', label: t('همین‌طور بفرست', 'Send it as it is'), hint: t('متادیتا دست‌نخورده می‌ماند', 'metadata stays in the file') },
+    ],
+    { cancelLabel: t('انصراف', 'Cancel') },
+  );
+  if (choice !== 'convert') {
+    if (choice === 'asis') {
+      notify(t('فایل با متادیتای خودش فرستاده شد.', 'The file was sent with its metadata.'), 'info');
+    }
+    return choice === 'asis' ? file : null;
+  }
+  try {
+    const jpeg = await convertImageToJpeg(file);
+    notify(t('به JPEG تبدیل شد؛ متادیتا همراهش نیامد.', 'Converted to JPEG; no metadata came with it.'), 'success');
+    return jpeg;
+  } catch (error) {
+    notify(t('تبدیل ممکن نشد؛ فایل همان‌طور که هست فرستاده شد.', 'The conversion failed; the file was sent as it is.'), 'warning');
+    return file;
+  }
+}
+
+window.__jpegConvertProbe = (file) => convertImageToJpeg(file);
+async function stripFileMetadataForSend(file) {
+  if (!window.PoorijaMetadata || !file) return file;
+  if (!app().metadataSettings?.().stripOnSend) {
+    try {
+      /* Same reasoning on this side: no whole-file read just to word a warning. */
+      if (file.size > window.PoorijaMetadata.WHOLE_FILE_CEILING) return file;
+      if (await window.PoorijaMetadata.sniffBlob(file) === 'unknown') return file;
+      const read = await window.PoorijaMetadata.readMetadata(file);
+      const risky = (read.fields || []).filter((f) => f.risk === 'location' || f.risk === 'identity');
+      if (risky.length) {
+        notify(t(`این فایل ${risky.length} مورد مکان یا هویت دارد و پاک‌سازی خاموش است.`,
+          `This file carries ${risky.length} location or identity field(s) and cleaning is off.`), 'warning');
+      }
+    } catch (error) { /* the warning is a courtesy; its failure must not block a send */ }
+    return file;
+  }
+  try {
+    /* Look at the header before touching the file. Reading a large video into
+       memory to find out it has no metadata worth removing would undo the
+       chunked transfer this path was built around. */
+    const format = await window.PoorijaMetadata.sniffBlob(file);
+    if (format === 'unknown') return file;
+    /* A format this build cannot open is said out loud rather than passed over
+       in silence. HEIC and HEIF photographs from phones land here: their
+       picture data is found through byte offsets recorded elsewhere in the
+       file, so nothing can be removed without moving the picture out from
+       under its own index. Sending it untouched is the only safe answer, and
+       with cleaning switched on the sender has every reason to assume it was
+       cleaned unless told otherwise. */
+    const strippable = window.PoorijaMetadata.STRIPPABLE || [];
+    if (!strippable.includes(format)) {
+      const known = { heif: 'HEIC/HEIF' }[format] || format;
+      /* A photograph can be offered a way out: re-encoding drops everything.
+         Anything else is simply reported. */
+      if (format === 'heif' && app().metadataSettings?.().offerHeicConvert !== false) {
+        return await offerJpegConversion(file, known);
+      }
+      notify(t(`متادیتای فایل‌های ${known} پاک نمی‌شود؛ این فایل همان‌طور که هست فرستاده شد.`,
+        `Metadata in ${known} files is not removed; this one was sent as it is.`), 'warning');
+      return file;
+    }
+    if (file.size > window.PoorijaMetadata.WHOLE_FILE_CEILING) {
+      notify(t('این فایل برای پاک‌سازی متادیتا خیلی بزرگ است و همان‌طور که هست فرستاده می‌شود.',
+        'This file is too large to clean, and is being sent as it is.'), 'warning');
+      return file;
+    }
+    const out = await window.PoorijaMetadata.stripMetadata(file);
+    if (!out.supported || !out.removed.length) return file;
+    return new File([out.blob], file.name, { type: file.type, lastModified: Date.now() });
+  } catch (error) {
+    /* A file that could not be cleaned is sent as it was, never dropped. */
+    console.warn('[Chat] metadata could not be stripped; sending the file as it is:', error);
+    return file;
+  }
+}
+window.__metadataOnSendProbe = (file) => stripFileMetadataForSend(file);
+
+/* A File is a handle, not the bytes. What a paste, a drop or a keyboard hands
+   over on Android is a temporary file the system deletes when it pleases, and
+   the bubble of a sent GIF drew from it — so after a while the picture went
+   blank, and came back only when a restart redrew it from the vault. Anything
+   the vault would keep is copied into memory first; larger files stay handles,
+   because reading gigabytes in would cost more than it saves. */
+async function holdFileInMemory(file) {
+if (!file || file.size > MEDIA_VAULT_MAX_FILE_BYTES) return file;
+try {
+return new File([await file.arrayBuffer()], file.name || 'file', { type: file.type || '', lastModified: file.lastModified || Date.now() });
+} catch (error) {
+console.warn('[Chat] the file could not be read into memory; sending the handle:', error);
+return file;
+}
+}
+async function sendEncryptedBlob(file, kind = 'file', durationMs = 0, extra = {}) {
+/* One gate per kind of thing, because "no media" and "no files" are different
+   rules a group might want: a voice note is not a photo and a spreadsheet is
+   neither. Stickers ride the media rule, which is what they look like. */
+const permission = kind === 'voice' ? 'sendVoice'
+  : (kind === 'sticker' ? 'sendStickers'
+  : (kind === 'file' && !extra?.photo && !extra?.video ? 'sendFiles' : 'sendMedia'));
+if (!guardGroupSend(permission)) return;
+/* A large file to a contact whose safety number was never compared: one line
+   above the composer says so (66-key-transparency.js). It does not stop it. */
+try { if (kind === 'file' && typeof noteHighRiskAction === 'function') noteHighRiskAction(activePeer?.(), 'file', Number(file?.size) || 0); } catch (_error) { /* a line of advice never stops a send */ }
+/* What a file says about itself goes before the file does. Cleaned here, on
+   this device, and before encryption - so what the relay carries is already
+   clean rather than trusted to have been cleaned somewhere else. */
+file = await stripFileMetadataForSend(file);
+/* null means the question about this file was cancelled, not that anything
+   failed - so the send stops here rather than going ahead with nothing. */
+if (!file) return;
+file = await holdFileInMemory(file);
+/* Same one-shot toggle as hidden text: consumed by this send. */
+const privateSend = isHiddenComposeActive();
+if (privateSend) {
+chatState.hiddenNext = false;
+syncHiddenToggleUi();
+}
+let session = activeSession();
+const conversation = getActiveConversation();
+const peer = activePeer();
+/* Said out loud rather than returned from.
+   A file chosen with no conversation open used to end here in silence: the
+   picker closed, nothing appeared, nothing failed, and the only reading
+   available was that sending is unreliable. It is a perfectly ordinary thing
+   to do — the composer's plus button is reachable from a list with nothing
+   selected — and it deserves an answer. */
+if (!file) return;
+if (!conversation) {
+  notify(t('اول یک گفتگو را باز کنید، بعد فایل را بفرستید.',
+    'Open a conversation first, then send the file.'), 'warning');
+  return;
+}
+/* Saved Messages keeps the file in this device's vault; nothing is sent. */
+if (conversation.type === 'saved' && typeof keepBlobInSaved === 'function') {
+await keepBlobInSaved(file, kind, durationMs, extra, privateSend);
+return;
+}
+/* Checked again here, after the awaits above: the conversation open now is
+   the one the file is going to, whatever was open at the gate. */
+if (typeof refuseIfVerifiedKeyChanged === 'function' && refuseIfVerifiedKeyChanged(conversation)) return;
+if (file.size > MAX_FILE_BYTES) {
+notify(t(`حداکثر حجم فایل ${app().formatBytes(MAX_FILE_BYTES)} است`, `Files are limited to ${app().formatBytes(MAX_FILE_BYTES)}`), 'warning');
+return;
+}
+if (conversation.type === 'group') {
+const historyId = generateId(kind === 'voice' ? 'voice' : 'file');
+const localUrl = URL.createObjectURL(file);
+const timerSeconds = Number(chatState.timerSeconds || 0);
+
+// (The self-destruct guard that used to sit here tested `!conversation.type`
+// inside the branch taken only when the type IS 'group' — it could never fire.)
+
+const expiresAt = ''; // Start timer only on delivery
+const createdAt = new Date().toISOString();
+const members = groupDeliveryMemberKeys(conversation);
+/* groupDeliveryMemberKeys resolves every member to whatever key the peer is
+   reachable by right now — usually a peerId, which changes between sessions.
+   Writing that back into space.members replaced the stable fingerprint roster
+   the group was created with, so after the first message the member list was
+   full of volatile ids: removals matched nothing and a reconnected peer looked
+   like a stranger. The delivery list is derived; it must not be persisted. */
+/* No write-back. groupDeliveryMemberKeys resolves each member to whatever key
+   they are reachable by right now — usually a peerId, which changes between
+   sessions. Persisting that replaced the stable fingerprint roster the group
+   was created with, so removals matched nothing and a reconnected peer looked
+   like a stranger. The delivery list is derived; it stays derived. */
+
+persistMessageMedia(conversation.conversationId, { id: historyId, type: kind, name: file.name, mime: file.type, createdAt, ...extra }, file);
+chatState.mediaUrls.set(historyId, localUrl);
+appendHistory(conversation.conversationId, {
+id: historyId,
+direction: 'out',
+type: kind,
+...extra,
+name: file.name,
+size: file.size,
+viewOnce: privateSend,
+downloadUrl: localUrl,
+durationMs: (kind === 'voice' || extra?.video) ? durationMs : 0,
+senderName: chatState.profile.name || t('شما', 'You'),
+senderPeerId: chatState.peerId || '',
+senderFingerprint: chatState.identity?.fingerprint || '',
+status: 'queued',
+createdAt,
+expiresAt: '',
+timerSeconds,
+});
+let delivered = 0;
+let oversizedForOffline = 0;
+/* One meter across every member: the file is encrypted once per member, so a
+   three-member group really is three times the bytes and the read-out should
+   say so rather than restarting at zero three times. */
+const groupTargets = Math.max(1, members.length);
+const groupMeter = createTransferMeter(file.size * groupTargets);
+const groupOwner = `send:${historyId}`;
+let groupBase = 0;
+setTransferBanner(transferBannerLabel(kind, file.name), 0, { owner: groupOwner });
+const fileSkippedMembers = [];
+for (const memberId of members) {
+const member = findPeerByAnyKey(memberId);
+if (member && isSelfPeerRecord(member)) continue;
+if (!member || !member.publicKeyData) { fileSkippedMembers.push(member?.fingerprint || memberId); continue; }
+let memberSession = await ensureStoredSession(member);
+if (!memberSession?.cryptoKey) {
+/* An offline member used to be skipped here, leaving holes in their copy
+   of the group. ensureDirectSession mints an offline key instead. */
+memberSession = await ensureDirectSession(member, { silent: true });
+}
+if (!memberSession?.cryptoKey) continue;
+if (!memberSession.connection?.open && file.size > MAX_OFFLINE_FILE_BYTES) {
+oversizedForOffline += 1;
+continue;
+}
+const transferId = generateId('transfer');
+const startMessage = {
+type: 'file-start',
+transferId,
+messageId: historyId,
+...extra,
+name: file.name,
+mime: file.type || 'application/octet-stream',
+kind,
+size: file.size,
+durationMs: (kind === 'voice' || extra?.video) ? durationMs : 0,
+createdAt,
+expiresAt: '',
+timerSeconds,
+viewOnce: privateSend,
+spaceId: conversation.conversationId,
+spaceType: 'group',
+spaceName: conversation.name,
+/* Stored roster, not the derived delivery list — see sendRichMessage. */
+members: normalizeSpaceMembers(conversation.members),
+ownerPeerId: conversation.ownerPeerId || chatState.peerId || '',
+ownerClientId: conversation.ownerClientId || chatState.clientId || '',
+ownerFingerprint: conversation.ownerFingerprint || '',
+senderName: chatState.profile.name || t('شما', 'You'),
+senderPeerId: chatState.peerId || '',
+senderFingerprint: chatState.identity?.fingerprint || '',
+};
+const ok = await sendBlobChunks(file, {
+session: memberSession,
+peerRecord: member,
+transferId,
+startMessage,
+createdAt,
+scope: 'group',
+onProgress: (bytes) => {
+const painted = groupMeter(groupBase + bytes);
+if (painted) setTransferBanner(transferBannerLabel(kind, file.name), painted.percent, { detail: painted.detail, owner: groupOwner });
+},
+});
+groupBase += file.size;
+if (ok) delivered += 1;
+}
+/* A refused member has had its explanation already; what the thread records
+   must not read 'queued', which promises a delivery nobody will make. */
+const groupRefusal = chatState.transferRefusalReason;
+const groupWasRefused = !delivered && groupRefusal && (Date.now() - groupRefusal.at) < 5000;
+markMessageStatus(conversation.conversationId, historyId, delivered ? 'sent' : (groupWasRefused ? 'failed' : 'queued'));
+setTransferBanner(delivered ? t('ارسال شد', 'Sent') : t('ارسال نشد', 'Not sent'), 100, { owner: groupOwner });
+clearTransferBanner(700, groupOwner);
+if (oversizedForOffline) {
+notify(t(
+`${oversizedForOffline} عضو آفلاین هستند و فایل‌های بزرگ‌تر از ${app().formatBytes(MAX_OFFLINE_FILE_BYTES)} برای آن‌ها در صف نمی‌رود؛ وقتی آنلاین شوند دوباره بفرستید.`,
+`${oversizedForOffline} member(s) are offline, and files larger than ${app().formatBytes(MAX_OFFLINE_FILE_BYTES)} are not queued for them — send again once they are online.`,
+), 'warning');
+}
+if (fileSkippedMembers.length && typeof requestMemberCards === 'function') requestMemberCards(conversation, fileSkippedMembers);
+if (!delivered && members.length && !fileSkippedMembers.length) {
+notify(t('فایل/صوت گروه ذخیره شد؛ برای تحویل، سشن امن اعضا باید آماده باشد.', 'Group file/voice was saved; member secure sessions must be ready for delivery.'), 'warning');
+}
+return;
+}
+if (!peer) return;
+if (isSelfPeerRecord(peer)) {
+notify(t('ارسال فایل یا پیام صوتی به همین سشن محلی مجاز نیست.', 'Sending files or voice messages to the current session itself is not allowed.'), 'warning');
+return;
+}
+const historyId = generateId(kind === 'voice' ? 'voice' : 'file');
+const localUrl = URL.createObjectURL(file);
+const timerSeconds = Number(chatState.timerSeconds || 0);
+
+// Sessions are created lazily on first send, so asking "is there a key?"
+// before building one meant the FIRST self-destruct file of any conversation
+// was always refused — the send simply stopped here with nothing to show for
+// it. Establish the session first, then judge.
+if (!session?.cryptoKey) {
+session = await ensureDirectSession(peer);
+}
+/* Both of you are here, but the live channel is not. Say so before the send,
+   not after it fails.
+
+   Nothing in the UI distinguished "the recipient is away" from "the peer-to-
+   peer channel has not been opened yet", and the two consequences of the
+   second both read as somebody else's fault: a file over
+   MAX_OFFLINE_FILE_BYTES was refused with "they are offline" while the
+   recipient was plainly online and typing, and anything under it took the
+   slow road through the relay mailbox for no reason at all. One button in the
+   chat's own menu fixes both, so this offers it — and presses it for them if
+   they say yes, because sending somebody hunting through a menu mid-send is
+   not advice, it is homework.
+
+   Once per conversation per session: an advisory that appears on every
+   attachment stops being read. */
+session = await offerSecureSessionBeforeLargeSend(peer, session, file);
+/* A queued file sits in the recipient's relay mailbox until they come back,
+   and that mailbox is 512 MB for everything they are waiting on. One 500 MB
+   file would take essentially all of it and evict the rest, so above this the
+   sender is asked to wait for the peer instead. Checked before any history is
+   written, so a refusal leaves nothing behind. */
+if (!session?.connection?.open && file.size > MAX_OFFLINE_FILE_BYTES) {
+/* Which of the two it is decides what the sentence can honestly say. */
+const peerIsHere = peer?.status === 'online';
+notify(peerIsHere
+? t(
+`ارسال «${file.name || 'فایل'}» نیاز به سشن امن زنده دارد. از منوی بالای چت «ساخت سشن امن» را بزنید و دوباره بفرستید.`,
+`Sending "${file.name || 'this file'}" needs a live secure session. Open the chat menu, tap "Create secure session", and send again.`,
+)
+: t(
+`${peer.username || 'مخاطب'} آفلاین است؛ فایل‌های بزرگ‌تر از ${app().formatBytes(MAX_OFFLINE_FILE_BYTES)} فقط وقتی طرف مقابل آنلاین باشد ارسال می‌شوند.`,
+`${peer.username || 'This contact'} is offline; files larger than ${app().formatBytes(MAX_OFFLINE_FILE_BYTES)} can only be sent while they are online.`,
+), 'warning');
+return;
+}
+if (timerSeconds > 0) {
+const target = activePeer() || peer;
+// Picking a file opens a system dialog, which backgrounds the page; on the way
+// back the presence flag can still read 'offline' for a moment even though the
+// P2P channel never dropped. An open data connection is the honest answer to
+// "can they receive this right now", so accept either signal. Text and voice
+// never hit this because neither opens a picker.
+const liveChannel = Boolean(session?.connection?.open);
+if (!session?.cryptoKey || (!liveChannel && target?.status !== 'online')) {
+// Name the reason: "can only be sent when online" told the user nothing when
+// the real blocker was a session that had not finished its key exchange.
+const reason = !session?.cryptoKey
+? t('سشن امن هنوز آماده نیست', 'the secure session is not ready yet')
+: t('کاربر آفلاین است', 'the peer is offline');
+notify(t(`فایل خودتخریب ارسال نشد — ${reason}.`, `Self-destruct file not sent — ${reason}.`), 'warning');
+return;
+}
+}
+
+const expiresAt = ''; // Start timer only on delivery
+/* The bytes go to the vault as well as to an object URL: the URL dies with
+   the tab, the vault entry is what makes the attachment survive a reload. */
+persistMessageMedia(getConversationKey(peer), { id: historyId, type: kind, name: file.name, mime: file.type, createdAt: new Date().toISOString(), ...extra }, file);
+chatState.mediaUrls.set(historyId, localUrl);
+appendHistory(getConversationKey(peer), {
+id: historyId,
+direction: 'out',
+type: kind,
+...extra,
+name: file.name,
+size: file.size,
+viewOnce: privateSend,
+downloadUrl: localUrl,
+durationMs: (kind === 'voice' || extra?.video) ? durationMs : 0,
+status: 'queued',
+createdAt: new Date().toISOString(),
+expiresAt: '',
+timerSeconds,
+});
+if (!session?.cryptoKey) {
+session = await ensureDirectSession(peer);
+}
+/* No live channel came up: the relay carries it, sealed the way a text is
+   (relaySessionFor). The size gate above has already kept anything too big
+   for a mailbox from getting here without a channel. */
+if (!session?.cryptoKey) session = await relaySessionFor(peer);
+if (!session?.cryptoKey) {
+markMessageStatus(getConversationKey(peer), historyId, 'failed');
+notify(t('برای این مخاطب کلیدی در دست نیست؛ فایل فرستاده نشد. کارت مخاطب را دوباره اضافه کنید.', 'There is no key for this contact, so the file was not sent. Add their contact card again.'), 'warning');
+return;
+}
+const transferId = generateId('transfer');
+const sentAt = new Date().toISOString();
+const startMessage = {
+type: 'file-start',
+transferId,
+messageId: historyId,
+...extra,
+name: file.name,
+mime: file.type || 'application/octet-stream',
+kind,
+size: file.size,
+durationMs: (kind === 'voice' || extra?.video) ? durationMs : 0,
+createdAt: sentAt,
+expiresAt: '',
+timerSeconds,
+};
+const owner = `send:${historyId}`;
+const meter = createTransferMeter(file.size);
+const label = transferBannerLabel(kind, file.name);
+setTransferBanner(label, 0, { owner });
+const ok = await sendBlobChunks(file, {
+session,
+peerRecord: peer,
+transferId,
+startMessage,
+createdAt: sentAt,
+onProgress: (bytes) => {
+const painted = meter(bytes);
+if (painted) setTransferBanner(label, painted.percent, { detail: painted.detail, owner });
+},
+});
+/* A half-sent transfer used to be marked 'sent' regardless, because the loop
+   ignored what safeConnectionSend returned. Saying 'failed' is what lets the
+   existing retry path pick it up. */
+/* No connection at all is not a transfer that failed: a photo or a voice note
+   written in a lift is kept, and goes by itself when the connection is back
+   (resendHeldMedia, from retryQueuedMessages). Only what a mailbox can hold,
+   and never a self-destruct or view-once file, whose send needs the other side. */
+const nothingToSendOn = !chatState.connected || chatState.ws?.readyState !== WebSocket.OPEN;
+if (!ok && nothingToSendOn && !session.connection?.open && file.size <= MAX_OFFLINE_FILE_BYTES && !(timerSeconds > 0) && !privateSend) {
+const held = (chatState.history[getConversationKey(peer)] || []).find((item) => item.id === historyId);
+if (held) { held.heldForConnection = true; storeHistory(); }
+markMessageStatus(getConversationKey(peer), historyId, 'queued');
+clearTransferBanner(0, owner);
+noteWaitingForConnection();
+renderMessages();
+return;
+}
+if (!ok) {
+markMessageStatus(getConversationKey(peer), historyId, 'failed');
+setTransferBanner(t('ارسال ناتمام ماند', 'Transfer did not finish'), 100, { owner });
+/* A refused transfer has already told the user exactly what happened — the
+   generic "try again" wording would read as if the network had failed. */
+const refusal = chatState.transferRefusalReason;
+const wasRefused = refusal && refusal.transferId === transferId && (Date.now() - refusal.at) < 5000;
+if (!wasRefused) {
+notify(t('ارسال فایل کامل نشد؛ دوباره تلاش کنید.', 'The file transfer did not finish; please try again.'), 'warning');
+}
+} else {
+const wentLive = Boolean(session.connection?.open);
+markMessageStatus(getConversationKey(peer), historyId, wentLive ? 'sent' : 'queued');
+setTransferBanner(t('ارسال شد', 'Sent'), 100, { owner });
+if (!wentLive) noteRelayRoute(peer);
+/* The same answer is waited for as for a text (watchLiveDelivery); a file
+   small enough for a mailbox goes again through the relay without one. A
+   larger one stays as it is — its receiver asks for missing chunks itself. */
+if (wentLive && file.size <= MAX_OFFLINE_FILE_BYTES) {
+watchLiveDelivery(peer, historyId, () => {
+const retryId = generateId('transfer');
+const retryAt = new Date().toISOString();
+return sendBlobChunks(file, {
+session,
+peerRecord: peer,
+transferId: retryId,
+startMessage: { ...startMessage, transferId: retryId, createdAt: retryAt },
+createdAt: retryAt,
+relayOnly: true,
+});
+}, 15000);
+}
+}
+clearTransferBanner(700, owner);
+renderMessages();
+}
+
+/* Whose voice a system note is. Three shapes exist, and each has to prove
+   itself:
+   — The relay's own: this server writes 'monitor' into the from-field
+     itself (a verified peer carries their real fingerprint, an unverified
+     socket an empty one, and neither can produce the marker), and the
+     payload carries the relay id the recipient has pinned. Transit refuses
+     the type, so no far relay can quote the stamp.
+   — A sibling's key-change notice: signed with the NEW identity key it
+     announces, so the signature is proof the writer holds that key.
+   — Any other peer note: nothing legitimate sends them, and they drop. */
+async function handleSystemNote(message, payload) {
+const noteSender = String(message.fromFingerprint || '');
+let authenticated = false;
+if (noteSender === 'monitor') {
+const pinnedRelayId = chatState.profile?.relayPins?.[chatServerOrigin()]?.id || '';
+/* No pin yet is the first-contact case every relay pin starts from; with
+   one, only this relay's stamp passes. */
+authenticated = !pinnedRelayId || String(payload.relayId || '') === pinnedRelayId;
+} else if (payload.keyChange && payload.newPublicKeyData && payload.sig) {
+authenticated = await verifyIdentitySignature(
+payload.newPublicKeyData,
+app().base64ToArrayBuffer(payload.sig),
+offlineEnvelopeSignBytes(payload),
+).catch(() => false);
+}
+if (!authenticated) {
+console.warn('[Chat] a system note arrived that could not be attributed; ignored');
+ackRelayMessage(message.relayId);
+return;
+}
+/* The server's announce centre: a note the RELAY itself wrote, carried the
+   same way mail is — online as a relay frame, offline out of the mailbox.
+   It is not sealed (the server cannot seal what it cannot read), and that
+   is the point: it is the server's own voice, shown in the system
+   conversation the old broadcast already used. A peer's key-change notice
+   renders through the same door, as a bubble from the account itself. */
+const serverAttachment = payload.attachment || null;
+appendHistory('system', {
+id: generateId('sys'),
+type: serverAttachment ? 'file' : 'text',
+kind: serverAttachment?.kind === 'audio' ? 'voice' : (serverAttachment?.kind || 'text'),
+/* Subject first, body under it — the operator typed both, both arrive. */
+text: (payload.title ? payload.title + '\n' : '') + (payload.message || payload.text || ''),
+name: serverAttachment?.name || '',
+downloadUrl: serverAttachment?.dataUrl || '',
+senderName: noteSender === 'monitor' ? t('سرور', 'Server') : t('دستگاه دیگر همین حساب', 'Another device of this account'),
+direction: 'in',
+status: 'delivered',
+timestamp: payload.queuedAt ? Date.parse(payload.queuedAt) : Date.now(),
+createdAt: payload.queuedAt || new Date().toISOString(),
+system: true,
+});
+/* No in-app notify here: the server pushes only when the app is NOT awake,
+   so the badge and the buzz belong to exactly one of the two, never both. */
+ackRelayMessage(message.relayId);
+}
+
+/* ------------------------------------------------------------------
+ * Device sync — one history, several machines.
+ *
+ * Phase one put every socket of an identity on the relay's delivery
+ * list; this is the other half: the history that already exists on one
+ * machine reaching the others. Batches of history entries are sealed
+ * exactly like offline mail — a fresh AES key per envelope, wrapped to
+ * the identity key every device of this account holds — and addressed
+ * to this account's own fingerprint, so the relay carries them the way
+ * it carries any envelope and can read none of it. The bundle is never
+ * persisted: a device that was away collects the history from the next
+ * sync, not out of a mailbox.
+ *
+ * Only a sibling can produce one. The envelope is signed with the
+ * identity key and the receiver checks that signature against its OWN
+ * public key before opening anything: a stranger can encrypt to a
+ * public key all day, but they cannot sign with its private half.
+ * ------------------------------------------------------------------ */
+
+const DEVICE_SYNC_BATCH_ENTRIES = 200;
+/* Inline-media budget, per entry and per batch. FILE_CHUNK_BYTES is the
+   size every relayed file transfer has used since the beginning — proven
+   on both production relays at scale — and measurement agrees: 64 KB
+   frames at the send rhythm below arrived 80 of 80 on each server, while
+   megabyte frames arrived sometimes and vanished others with no error
+   anywhere. Nothing bigger than this rides a sync envelope; the pull
+   below slices to the same size. */
+const DEVICE_SYNC_FILE_INLINE_BYTES = FILE_CHUNK_BYTES;
+const DEVICE_SYNC_BATCH_INLINE_BUDGET = 256 * 1024;
+/* A sibling coming online triggers a sync, but a flapping connection
+   must not turn that into a broadcast every few seconds. */
+const DEVICE_SYNC_MIN_INTERVAL_MS = 10 * 60 * 1000;
+let deviceSyncLastSentAt = 0;
+
+function deviceSyncFilesEnabled() {
+try { return localStorage.getItem(CHAT_DEVICE_SYNC_FILES_STORAGE_KEY) === '1'; } catch (_error) { return false; }
+}
+function setDeviceSyncFilesEnabled(enabled) {
+try { localStorage.setItem(CHAT_DEVICE_SYNC_FILES_STORAGE_KEY, enabled ? '1' : '0'); } catch (_error) { /* private mode */ }
+}
+
+/* What one history entry looks like on the wire. An object URL is a
+   handle into THIS page's memory and means nothing on another machine, so
+   it never travels; whether the bytes do is the opt-in, and only for media
+   small enough to ride inline. Two sources of bytes exist: the vault, and
+   the rare attachment that never had one — an announcement's data URL,
+   which lives only inside the encrypted history itself. */
+async function deviceSyncEntryForWire(entry, includeFiles) {
+const copy = { ...entry };
+const dataUrl = typeof entry.downloadUrl === 'string' && entry.downloadUrl.startsWith('data:')
+? entry.downloadUrl
+: '';
+delete copy.downloadUrl;
+if (!includeFiles || !isMediaEntry(copy)) return copy;
+try {
+if (dataUrl) {
+const dataBase64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+if (dataBase64.length <= DEVICE_SYNC_FILE_INLINE_BYTES) copy.mediaData = dataBase64;
+return copy;
+}
+const stored = await readMessageMedia(copy.id);
+if (stored && stored.blob.size <= DEVICE_SYNC_FILE_INLINE_BYTES) {
+copy.mediaData = app().arrayBufferToBase64(await stored.blob.arrayBuffer());
+}
+} catch (_error) { /* the vault declined; the metadata still travels */ }
+return copy;
+}
+
+async function buildDeviceSyncBundles() {
+const includeFiles = deviceSyncFilesEnabled();
+const bundles = [];
+for (const conversationKey in chatState.history) {
+const entries = chatState.history[conversationKey] || [];
+/* A batch closes on the entry count OR the inline-media budget, whichever
+   comes first: many small entries and a few stickerful ones must both
+   produce envelopes inside the frame size the relay path delivers. */
+let wireEntries = [];
+let inlineBytes = 0;
+for (const entry of entries) {
+/* Each entry is awaited separately: it may need a vault read, and these
+   are the cheap kind of await — local IndexedDB, no network. */
+const wireEntry = await deviceSyncEntryForWire(entry, includeFiles);
+wireEntries.push(wireEntry);
+inlineBytes += (wireEntry.mediaData || '').length;
+if (wireEntries.length >= DEVICE_SYNC_BATCH_ENTRIES || inlineBytes >= DEVICE_SYNC_BATCH_INLINE_BUDGET) {
+bundles.push({ conversation: conversationKey, entries: wireEntries });
+wireEntries = [];
+inlineBytes = 0;
+}
+}
+if (wireEntries.length) bundles.push({ conversation: conversationKey, entries: wireEntries });
+}
+/* The calls list is bounded by CALL_LOG_LIMIT on every device, so it
+   fits one envelope with room to spare. */
+const calls = (chatState.calls || []).slice(0, CALL_LOG_LIMIT).map((call) => ({ ...call }));
+if (calls.length) bundles.push({ calls });
+	const contactBundle = buildContactSyncBundle();
+	if (contactBundle) bundles.push(contactBundle);
+	/* The prekey store travels with everything else. Each device rotates on
+	   its own clock, and two diverging stores meant a message sealed to the
+	   prekey one device published could only be opened by that device — its
+	   sibling met a wall of "could not be opened" notes. A union of both
+	   stores, pruned of what has expired, gives every device every private
+	   half, whichever prekey a sender happens to seal to. */
+	const prekeys = prunePrekeys(loadPrekeys() || []);
+	if (prekeys.length) bundles.push({ prekeys: prekeys.map((entry) => ({ ...entry })) });
+	return bundles;
+}
+
+/* The address book travels with the history: somebody engaged with on one
+   machine is somebody the others are about to write to as well. Personal
+   contacts only — a space or group is its own record and rides the space
+   envelopes, which every device of this account already receives. */
+function storedPersonalContacts() {
+return (chatState.peers || [])
+.filter((peer) => peer.peerId && !peer.type && !peer.system && !isSelfPeerRecord(peer) && isStoredContact(peer))
+.slice(0, 500)
+.map((peer) => normalizePeerRecord(peer));
+}
+function buildContactSyncBundle() {
+const contacts = storedPersonalContacts();
+return contacts.length ? { contacts } : null;
+}
+
+/* The bytes a sibling vouches for. Offline envelopes sign
+   (fingerprint, peer id, time, body); a device-sync envelope names one more
+   thing the relay could otherwise rewrite — WHICH device sent it — so the
+   claim and the signature cover it too. */
+function deviceSyncSignBytes(envelope) {
+return new TextEncoder().encode([
+offlineEnvelopeSignBytes(envelope),
+String(envelope?.fromDeviceId || ''),
+].join('\n'));
+}
+async function signDeviceSyncEnvelope(envelope) {
+try {
+const signature = await identitySignBytes(deviceSyncSignBytes(envelope));
+envelope.sig = app().arrayBufferToBase64(signature);
+envelope.sigv = 1;
+} catch (error) {
+console.warn('[Chat] could not sign the device-sync envelope:', error);
+}
+}
+async function verifyDeviceSyncSender(envelope) {
+try {
+if (!envelope?.sig) return false;
+return await verifyIdentitySignature(
+chatState.identity.publicKeyData,
+app().base64ToArrayBuffer(envelope.sig),
+deviceSyncSignBytes(envelope),
+);
+} catch (_error) {
+return false;
+}
+}
+
+/* ------------------------------------------------------------------
+ * Deleted conversations, across this account's own devices.
+ *
+ * A conversation deleted on one device used to stay on the others, and the
+ * next sync between them brought it straight back to the one it was deleted
+ * on. Now a deletion travels to the siblings — at once to the ones that are
+ * here, and with every delta to the ones that come back later — and each
+ * device remembers what it deleted, so nothing older than the deletion is
+ * merged back in.
+ *
+ * What is remembered is as little as will do. The graves are hashes of the
+ * names a conversation answered to, with the moment it was deleted, kept for
+ * half a year. The log a sibling is told from holds the names themselves (a
+ * sibling has to find the conversation), for thirty days. Both are in the
+ * encrypted store. Nothing of this goes to the other person.
+ * ------------------------------------------------------------------ */
+const CHAT_DELETED_STORAGE_KEY = 'poorija_chat_deleted';
+const DELETION_GRAVE_KEEP_MS = 180 * 24 * 60 * 60 * 1000;
+const DELETION_LOG_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+function deletionStore() {
+  if (!chatState.deletions) {
+    const stored = loadEncrypted(CHAT_DELETED_STORAGE_KEY, null) || {};
+    const now = Date.now();
+    const keep = (at, ms) => now - (Date.parse(at || 0) || 0) < ms;
+    const prune = (map) => Object.fromEntries(Object.entries(map && typeof map === 'object' ? map : {})
+      .filter(([, at]) => keep(at, DELETION_GRAVE_KEEP_MS)));
+    chatState.deletions = {
+      graves: prune(stored.graves),
+      contactGraves: prune(stored.contactGraves),
+      log: (Array.isArray(stored.log) ? stored.log : []).filter((entry) => keep(entry?.deletedAt, DELETION_LOG_KEEP_MS)),
+    };
+  }
+  return chatState.deletions;
+}
+function saveDeletionStore() {
+  saveEncrypted(CHAT_DELETED_STORAGE_KEY, deletionStore());
+}
+function graveHash(name) {
+  return sha256Hex(new TextEncoder().encode(`poorija-deleted:${String(name || '')}`));
+}
+/* The moment the conversation answering to any of these names was last
+   deleted on this device, or 0. */
+async function graveTime(names, { contact = false } = {}) {
+  const store = deletionStore();
+  const map = contact ? store.contactGraves : store.graves;
+  let latest = 0;
+  for (const name of names) {
+    if (!name) continue;
+    /* No grave is 0, never Date.parse(0): that reads "0" as a year and
+       answers 1 January 2000, which made every name look deleted — a
+       sibling's contacts were all refused, and an entry with no date was
+       dropped from every sync. */
+    const stamp = map[await graveHash(name)];
+    const at = stamp ? (Date.parse(stamp) || 0) : 0;
+    if (at > latest) latest = at;
+  }
+  return latest;
+}
+async function noteConversationDeleted(deletion, { announce = true } = {}) {
+  if (!deletion?.names?.length) return;
+  const store = deletionStore();
+  for (const name of deletion.names) {
+    const hash = await graveHash(name);
+    if (!store.graves[hash] || store.graves[hash] < deletion.deletedAt) store.graves[hash] = deletion.deletedAt;
+    if (deletion.contact === 'remove') store.contactGraves[hash] = deletion.deletedAt;
+  }
+  /* Every device keeps the log, not only the one it happened on: whichever
+     sibling is here when a third comes back is the one that tells it. */
+  if (!store.log.some((entry) => entry.deletedAt === deletion.deletedAt && entry.names?.[0] === deletion.names[0])) {
+    store.log.push({ names: deletion.names, contact: deletion.contact, group: deletion.group, deletedAt: deletion.deletedAt });
+    store.log = store.log.slice(-200);
+  }
+  saveDeletionStore();
+  if (!announce || !chatState.identity?.fingerprint) return;
+  /* The siblings that are here hear it now; the rest hear it with their next
+     delta (serveDeltaRequest), from the log above. */
+  try {
+    const envelope = await sealDeviceSyncBundle({ deletions: [deletion] });
+    sendRelayEnvelope({ fingerprint: chatState.identity.fingerprint }, envelope);
+  } catch (error) {
+    console.warn('[Chat] telling the other devices about a deletion failed:', error?.message || error);
+  }
+}
+function recentDeletions() {
+  return deletionStore().log.map((entry) => ({ ...entry }));
+}
+/* One deletion made on a sibling, done here — once, and only to what this
+   device held before that moment. */
+async function applySiblingDeletion(deletion) {
+  const names = Array.isArray(deletion?.names) ? deletion.names.map(String).filter(Boolean).slice(0, 16) : [];
+  const deletedAt = String(deletion?.deletedAt || '');
+  if (!names.length || !Date.parse(deletedAt)) return false;
+  if (await graveTime(names) >= Date.parse(deletedAt)) return false;
+  const contact = deletion.contact === 'remove' ? 'remove' : 'keep';
+  /* "Leave" was announced to the group by the device that left; here the
+     group only has to go. */
+  const group = deletion.group === 'keep' ? 'keep' : 'remove';
+  const done = new Set();
+  let applied = false;
+  for (const name of names) {
+    if (done.has(name)) continue;
+    const present = chatState.history[name]
+      || (chatState.spaces?.groups || []).some((space) => space.conversationId === name)
+      || (chatState.peers || []).some((peer) => [peer.peerId, peer.clientId, peer.fingerprint, peer.conversationId].includes(name));
+    if (!present) continue;
+    purgeConversationEverywhere(name, { contact, group, fromSibling: true, before: deletedAt });
+    names.forEach((n) => done.add(n));
+    applied = true;
+  }
+  /* Remembered even when there was nothing here, so a third device's copy
+     cannot bring it back either. */
+  if (!applied) await noteConversationDeleted({ names, contact, group: deletion.group || '', deletedAt }, { announce: false });
+  return applied;
+}
+
+async function sealDeviceSyncBundle(bundle) {
+const rawKey = app().generateSecureRandomBytes(32);
+const key = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, true, ['encrypt']);
+const iv = app().generateSecureRandomBytes(12);
+const cipher = await crypto.subtle.encrypt(
+{ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(bundle)));
+/* Wrapped to this account's own key: every linked device holds the
+   private half, nobody else does. */
+const seal = await sealToIdentity(ownIdentityRecord(), 'offline', rawKey);
+const envelope = {
+type: 'device-sync',
+fromFingerprint: chatState.identity.fingerprint,
+fromDeviceId: getDeviceId(),
+seal: app().arrayBufferToBase64(seal),
+body: { iv: Array.from(iv), cipher: app().arrayBufferToBase64(cipher) },
+createdAt: new Date().toISOString(),
+};
+	await signDeviceSyncEnvelope(envelope);
+	return envelope;
+}
+
+let deviceSyncInFlight = false;
+async function sendDeviceSync({ contactsOnly = false } = {}) {
+if (!chatState.connected || !chatState.ws || chatState.ws.readyState !== WebSocket.OPEN) return false;
+if (!chatState.identity?.fingerprint) return false;
+/* One sync at a time: the manual button and the sibling-arrival trigger can
+   fire together, and two interleaved loops send every bundle twice for
+   nothing — the merge would absorb it, the bandwidth would not. A caller
+   that arrives mid-sync WAITS for it and then runs: a person pressing the
+   button while the automatic pass is on wants their newest history in the
+   next pass, not a silent refusal. Bounded, because an in-flight sync is
+   finite and a stuck one must not wedge the button for good. */
+const waitDeadline = Date.now() + 120 * 1000;
+while (deviceSyncInFlight && Date.now() < waitDeadline) {
+await new Promise((resolve) => setTimeout(resolve, 200));
+}
+if (deviceSyncInFlight) return false;
+deviceSyncInFlight = true;
+try {
+	const bundles = contactsOnly ? [] : await buildDeviceSyncBundles();
+	/* A contacts-only push is the delta path: the book changed while a sibling
+	   was listening, and the history has not. */
+	if (contactsOnly) {
+	const contactBundle = buildContactSyncBundle();
+	if (contactBundle) bundles.push(contactBundle);
+	}
+	for (const bundle of bundles) {
+	const envelope = await sealDeviceSyncBundle(bundle);
+	sendRelayEnvelope({ fingerprint: chatState.identity.fingerprint }, envelope);
+	/* A breath between envelopes, so a large history does not arrive as
+	   one back-to-back wall of frames. */
+	await new Promise((resolve) => setTimeout(resolve, 150));
+	}
+	return true;
+} finally {
+deviceSyncInFlight = false;
+}
+}
+async function sendDeviceSyncFromUi() {
+/* And whatever a sibling left with the relay for this device. */
+if (typeof fetchSiblingHeld === 'function') fetchSiblingHeld();
+const sent = await sendDeviceSync();
+notify(sent
+? t('تاریخچه برای دستگاه‌های متصل ارسال شد', 'History was sent to the linked devices')
+: t('اتصال به سرور برقرار نیست؛ بعد از اتصال دوباره تلاش کنید', 'Not connected to the relay; try again after reconnecting'),
+sent ? 'success' : 'warning');
+}
+
+/* One synced entry into one conversation. The precedence rules are
+   appendHistory's, restated because sync is not delivery: no sound, no
+   notification, and the unread mark belongs to the device that holds
+   it — history arriving is not news arriving. */
+function mergeSyncedEntry(conversationKey, entry) {
+if (!conversationKey || !entry?.id) return;
+const list = chatState.history[conversationKey] || (chatState.history[conversationKey] = []);
+const existing = list.find((item) => item.id === entry.id);
+if (existing) {
+const next = { ...entry };
+if (existing.edited && !next.edited) next.text = existing.text;
+next.status = chatStatusRank(existing.status) >= chatStatusRank(next.status) ? existing.status : next.status;
+next.unread = existing.unread;
+next.reactions = existing.reactions || next.reactions;
+next.downloadUrl = existing.downloadUrl || next.downloadUrl;
+Object.assign(existing, next);
+} else {
+/* The sender's attention state, not a recomputed one: history arriving is
+   not news arriving, but a message their device had not read yet is still
+   worth a badge on this one. */
+entry.unread = Boolean(entry.unread);
+list.push(entry);
+list.splice(0, Math.max(0, list.length - 2000));
+}
+}
+
+async function mergeDeviceSyncBundle(bundle) {
+let changed = false;
+/* Who is in the account, and what it chose for all its devices. */
+if (typeof handleRosterBundle === 'function' && (bundle?.roster || bundle?.deviceIntro || bundle?.deviceLeft)) await handleRosterBundle(bundle);
+if (bundle?.deviceSettings && typeof applySiblingDeviceSettings === 'function') applySiblingDeviceSettings(bundle.deviceSettings);
+/* Deletions first, so whatever else this bundle carries is weighed against
+   them. */
+if (Array.isArray(bundle?.deletions)) {
+for (const deletion of bundle.deletions.slice(0, 200)) {
+if (await applySiblingDeletion(deletion)) changed = true;
+}
+}
+if (bundle?.conversation && Array.isArray(bundle.entries)) {
+/* Nothing older than this device's deletion of the conversation comes back. */
+const deletedAt = await graveTime([bundle.conversation]);
+const entries = deletedAt
+? bundle.entries.filter((entry) => (Date.parse(entry?.createdAt || entry?.timestamp || 0) || 0) > deletedAt)
+: bundle.entries;
+const touched = [];
+for (const entry of entries) {
+if (entry?.id) touched.push(entry.id);
+/* Inline media arrives as bytes; land it in this device's vault the
+   way received media lands, so it survives a reload like any other
+   attachment. */
+if (entry.mediaData) {
+try {
+const blob = new Blob([app().base64ToArrayBuffer(entry.mediaData)], { type: entry.mime || 'application/octet-stream' });
+persistMessageMedia(bundle.conversation, entry, blob);
+entry.downloadUrl = URL.createObjectURL(blob);
+chatState.mediaUrls.set(entry.id, entry.downloadUrl);
+} catch (_error) { /* the bytes failed to land; the row still does */ }
+delete entry.mediaData;
+}
+mergeSyncedEntry(bundle.conversation, entry);
+changed = true;
+}
+/* Known here now as the sibling has it: the journal does not send it back. */
+if (typeof noteSiblingMerged === 'function') noteSiblingMerged(bundle.conversation, touched);
+if (changed) {
+storeHistory();
+renderPeers();
+renderMessages();
+/* A row whose file is still on the sibling: with "sync all content" on,
+   it comes over by itself. */
+if (typeof scheduleSiblingAutoPull === 'function') scheduleSiblingAutoPull();
+}
+}
+/* Messages a sibling deleted. Deleted here too, with their files. */
+if (bundle?.conversation && Array.isArray(bundle.removed) && Array.isArray(chatState.history[bundle.conversation])) {
+const gone = new Set(bundle.removed.slice(0, 2000).map((id) => String(id || '')));
+const list = chatState.history[bundle.conversation];
+const kept = list.filter((entry) => !gone.has(entry?.id));
+if (kept.length !== list.length) {
+list.filter((entry) => gone.has(entry?.id)).forEach((entry) => dropMessageMedia(entry.id));
+chatState.history[bundle.conversation] = kept;
+if (typeof noteSiblingMerged === 'function') noteSiblingMerged(bundle.conversation);
+storeHistory();
+renderPeers();
+renderMessages();
+changed = true;
+}
+}
+	if (Array.isArray(bundle?.calls)) {
+	const known = new Set(chatState.calls.map((call) => call.id));
+	let callsChanged = false;
+	for (const call of bundle.calls) {
+	if (!call?.id || known.has(call.id)) continue;
+	const deletedAt = await graveTime([call.peerId, call.fingerprint, call.conversationId, call.spaceId]);
+	if (deletedAt && (Date.parse(call.createdAt || 0) || 0) <= deletedAt) continue;
+	chatState.calls.push(call);
+	callsChanged = true;
+	}
+	if (callsChanged) {
+	chatState.calls.sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
+	chatState.calls = chatState.calls.slice(0, CALL_LOG_LIMIT);
+	saveCalls();
+	changed = true;
+	}
+	}
+	/* Contacts arrive add-only: a record this device already knows by peer id
+	   or fingerprint is left exactly as it is, because what it holds locally —
+	   a nickname, a mute, a pin — is this device's own business. */
+	if (Array.isArray(bundle?.contacts)) {
+	const byPeerId = new Set(chatState.peers.map((peer) => peer.peerId).filter(Boolean));
+	const byFingerprint = new Set(chatState.peers.map((peer) => peer.fingerprint).filter(Boolean));
+	let contactsChanged = false;
+	for (const contact of bundle.contacts) {
+	const record = normalizePeerRecord(contact);
+	if (!record.peerId || byPeerId.has(record.peerId)) continue;
+	/* A contact this account deleted is not added back by a sibling that has
+	   not heard yet. */
+	if (await graveTime([record.peerId, record.fingerprint], { contact: true })) continue;
+	if (record.fingerprint && byFingerprint.has(record.fingerprint)) continue;
+	/* Marked so isStoredContact keeps it: nothing here has spoken to them
+	   yet, but this account has, on another machine. */
+	record.synced = true;
+	record.status = 'offline';
+	chatState.peers.push(record);
+	byPeerId.add(record.peerId);
+	if (record.fingerprint) byFingerprint.add(record.fingerprint);
+	contactsChanged = true;
+	}
+	if (contactsChanged) {
+	saveContacts();
+	renderPeers();
+	changed = true;
+	}
+	}
+	if (Array.isArray(bundle?.prekeys)) {
+	const known = new Set((loadPrekeys() || []).map((entry) => entry.id));
+	const merged = prunePrekeys(loadPrekeys() || []);
+	let prekeysChanged = false;
+	for (const entry of bundle.prekeys) {
+	/* Only a shape a prekey store would hold: an id, both halves, an
+	   expiry still in the future (prunePrekeys re-checks it). */
+	if (!entry?.id || !entry.publicKeyData || !entry.privateKeyData || known.has(entry.id)) continue;
+	merged.push({ ...entry });
+	known.add(entry.id);
+	prekeysChanged = true;
+	}
+	if (prekeysChanged) {
+	savePrekeys(prunePrekeys(merged));
+	chatState.prekeys = prunePrekeys(merged);
+	changed = true;
+	}
+	}
+	/* One ring, whichever machine takes it. The invite fans out to every
+	   device of the account; the first to answer or refuse tells the others,
+	   sealed the same way everything between these devices travels. */
+	if (bundle?.callHandled?.callerPeerId) {
+	const fromCaller = String(bundle.callHandled.callerPeerId);
+	if (chatState.pendingIncomingInvite?.peerId === fromCaller
+	|| chatState.pendingIncomingCall?.peer === fromCaller) {
+	clearIncomingCall();
+	}
+	}
+	/* The two on-demand shapes. A request is answered in the background; a
+	   part is one slice of a pull this device asked for. */
+	if (bundle?.fileRequest?.messageId) {
+	serveDeviceFileRequest(bundle.fileRequest).catch((error) => console.warn('[Chat] serving a sibling file failed:', error));
+	}
+	if (bundle?.filePart?.messageId) {
+	acceptDeviceFilePart(bundle.filePart);
+	}
+	/* A sibling asking for what it missed, and the end of an answer to us. */
+	if (bundle?.syncRequest && typeof serveDeltaRequest === 'function') {
+	serveDeltaRequest(bundle.syncRequest).catch((error) => console.warn('[Devices] serving a delta failed:', error?.message || error));
+	}
+	if (bundle?.syncDone?.forDeviceId && bundle.syncDone.forDeviceId === getDeviceId()) {
+	chatState.deviceSyncBehind = null;
+	if (typeof renderDeviceSyncHint === 'function') renderDeviceSyncHint();
+	if (typeof scheduleBeaconWrite === 'function') scheduleBeaconWrite(2000);
+	}
+	return changed;
+}
+
+async function handleDeviceSyncEnvelope(message) {
+const payload = message.payload || {};
+const myFingerprint = chatState.identity?.fingerprint || '';
+/* Not addressed from this account's key: nothing to do here. */
+if (!payload.body || payload.fromFingerprint !== myFingerprint) return;
+/* The relay fans a fingerprint's mail out to every socket holding it,
+   including the one that sent it — this device's own copy is a receipt
+   it has no use for. */
+if (payload.fromDeviceId && payload.fromDeviceId === getDeviceId()) return;
+/* Nor from a device the account's primary revoked (58-device-roster.js). */
+if (payload.fromDeviceId && typeof deviceRevoked === 'function' && deviceRevoked(payload.fromDeviceId)) return;
+	/* The whole gate: signed by this account's private key — over the
+	   deviceId it names as well — which only a linked device holds. Anything
+	   else is a stranger sealing garbage and claiming a deviceId, and it
+	   stops here — unopened and unmerged. */
+	const authentic = await verifyDeviceSyncSender(payload);
+if (!authentic) {
+console.warn('[Chat] a device-sync envelope arrived that this identity key did not sign; ignored');
+return;
+}
+	try {
+	const key = await openOfflineSeal(payload.seal);
+const plain = await crypto.subtle.decrypt(
+{ name: 'AES-GCM', iv: new Uint8Array(payload.body.iv || []) },
+key,
+app().base64ToArrayBuffer(payload.body.cipher),
+);
+await mergeDeviceSyncBundle(JSON.parse(new TextDecoder().decode(plain)));
+} catch (_error) {
+console.warn('[Chat] a device-sync envelope could not be opened; ignored');
+}
+}
+
+/* A sibling appearing is the moment one machine's history is wanted on
+   the others — the new device just linked, or one coming back online
+   after being away while messages arrived elsewhere. Rate-limited, and
+   always late by three seconds so the sibling's own connection settles
+   first. */
+function maybeAnnounceDeviceSync(linkedDeviceCount) {
+/* Whatever the count says, this runs on every peers broadcast and is the
+   cheap place to forget the pulls that never finished. */
+const sweepNow = Date.now();
+for (const [pullId, pull] of deviceFilePulls) {
+if (sweepNow - pull.at > DEVICE_FILE_PULL_TTL_MS) deviceFilePulls.delete(pullId);
+}
+if (!linkedDeviceCount || linkedDeviceCount < 2) return;
+/* A sibling is here: ask it for exactly what this device is missing, and it
+   asks the same of this one. A whole-history dump every ten minutes was the
+   old answer; a delta is small enough to send on every arrival. */
+/* Counted per connection: a device that went away and came back sees the
+   same number of siblings as before it left, and must still ask. */
+const previous = maybeAnnounceDeviceSync.connection === chatState.ws ? (maybeAnnounceDeviceSync.lastCount || 0) : 0;
+maybeAnnounceDeviceSync.connection = chatState.ws;
+maybeAnnounceDeviceSync.lastCount = linkedDeviceCount;
+if (linkedDeviceCount <= previous) return;
+if (typeof requestDeltaFromSiblings === 'function') {
+  setTimeout(() => requestDeltaFromSiblings({ reason: 'sibling arrived', force: true }), 2500);
+  return;
+}
+const now = Date.now();
+if (now - deviceSyncLastSentAt < DEVICE_SYNC_MIN_INTERVAL_MS) return;
+deviceSyncLastSentAt = now;
+setTimeout(() => { sendDeviceSync().catch((error) => console.warn('[Chat] device sync failed:', error)); }, 3000);
+}
+
+/* Contacts are an event, not only a snapshot: the moment a new one is
+   stored on this machine is the moment the siblings should learn it, not
+   the next time a full sync happens. The baseline is whatever the first
+   save of this session held, so a reload never re-announces the book. */
+const DEVICE_CONTACT_PUSH_MIN_INTERVAL_MS = 30 * 1000;
+let deviceContactPushLastAt = 0;
+let deviceContactPeerIdsBaseline = null;
+function maybePushContactDelta(contacts) {
+const ids = new Set((contacts || []).map((peer) => peer.peerId).filter(Boolean));
+if (!deviceContactPeerIdsBaseline) {
+deviceContactPeerIdsBaseline = ids;
+return;
+}
+const grew = Array.from(ids).some((id) => !deviceContactPeerIdsBaseline.has(id));
+deviceContactPeerIdsBaseline = ids;
+/* A sibling merging this device's contacts grows its own book, which lands
+   here again — with nothing new on the way back, the exchange ends. */
+if (!grew) return;
+if ((chatState.linkedDevices || []).length < 2) return;
+const now = Date.now();
+if (now - deviceContactPushLastAt < DEVICE_CONTACT_PUSH_MIN_INTERVAL_MS) return;
+deviceContactPushLastAt = now;
+setTimeout(() => {
+sendDeviceSync({ contactsOnly: true }).catch((error) => console.warn('[Chat] contact delta push failed:', error));
+}, 1000);
+}
+
+/* ------------------------------------------------------------------
+ * Files on demand.
+ *
+ * Phase two rides an attachment of up to DEVICE_SYNC_FILE_INLINE_BYTES
+ * inside the history bundle; a larger one stays on the machine that
+ * received it, and the row that reaches a sibling says so. This is the
+ * other half: the sibling that wants the bytes asks for them by message
+ * id, and they travel the same sealed envelopes, sliced into frames the
+ * relay already carries and cannot read.
+ * ------------------------------------------------------------------ */
+
+/* One slice of a pulled file: FILE_CHUNK_BYTES, the size the relay path
+   has carried reliably since file transfer existed. A pull has to
+   reassemble every part, so a part that arrived only sometimes is a pull
+   that cannot finish. */
+const DEVICE_SYNC_FILE_PART_BYTES = FILE_CHUNK_BYTES;
+/* The parts of one pull, held only while it runs. Ten minutes and the
+   pull is forgotten — half an assembled file is worth nothing. */
+const DEVICE_FILE_PULL_TTL_MS = 10 * 60 * 1000;
+const deviceFilePulls = new Map();
+
+/* One ring, whichever machine takes it: the invite reaches every device of
+   the account, and the device that answers or refuses tells the others in
+   the same sealed envelopes everything between these machines travels in.
+   The caller's own cancel already reaches them — it is a relay frame too. */
+function announceCallHandled(callerPeerId, action) {
+if (!callerPeerId || !chatState.identity?.fingerprint) return;
+if ((chatState.linkedDevices || []).length < 2) return;
+sealDeviceSyncBundle({ callHandled: { callerPeerId: String(callerPeerId), action } })
+.then((envelope) => sendRelayEnvelope({ fingerprint: chatState.identity.fingerprint }, envelope))
+.catch(() => { /* the siblings time their own rings out */ });
+}
+
+function requestDeviceFile(conversationKey, messageId) {
+if (!chatState.connected || !chatState.ws || chatState.ws.readyState !== WebSocket.OPEN) {
+notify(t('اتصال به سرور برقرار نیست؛ بعد از اتصال دوباره تلاش کنید', 'Not connected to the relay; try again after reconnecting'), 'warning');
+return;
+}
+if (!chatState.identity?.fingerprint) return;
+if ((chatState.linkedDevices || []).length < 2) {
+notify(t('هیچ دستگاه دیگری از این حساب الان آنلاین نیست.', 'No other device of this account is online right now.'), 'warning');
+return;
+}
+if (deviceFilePulls.has(messageId)) return;
+const pull = { parts: new Map(), total: 0, meta: null, at: Date.now() };
+deviceFilePulls.set(messageId, pull);
+/* A pull nobody serves is a button that did nothing: the ring has to come
+   back and say so. Generous, because the parts arrive paced. */
+pull.timeout = setTimeout(() => {
+if (deviceFilePulls.has(messageId)) {
+deviceFilePulls.delete(messageId);
+notify(t('دریافت فایل از دستگاه دیگر طول کشید و رها شد؛ دوباره تلاش کنید', 'Fetching the file from the other device took too long and was given up; try again'), 'warning');
+}
+}, 60 * 1000);
+sealDeviceSyncBundle({ fileRequest: { conversation: conversationKey, messageId } })
+.then((envelope) => {
+sendRelayEnvelope({ fingerprint: chatState.identity.fingerprint }, envelope);
+notify(t('درخواست فایل برای دستگاه‌های دیگر فرستاده شد', 'The file was requested from the other devices'), 'info');
+})
+.catch((error) => {
+deviceFilePulls.delete(messageId);
+console.warn('[Chat] the file request could not be sealed:', error);
+});
+}
+
+/* The sibling that holds the bytes answers. The toggle governs serving as
+   it governs pushing: off means this machine does not hand its files to
+   anyone, sibling or not. */
+async function serveDeviceFileRequest(request) {
+if (!deviceSyncFilesEnabled()) return;
+const messageId = String(request?.messageId || '');
+if (!messageId) return;
+const stored = await readMessageMedia(messageId).catch(() => null);
+if (!stored) return;
+const bytes = new Uint8Array(await stored.blob.arrayBuffer());
+const total = Math.max(1, Math.ceil(bytes.length / DEVICE_SYNC_FILE_PART_BYTES));
+/* What the requester could never assemble whole is not sent at all. */
+if (total > 256) return;
+for (let part = 0; part < total; part += 1) {
+const slice = bytes.subarray(part * DEVICE_SYNC_FILE_PART_BYTES, (part + 1) * DEVICE_SYNC_FILE_PART_BYTES);
+const envelope = await sealDeviceSyncBundle({
+filePart: {
+conversation: String(request.conversation || ''),
+messageId,
+part,
+total,
+name: stored.record.name || '',
+mime: stored.record.mime || '',
+kind: stored.record.kind || 'file',
+bytes: app().arrayBufferToBase64(slice),
+},
+});
+sendRelayEnvelope({ fingerprint: chatState.identity.fingerprint }, envelope);
+/* Same breathing room the history bundles take. */
+await new Promise((resolve) => setTimeout(resolve, 150));
+}
+}
+
+function acceptDeviceFilePart(part) {
+const messageId = String(part?.messageId || '');
+if (!messageId) return;
+const pull = deviceFilePulls.get(messageId);
+if (!pull || Date.now() - pull.at > DEVICE_FILE_PULL_TTL_MS) {
+deviceFilePulls.delete(messageId);
+return;
+}
+	/* More parts than this path ever carries: assembled, it would be a
+	   truncated file saved as if whole. Refused instead. */
+	if (Number(part.total) > 256) {
+	deviceFilePulls.delete(messageId);
+	if (pull.timeout) clearTimeout(pull.timeout);
+	notify(t('این فایل برای این روش بزرگ است؛ هر دو دستگاه را به‌روز کنید تا مستقیم منتقل شود.', 'This file is too large for this way of moving it; update both devices so it moves directly.'), 'warning');
+	return;
+	}
+	if (!pull.total) {
+	pull.total = Math.max(1, Math.min(256, Number(part.total) || 1));
+	pull.meta = { name: String(part.name || ''), mime: String(part.mime || ''), kind: String(part.kind || 'file') };
+	}
+pull.parts.set(Number(part.part) || 0, String(part.bytes || ''));
+if (pull.parts.size < pull.total) return;
+deviceFilePulls.delete(messageId);
+if (pull.timeout) clearTimeout(pull.timeout);
+const conversationKey = String(part.conversation || '');
+const assembled = new Uint8Array(pull.parts.size * DEVICE_SYNC_FILE_PART_BYTES);
+let offset = 0;
+for (let index = 0; index < pull.total; index += 1) {
+const slice = base64ToBytes(pull.parts.get(index) || '');
+assembled.set(slice, offset);
+offset += slice.length;
+}
+const blob = new Blob([assembled.subarray(0, offset)], { type: pull.meta.mime || 'application/octet-stream' });
+const entry = (chatState.history[conversationKey] || []).find((item) => item.id === messageId);
+persistMessageMedia(conversationKey, entry || {
+id: messageId,
+type: pull.meta.kind,
+name: pull.meta.name,
+mime: pull.meta.mime,
+createdAt: new Date().toISOString(),
+}, blob);
+const url = URL.createObjectURL(blob);
+chatState.mediaUrls.set(messageId, url);
+if (entry) {
+entry.downloadUrl = url;
+entry.mediaMissing = false;
+storeHistory();
+}
+renderMessages();
+notify(t(`«${pull.meta.name || 'فایل'}» از دستگاه دیگر رسید`, `"${pull.meta.name || 'file'}" arrived from the other device`), 'success');
+}
+
+/* ---- published to globalThis (roadmap 2.1, tools/esm-chat.cjs) ---- */
+Object.defineProperties(globalThis, {
+  "devicePeerId": { get() { return devicePeerId; }, set(value) { devicePeerId = value; }, configurable: true },
+  "rebuildPeerTransport": { get() { return rebuildPeerTransport; }, set(value) { rebuildPeerTransport = value; }, configurable: true },
+  "healPeerTransport": { get() { return healPeerTransport; }, set(value) { healPeerTransport = value; }, configurable: true },
+  "scheduleReconnect": { get() { return scheduleReconnect; }, set(value) { scheduleReconnect = value; }, configurable: true },
+  "tellRelayPresenceState": { get() { return tellRelayPresenceState; }, set(value) { tellRelayPresenceState = value; }, configurable: true },
+  "abandonSocket": { get() { return abandonSocket; }, set(value) { abandonSocket = value; }, configurable: true },
+  "transportStallCheck": { get() { return transportStallCheck; }, set(value) { transportStallCheck = value; }, configurable: true },
+  "recoverTransport": { get() { return recoverTransport; }, set(value) { recoverTransport = value; }, configurable: true },
+  "setObscured": { get() { return setObscured; }, set() { throw new TypeError('Assignment to constant variable setObscured.'); }, configurable: true },
+  "stopTransportWatchdog": { get() { return stopTransportWatchdog; }, set(value) { stopTransportWatchdog = value; }, configurable: true },
+  "startTransportWatchdog": { get() { return startTransportWatchdog; }, set(value) { startTransportWatchdog = value; }, configurable: true },
+  "startHeartbeat": { get() { return startHeartbeat; }, set(value) { startHeartbeat = value; }, configurable: true },
+  "relayProofBytes": { get() { return relayProofBytes; }, set(value) { relayProofBytes = value; }, configurable: true },
+  "signRelayProof": { get() { return signRelayProof; }, set(value) { signRelayProof = value; }, configurable: true },
+  "handleIdentityChallenge": { get() { return handleIdentityChallenge; }, set(value) { handleIdentityChallenge = value; }, configurable: true },
+  "handleSpaceSyncMessage": { get() { return handleSpaceSyncMessage; }, set(value) { handleSpaceSyncMessage = value; }, configurable: true },
+  "serverUpdateTimer": { get() { return serverUpdateTimer; }, set(value) { serverUpdateTimer = value; }, configurable: true },
+  "hideServerUpdateNotice": { get() { return hideServerUpdateNotice; }, set(value) { hideServerUpdateNotice = value; }, configurable: true },
+  "showServerUpdateNotice": { get() { return showServerUpdateNotice; }, set(value) { showServerUpdateNotice = value; }, configurable: true },
+  "handleServerUpdateFrame": { get() { return handleServerUpdateFrame; }, set(value) { handleServerUpdateFrame = value; }, configurable: true },
+  "connectPresence": { get() { return connectPresence; }, set(value) { connectPresence = value; }, configurable: true },
+  "connectChatTransport": { get() { return connectChatTransport; }, set(value) { connectChatTransport = value; }, configurable: true },
+  "buildChatTransport": { get() { return buildChatTransport; }, set(value) { buildChatTransport = value; }, configurable: true },
+  "startSecureSession": { get() { return startSecureSession; }, set(value) { startSecureSession = value; }, configurable: true },
+  "secureSessionAdvised": { get() { return secureSessionAdvised; }, set() { throw new TypeError('Assignment to constant variable secureSessionAdvised.'); }, configurable: true },
+  "offerSecureSessionBeforeLargeSend": { get() { return offerSecureSessionBeforeLargeSend; }, set(value) { offerSecureSessionBeforeLargeSend = value; }, configurable: true },
+  "sendMessage": { get() { return sendMessage; }, set(value) { sendMessage = value; }, configurable: true },
+  "deliverTextEntry": { get() { return deliverTextEntry; }, set(value) { deliverTextEntry = value; }, configurable: true },
+  "noteWaitingForConnection": { get() { return noteWaitingForConnection; }, set(value) { noteWaitingForConnection = value; }, configurable: true },
+  "heldForPrekeyNoted": { get() { return heldForPrekeyNoted; }, set() { throw new TypeError('Assignment to constant variable heldForPrekeyNoted.'); }, configurable: true },
+  "noteHeldForPrekey": { get() { return noteHeldForPrekey; }, set(value) { noteHeldForPrekey = value; }, configurable: true },
+  "releaseHeldForPrekey": { get() { return releaseHeldForPrekey; }, set(value) { releaseHeldForPrekey = value; }, configurable: true },
+  "SEND_DIAL_WAIT_MS": { get() { return SEND_DIAL_WAIT_MS; }, set() { throw new TypeError('Assignment to constant variable SEND_DIAL_WAIT_MS.'); }, configurable: true },
+  "dialForSend": { get() { return dialForSend; }, set(value) { dialForSend = value; }, configurable: true },
+  "relaySessionFor": { get() { return relaySessionFor; }, set(value) { relaySessionFor = value; }, configurable: true },
+  "relayRouteNoted": { get() { return relayRouteNoted; }, set() { throw new TypeError('Assignment to constant variable relayRouteNoted.'); }, configurable: true },
+  "noteRelayRoute": { get() { return noteRelayRoute; }, set(value) { noteRelayRoute = value; }, configurable: true },
+  "LIVE_DELIVERY_WAIT_MS": { get() { return LIVE_DELIVERY_WAIT_MS; }, set() { throw new TypeError('Assignment to constant variable LIVE_DELIVERY_WAIT_MS.'); }, configurable: true },
+  "watchLiveDelivery": { get() { return watchLiveDelivery; }, set(value) { watchLiveDelivery = value; }, configurable: true },
+  "transferBannerOwner": { get() { return transferBannerOwner; }, set(value) { transferBannerOwner = value; }, configurable: true },
+  "setTransferBanner": { get() { return setTransferBanner; }, set(value) { setTransferBanner = value; }, configurable: true },
+  "clearTransferBanner": { get() { return clearTransferBanner; }, set(value) { clearTransferBanner = value; }, configurable: true },
+  "sendFile": { get() { return sendFile; }, set(value) { sendFile = value; }, configurable: true },
+  "canDecodeImage": { get() { return canDecodeImage; }, set(value) { canDecodeImage = value; }, configurable: true },
+  "convertImageToJpeg": { get() { return convertImageToJpeg; }, set(value) { convertImageToJpeg = value; }, configurable: true },
+  "offerJpegConversion": { get() { return offerJpegConversion; }, set(value) { offerJpegConversion = value; }, configurable: true },
+  "stripFileMetadataForSend": { get() { return stripFileMetadataForSend; }, set(value) { stripFileMetadataForSend = value; }, configurable: true },
+  "holdFileInMemory": { get() { return holdFileInMemory; }, set(value) { holdFileInMemory = value; }, configurable: true },
+  "sendEncryptedBlob": { get() { return sendEncryptedBlob; }, set(value) { sendEncryptedBlob = value; }, configurable: true },
+  "handleSystemNote": { get() { return handleSystemNote; }, set(value) { handleSystemNote = value; }, configurable: true },
+  "DEVICE_SYNC_BATCH_ENTRIES": { get() { return DEVICE_SYNC_BATCH_ENTRIES; }, set() { throw new TypeError('Assignment to constant variable DEVICE_SYNC_BATCH_ENTRIES.'); }, configurable: true },
+  "DEVICE_SYNC_FILE_INLINE_BYTES": { get() { return DEVICE_SYNC_FILE_INLINE_BYTES; }, set() { throw new TypeError('Assignment to constant variable DEVICE_SYNC_FILE_INLINE_BYTES.'); }, configurable: true },
+  "DEVICE_SYNC_BATCH_INLINE_BUDGET": { get() { return DEVICE_SYNC_BATCH_INLINE_BUDGET; }, set() { throw new TypeError('Assignment to constant variable DEVICE_SYNC_BATCH_INLINE_BUDGET.'); }, configurable: true },
+  "DEVICE_SYNC_MIN_INTERVAL_MS": { get() { return DEVICE_SYNC_MIN_INTERVAL_MS; }, set() { throw new TypeError('Assignment to constant variable DEVICE_SYNC_MIN_INTERVAL_MS.'); }, configurable: true },
+  "deviceSyncLastSentAt": { get() { return deviceSyncLastSentAt; }, set(value) { deviceSyncLastSentAt = value; }, configurable: true },
+  "deviceSyncFilesEnabled": { get() { return deviceSyncFilesEnabled; }, set(value) { deviceSyncFilesEnabled = value; }, configurable: true },
+  "setDeviceSyncFilesEnabled": { get() { return setDeviceSyncFilesEnabled; }, set(value) { setDeviceSyncFilesEnabled = value; }, configurable: true },
+  "deviceSyncEntryForWire": { get() { return deviceSyncEntryForWire; }, set(value) { deviceSyncEntryForWire = value; }, configurable: true },
+  "buildDeviceSyncBundles": { get() { return buildDeviceSyncBundles; }, set(value) { buildDeviceSyncBundles = value; }, configurable: true },
+  "storedPersonalContacts": { get() { return storedPersonalContacts; }, set(value) { storedPersonalContacts = value; }, configurable: true },
+  "buildContactSyncBundle": { get() { return buildContactSyncBundle; }, set(value) { buildContactSyncBundle = value; }, configurable: true },
+  "deviceSyncSignBytes": { get() { return deviceSyncSignBytes; }, set(value) { deviceSyncSignBytes = value; }, configurable: true },
+  "signDeviceSyncEnvelope": { get() { return signDeviceSyncEnvelope; }, set(value) { signDeviceSyncEnvelope = value; }, configurable: true },
+  "verifyDeviceSyncSender": { get() { return verifyDeviceSyncSender; }, set(value) { verifyDeviceSyncSender = value; }, configurable: true },
+  "CHAT_DELETED_STORAGE_KEY": { get() { return CHAT_DELETED_STORAGE_KEY; }, set() { throw new TypeError('Assignment to constant variable CHAT_DELETED_STORAGE_KEY.'); }, configurable: true },
+  "DELETION_GRAVE_KEEP_MS": { get() { return DELETION_GRAVE_KEEP_MS; }, set() { throw new TypeError('Assignment to constant variable DELETION_GRAVE_KEEP_MS.'); }, configurable: true },
+  "DELETION_LOG_KEEP_MS": { get() { return DELETION_LOG_KEEP_MS; }, set() { throw new TypeError('Assignment to constant variable DELETION_LOG_KEEP_MS.'); }, configurable: true },
+  "deletionStore": { get() { return deletionStore; }, set(value) { deletionStore = value; }, configurable: true },
+  "saveDeletionStore": { get() { return saveDeletionStore; }, set(value) { saveDeletionStore = value; }, configurable: true },
+  "graveHash": { get() { return graveHash; }, set(value) { graveHash = value; }, configurable: true },
+  "graveTime": { get() { return graveTime; }, set(value) { graveTime = value; }, configurable: true },
+  "noteConversationDeleted": { get() { return noteConversationDeleted; }, set(value) { noteConversationDeleted = value; }, configurable: true },
+  "recentDeletions": { get() { return recentDeletions; }, set(value) { recentDeletions = value; }, configurable: true },
+  "applySiblingDeletion": { get() { return applySiblingDeletion; }, set(value) { applySiblingDeletion = value; }, configurable: true },
+  "sealDeviceSyncBundle": { get() { return sealDeviceSyncBundle; }, set(value) { sealDeviceSyncBundle = value; }, configurable: true },
+  "deviceSyncInFlight": { get() { return deviceSyncInFlight; }, set(value) { deviceSyncInFlight = value; }, configurable: true },
+  "sendDeviceSync": { get() { return sendDeviceSync; }, set(value) { sendDeviceSync = value; }, configurable: true },
+  "sendDeviceSyncFromUi": { get() { return sendDeviceSyncFromUi; }, set(value) { sendDeviceSyncFromUi = value; }, configurable: true },
+  "mergeSyncedEntry": { get() { return mergeSyncedEntry; }, set(value) { mergeSyncedEntry = value; }, configurable: true },
+  "mergeDeviceSyncBundle": { get() { return mergeDeviceSyncBundle; }, set(value) { mergeDeviceSyncBundle = value; }, configurable: true },
+  "handleDeviceSyncEnvelope": { get() { return handleDeviceSyncEnvelope; }, set(value) { handleDeviceSyncEnvelope = value; }, configurable: true },
+  "maybeAnnounceDeviceSync": { get() { return maybeAnnounceDeviceSync; }, set(value) { maybeAnnounceDeviceSync = value; }, configurable: true },
+  "DEVICE_CONTACT_PUSH_MIN_INTERVAL_MS": { get() { return DEVICE_CONTACT_PUSH_MIN_INTERVAL_MS; }, set() { throw new TypeError('Assignment to constant variable DEVICE_CONTACT_PUSH_MIN_INTERVAL_MS.'); }, configurable: true },
+  "deviceContactPushLastAt": { get() { return deviceContactPushLastAt; }, set(value) { deviceContactPushLastAt = value; }, configurable: true },
+  "deviceContactPeerIdsBaseline": { get() { return deviceContactPeerIdsBaseline; }, set(value) { deviceContactPeerIdsBaseline = value; }, configurable: true },
+  "maybePushContactDelta": { get() { return maybePushContactDelta; }, set(value) { maybePushContactDelta = value; }, configurable: true },
+  "DEVICE_SYNC_FILE_PART_BYTES": { get() { return DEVICE_SYNC_FILE_PART_BYTES; }, set() { throw new TypeError('Assignment to constant variable DEVICE_SYNC_FILE_PART_BYTES.'); }, configurable: true },
+  "DEVICE_FILE_PULL_TTL_MS": { get() { return DEVICE_FILE_PULL_TTL_MS; }, set() { throw new TypeError('Assignment to constant variable DEVICE_FILE_PULL_TTL_MS.'); }, configurable: true },
+  "deviceFilePulls": { get() { return deviceFilePulls; }, set() { throw new TypeError('Assignment to constant variable deviceFilePulls.'); }, configurable: true },
+  "announceCallHandled": { get() { return announceCallHandled; }, set(value) { announceCallHandled = value; }, configurable: true },
+  "requestDeviceFile": { get() { return requestDeviceFile; }, set(value) { requestDeviceFile = value; }, configurable: true },
+  "serveDeviceFileRequest": { get() { return serveDeviceFileRequest; }, set(value) { serveDeviceFileRequest = value; }, configurable: true },
+  "acceptDeviceFilePart": { get() { return acceptDeviceFilePart; }, set(value) { acceptDeviceFilePart = value; }, configurable: true },
+});

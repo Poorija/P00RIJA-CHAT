@@ -1,0 +1,16 @@
+{
+  "name": "poorija-vendor-mlkem",
+  "private": true,
+  "description": "Builds vendor/mlkem/mlkem.bundle.min.js: ML-KEM-768 (FIPS 203) in one script the page loads without a bundler.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@noble/post-quantum": "0.7.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

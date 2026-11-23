@@ -1,0 +1,115 @@
+html.msgr {
+  --ui-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", "Inter", "Vazirmatn", "Segoe UI", Roboto, system-ui, sans-serif;
+  --ui-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --tint: #4f46e5;
+  --tint-fill: #4f46e5;
+  --tint-press: #4338ca;
+  --on-tint: #ffffff;
+  --green: #16a34a;
+  --red: #c81e1e; /* #dc2626 was 4.43:1 on --bg */
+  --orange: #ea580c;
+  --yellow: #ca8a04;
+  --gray: #64748b;
+
+  --bg: #f3f5fa;
+  --cell: #ffffff;
+  --cell-press: #e8eaf3;
+  --label: #151827;
+  --label-2: #586275;
+  --label-3: #7b8496;
+  --sep: rgba(71, 85, 105, 0.2);
+  --fill: rgba(79, 70, 229, 0.07);
+  --fill-2: rgba(79, 70, 229, 0.13);
+
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-edge: rgba(15, 23, 42, 0.1);
+  --glass-hi: rgba(255, 255, 255, 0.95);
+  --glass-shadow: 0 12px 36px rgba(30, 41, 59, 0.14);
+  --glass-blur: 22px;
+
+  --wall: #edf1f8;
+  --wall-ink: rgba(79, 70, 229, 0.055);
+  --bubble-in: #ffffff;
+  --bubble-in-ink: #171a26;
+  --bubble-out: #e0e7ff;
+  --bubble-out-ink: #312e81;
+  --bubble-meta: #5b6779;
+  --bubble-out-meta: #4f46a5;
+  --tick-read: #4338ca;
+  --chip: rgba(255, 255, 255, 0.9);
+  --chip-ink: #465168;
+
+  --r-card: 20px;
+  --r-bubble: 18px;
+  --r-bubble-tail: 6px;
+  --gutter: 16px;
+  --tabbar-h: 62px;
+  --bar-gap: max(calc(env(safe-area-inset-bottom, 0px) - 18px), 8px);
+  --bar-clear: calc(var(--tabbar-h) + var(--bar-gap) + 18px);
+  --rail-w: 76px;
+  --list-w: clamp(300px, 30vw, 380px);
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 36px rgba(15, 23, 42, 0.06);
+  --shadow-workspace: 0 24px 70px rgba(30, 41, 59, 0.11), 0 2px 8px rgba(30, 41, 59, 0.05);
+
+  --app-bg: var(--bg);
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+html.msgr.dark {
+  --tint: #a5b4fc;
+  --tint-fill: #4f46e5;
+  --tint-press: #3730a3;
+  --green: #4ade80;
+  --red: #f87171;
+  --orange: #fb923c;
+
+  --bg: #0b1020;
+  --cell: #151c2e;
+  --cell-press: #27324a;
+  --label: #f4f6fb;
+  --label-2: #aab4c8;
+  --label-3: #818da3;
+  --sep: rgba(148, 163, 184, 0.18);
+  --fill: rgba(165, 180, 252, 0.09);
+  --fill-2: rgba(165, 180, 252, 0.16);
+
+  --glass-bg: rgba(21, 28, 46, 0.82);
+  --glass-edge: rgba(148, 163, 184, 0.2);
+  --glass-hi: rgba(255, 255, 255, 0.14);
+  --glass-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
+
+  --wall: #0d1425;
+  --wall-ink: rgba(165, 180, 252, 0.055);
+  --bubble-in: #1b2438;
+  --bubble-in-ink: #eef2ff;
+  --bubble-out: #4f46e5;
+  --bubble-out-ink: #ffffff;
+  --bubble-meta: #aab4c8;
+  --bubble-out-meta: #d4d9ff;
+  --tick-read: #c7d2fe;
+  --chip: rgba(21, 28, 46, 0.94);
+  --chip-ink: #c5cede;
+  --shadow-soft: 0 12px 36px rgba(0, 0, 0, 0.2);
+  --shadow-workspace: 0 26px 80px rgba(0, 0, 0, 0.34);
+}
+
+html[dir="rtl"].msgr {
+  --ui-font: "Vazirmatn", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html.msgr { --glass-bg: var(--cell); --glass-blur: 0px; }
+}
+@media (prefers-contrast: more) {
+  html.msgr { --label-2: #3f4757; --sep: rgba(15, 23, 42, 0.45); }
+  html.msgr.dark { --label-2: #e2e8f0; --sep: rgba(226, 232, 240, 0.5); }
+}
+
+html.msgr body {
+  background: var(--bg);
+  color: var(--label);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}

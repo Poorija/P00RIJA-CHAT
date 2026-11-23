@@ -1,0 +1,343 @@
+# Bounded logging for every service: the default json-file log grows without
+# limit, and four services logging every presence event and request fill a
+# long-lived host's disk — the same "grows forever" failure the backup script
+# was written to prevent for backups, one layer lower.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# One project name, fixed here: a stack that took its name from the folder it
+# sat in (`config`) would be taken by compose for any other stack in a folder
+# of that name on the same machine, and recreated under this one's settings.
+name: p00rija-chat
+
+services:
+  chat-app:
+    # The image tag carries the app version, handed in by the deploy so it
+    # can never sit still on a stale number: a build of 2.98.21 is tagged
+    # 2.98.21, on a fresh install and on an update alike. The default is the
+    # version this file shipped with, which is what a GitHub-apply overlay
+    # lands on when nobody handed one in.
+    image: p00rija-chat:${APP_VERSION:-2.98.21}
+    build:
+      context: ../
+      dockerfile: config/Dockerfile
+    container_name: P00RIJA-Chat_App
+    logging: *default-logging
+    environment:
+      HOST: 0.0.0.0
+      PORT: 1122
+      # What this deployment calls itself. nginx.conf is a template and these
+      # are the only three things in it that differ between servers, so the
+      # same image serves two deployments under their own names with nothing
+      # host-specific committed anywhere.
+      #
+      # DOMAIN is required rather than defaulted: a missing one would render an
+      # empty server_name and a CSP whose connect-src names nothing, and the
+      # app would then look like it worked while the relay socket was blocked.
+      APP_DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      APP_ORIGIN: https://${DOMAIN}:${APP_PORT:-1122}
+      APP_ORIGIN_WS: wss://${DOMAIN}:${APP_PORT:-1122}
+      # The relay's other addresses, for the page's connect-src: an installed
+      # app must be able to open a socket to a mirror when the main domain is
+      # blocked. Same list the relay publishes (CHAT_MIRROR_ORIGINS below).
+      APP_MIRROR_ORIGINS: ${CHAT_MIRROR_ORIGINS:-}
+      # Relays this one answers for (see CHAT_FRONTS below); nginx gives each
+      # one a port from 1123 up.
+      APP_FRONTS: ${CHAT_FRONTS:-}
+    depends_on:
+      - chat-signal
+    ports:
+      - "${APP_PORT:-1122}:1122"
+      # Loopback unless this server keeps a front door (APP_FRONT_BIND=0.0.0.0
+      # with CHAT_FRONTS): a server without one opens nothing new.
+      - "${APP_FRONT_BIND:-127.0.0.1}:${APP_FRONT_PORT:-1123}:1123"
+    volumes:
+      # The certificate folder (CERTS_DIR) is read in place, shared with
+      # anything else on the machine that serves the same name — 3X-UI reads
+      # /root/cert/<domain>/. See scripts/cert-renewer.sh.
+      - ${SSL_CERT_PATH:-${CERTS_DIR:-../certs}/${CERT_FILE:-cert.pem}}:/etc/nginx/certs/fullchain.pem:ro
+      - ${SSL_KEY_PATH:-${CERTS_DIR:-../certs}/${KEY_FILE:-key.pem}}:/etc/nginx/certs/privkey.pem:ro
+    extra_hosts:
+      - "chat-signal:host-gateway"
+    networks:
+      - p00rija_chat_net
+    # Every proxied WebSocket holds two of nginx's connections, each a file.
+    # Docker's default of 1024 open files capped a server near 500 people.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    restart: unless-stopped
+
+  chat-signal:
+    build:
+      context: ../
+      dockerfile: config/Dockerfile.chat-signal
+    container_name: P00RIJA-Chat_ChatSignal
+    logging: *default-logging
+    environment:
+      CHAT_TURN_URL: ${CHAT_TURN_URL:-turn:${DOMAIN:-localhost}:11478?transport=udp,turn:${DOMAIN:-localhost}:11478?transport=tcp,turns:${DOMAIN:-localhost}:11349?transport=tcp}
+      CHAT_TURN_USERNAME: ${TURN_USER:?Set TURN_USER in .env}
+      CHAT_TURN_CREDENTIAL: ${TURN_PASSWORD:?Set TURN_PASSWORD in .env}
+      # The TURN REST secret shared with coturn. Set: /turn-config mints
+      # credentials that expire. Empty: the static pair above is served.
+      CHAT_TURN_SECRET: ${TURN_SECRET:-}
+      CHAT_PUBLIC_RELAY_ORIGIN: ${CHAT_PUBLIC_RELAY_ORIGIN:-}
+      # Which host names are this deployment's own: an origin learned from a
+      # request is only repeated to linked relays when it names one of them.
+      DOMAIN: ${DOMAIN:-}
+      CHAT_PUBLIC_PRESENCE_URL: ${CHAT_PUBLIC_PRESENCE_URL:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@${DOMAIN:-localhost}}
+      CHAT_PUSH_STORE_PATH: /data/push-subscriptions.json
+      # Beside the other state, so the pair survives a container being
+      # recreated. Without this the server generates a new one on every start
+      # and every push subscription anyone made stops working.
+      CHAT_VAPID_STORE_PATH: /data/vapid.json
+      # The relays this one may link to, as "<id>@<origin>" separated by commas.
+      #
+      # Empty means transit is off and the /relay-link socket is refused
+      # outright -- a relay with no peers configured cannot be talked into
+      # carrying anything. An entry with an id but no origin is one this relay
+      # will ANSWER but never dial, which is what a server behind NAT wants.
+      #
+      # This has to be listed here and not only read from .env: the server
+      # reads process.env, and a variable that is in .env but not named in this
+      # block never reaches the container at all. It was missing, so setting it
+      # in .env looked right and did nothing.
+      CHAT_TRANSIT_PEERS: ${CHAT_TRANSIT_PEERS:-}
+      # The relay family (docs/RELAY-NETWORK.md): the operator key this relay
+      # trusts, and where a relay that knows nobody yet asks for the family's
+      # signed directory.
+      CHAT_OPERATOR_KEY: ${CHAT_OPERATOR_KEY:-}
+      CHAT_DIRECTORY_SOURCES: ${CHAT_DIRECTORY_SOURCES:-}
+      CHAT_DIRECTORY_MIN_SERIAL: ${CHAT_DIRECTORY_MIN_SERIAL:-0}
+      # Partners (other operators' families): how long a gateway's link must
+      # stand before it carries again, and how long a gateway taken off keeps
+      # its partner links while the new one comes up.
+      CHAT_GATEWAY_STABLE_MS: ${CHAT_GATEWAY_STABLE_MS:-60000}
+      CHAT_GATEWAY_HANDOFF_MS: ${CHAT_GATEWAY_HANDOFF_MS:-120000}
+      CHAT_JOIN_PER_HOUR: ${CHAT_JOIN_PER_HOUR:-10}
+      CHAT_JOIN_WAITING_MAX: ${CHAT_JOIN_WAITING_MAX:-20}
+      # Dangerous dashboard actions only with an operator or admin signature (1),
+      # and whether signed requests from the central panel are taken at all.
+      CHAT_REQUIRE_OPERATOR_SIGNATURE: ${CHAT_REQUIRE_OPERATOR_SIGNATURE:-0}
+      CHAT_CENTRAL_CONTROL: ${CHAT_CENTRAL_CONTROL:-1}
+      # Only for a link to a relay whose certificate this one cannot verify --
+      # a self-signed staging box. Never on a real deployment: the link's own
+      # handshake authenticates the far relay, but TLS is what stops the dial
+      # being answered by whoever holds the route.
+      CHAT_TRANSIT_INSECURE_TLS: ${CHAT_TRANSIT_INSECURE_TLS:-}
+      CHAT_OFFLINE_STORE_PATH: /data/offline-messages.json
+      CHAT_POLICY_STORE_PATH: /data/server-policy.json
+      CHAT_SELF_DESTRUCT_STORE_PATH: /data/self-destruct-records.json
+      CHAT_ALLOWED_ORIGINS: ${CHAT_ALLOWED_ORIGINS:-}
+      # Other addresses of this same relay — a second domain, a CDN in front of
+      # it — published at /relay-mirrors. A client switches to one only after
+      # it proves it holds this relay's key. See docs/RELAY-NETWORK.md.
+      CHAT_MIRROR_ORIGINS: ${CHAT_MIRROR_ORIGINS:-}
+      # Link previews for the web and phone apps: the relay fetches the page a
+      # person is about to share (it sees the link; nothing is kept). 0 = off.
+      CHAT_LINK_PREVIEWS: ${CHAT_LINK_PREVIEWS:-1}
+      # Telegram sticker packs from a share link: a bot token lets this relay
+      # ask Telegram; without one, an upstream relay that has a token is asked.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_STICKERS_UPSTREAM: ${TELEGRAM_STICKERS_UPSTREAM:-}
+      # Alerts to the operator (scripts/lib/relay-alerts.js): disk, memory,
+      # open files, TURN ports, coturn down, a linked relay unreachable. Sent
+      # by the bot above to this chat; a relay without the two hands its
+      # alerts over the transit link to one that has them.
+      CHAT_ALERT_TELEGRAM_CHAT_ID: ${CHAT_ALERT_TELEGRAM_CHAT_ID:-}
+      # The relays (ids) alerts may go to and come from over the transit link;
+      # empty means none. Never "whoever is linked": an alert says how full
+      # this machine is and what it is called.
+      CHAT_ALERT_PEERS: ${CHAT_ALERT_PEERS:-}
+      CHAT_ALERT_LABEL: ${CHAT_ALERT_LABEL:-}
+      CHAT_ALERT_DISK_FREE_PCT: ${CHAT_ALERT_DISK_FREE_PCT:-10}
+      CHAT_ALERT_DISK_FREE_GB: ${CHAT_ALERT_DISK_FREE_GB:-2}
+      CHAT_ALERT_MEMORY_FREE_PCT: ${CHAT_ALERT_MEMORY_FREE_PCT:-10}
+      CHAT_ALERT_TURN_PCT: ${CHAT_ALERT_TURN_PCT:-80}
+      # The server's link speed in Mbit/s; 0 leaves the bandwidth alert off.
+      CHAT_ALERT_LINK_MBPS: ${CHAT_ALERT_LINK_MBPS:-0}
+      # coturn's relay ports, the same two numbers coturn is given below.
+      CHAT_TURN_PORT_MIN: ${TURN_MIN_PORT:-40000}
+      CHAT_TURN_PORT_MAX: ${TURN_MAX_PORT:-40500}
+      # The relay's own plain-http ports (11220, 11221, 11222) answer only this
+      # machine and nginx, never the internet. docker0 stands for the Docker
+      # bridge address nginx reaches the relay at (chat-signal:host-gateway).
+      CHAT_LISTEN_HOSTS: ${CHAT_LISTEN_HOSTS:-127.0.0.1,docker0}
+      # A front door (docs/RELAY-NETWORK.md): on the relay people can reach,
+      # CHAT_FRONTS=<relay id>@https://this-domain:1123 for a relay behind it;
+      # on that relay, CHAT_FRONT_DOORS=<this relay's id>. Both need the
+      # transit link between them.
+      CHAT_FRONTS: ${CHAT_FRONTS:-}
+      CHAT_FRONT_DOORS: ${CHAT_FRONT_DOORS:-}
+      CHAT_FRONT_PORT: ${CHAT_FRONT_PORT:-9011}
+      MONITOR_PASSWORD: ${MONITOR_PASSWORD:?Set MONITOR_PASSWORD in .env}
+      CHAT_TLS_CERT_PATH: /etc/certs/${CERT_FILE:-cert.pem}
+      # ---- the monitor's machine half (3.33) ----
+      # The install tree and backups directory as the DOCKER HOST sees them.
+      # Passed through from the environment sync-to-server.sh sets when it
+      # runs compose, so .env never has to repeat them.
+      OPS_INSTALL_DIR: ${OPS_INSTALL_DIR:-}
+      OPS_BACKUP_DIR: ${OPS_BACKUP_DIR:-}
+      # The bootstrap installer's own port; 0 disables it.
+      CHAT_BOOTSTRAP_PORT: ${CHAT_BOOTSTRAP_PORT:-11222}
+      # This round's version, so the disk card can tell the running image
+      # from the stale ones it offers to delete.
+      APP_VERSION: ${APP_VERSION:-}
+    network_mode: host
+    volumes:
+      - ../data/chat-signal:/data
+      - ${CERTS_DIR:-../certs}:/etc/certs:ro
+      # The monitor's docker access. A mounted docker socket is root on the
+      # host, and that is a real price -- paid here because the dashboard's
+      # machine half (image updates, backups, clean-server installs) is worth
+      # it on a box that exists to run this stack and nothing else. The
+      # socket sits behind the monitor password like everything else the
+      # relay answers; remove the volume on any box where that trade is
+      # wrong, and the dashboard simply reports those actions as unavailable.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # A socket is an open file. Docker's default of 1024 held the relay to
+    # about a thousand sockets — some 500 people, each app holding two.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    # A ceiling, so a runaway relay cannot take memory from whatever else the
+    # machine runs. The relay itself stops taking sockets at three quarters
+    # of it (memoryNearlyExhausted), so reaching it is never a kill.
+    mem_limit: ${CHAT_SIGNAL_MEM_LIMIT:-2g}
+    restart: unless-stopped
+
+  # The group-call SFU (roadmap 3.2, scripts/sfu.js). Its own container and
+  # port (11223, never the internet: nginx reaches it at /sfu through the Docker
+  # bridge, as it reaches the relay). It reads the room secret the relay writes
+  # into its data directory, read-only. Forwards SFrame-encrypted frames only.
+  sfu:
+    build:
+      context: ../
+      dockerfile: config/Dockerfile.sfu
+    container_name: P00RIJA-Chat_Sfu
+    logging: *default-logging
+    environment:
+      CHAT_SFU_PORT: ${CHAT_SFU_PORT:-11223}
+      CHAT_SFU_LISTEN_HOSTS: ${CHAT_LISTEN_HOSTS:-127.0.0.1,docker0}
+      CHAT_SFU_SECRET_PATH: /data/sfu-secret
+      CHAT_SFU_MAX_PER_ROOM: ${CHAT_SFU_MAX_PER_ROOM:-25}
+    network_mode: host
+    volumes:
+      - ../data/chat-signal:/data:ro
+    depends_on:
+      - chat-signal
+    restart: unless-stopped
+
+  coturn:
+    image: coturn/coturn:4.18.0-alpine
+    container_name: P00RIJA-Chat_Coturn
+    logging: *default-logging
+    network_mode: host
+    environment:
+      # Both halves required, and for the same reason. The password already
+      # was; the username fell back to one deployment's own name, so a relay
+      # nobody had configured TURN on started coturn under a stranger's
+      # username and handed that name to every client through /turn-config.
+      TURN_USER: ${TURN_USER:?Set TURN_USER in .env}
+      TURN_PASSWORD: ${TURN_PASSWORD:?Set TURN_PASSWORD in .env}
+      TURN_SECRET: ${TURN_SECRET:-}
+    command:
+      # No `-n`. The image's entrypoint runs every argument through
+      # `eval "echo …"`, and echo takes -n as its own option and prints
+      # nothing — coturn then received an empty argument and logged
+      # "CONFIG: Unknown argument:" on every start. Without a turnserver.conf
+      # in the image, coturn already uses only these arguments.
+      - --log-file=stdout
+      - --listening-port=11478
+      - --tls-listening-port=11349
+      - --listening-ip=0.0.0.0
+      - --realm=${DOMAIN:-localhost}
+      - --server-name=${DOMAIN:-localhost}
+      - --cert=/etc/coturn/certs/cert.pem
+      - --pkey=/etc/coturn/certs/key.pem
+      # TURN REST when TURN_SECRET is set: the relay mints credentials that
+      # expire (see turnCredentialsForClient in scripts/server.js) and the
+      # static pair stops being something /turn-config hands to every visitor.
+      # Without a secret the static user keeps working exactly as before.
+      # Each argument is evaluated at start by the image's entrypoint, so the
+      # secret is read from the container environment rather than written
+      # into the command line compose records; `$$` keeps compose itself from
+      # expanding it early.
+      - $$( [ -n "$$TURN_SECRET" ] && echo --use-auth-secret || echo --lt-cred-mech )
+      - $$( [ -n "$$TURN_SECRET" ] && echo --static-auth-secret=$$TURN_SECRET || echo --user=$$TURN_USER:$$TURN_PASSWORD )
+      - --fingerprint
+      # No --no-cli: coturn 4.18 keeps its telnet CLI off unless --cli asks
+      # for it, and logs the old flag as an error.
+      - --no-multicast-peers
+      - --min-port=${TURN_MIN_PORT:-40000}
+      - --max-port=${TURN_MAX_PORT:-40500}
+      # Required, not defaulted: a TURN server advertising 127.0.0.1 to the
+      # world answers every relayed call with a connection to itself, and the
+      # failure is silent from the operator's side. Missing is an error, the
+      # same as the credentials are.
+      - --external-ip=${EXTERNAL_IP:?Set EXTERNAL_IP in .env}
+      - --relay-ip=${EXTERNAL_IP:?Set EXTERNAL_IP in .env}
+    volumes:
+      - ${SSL_CERT_PATH:-${CERTS_DIR:-../certs}/${CERT_FILE:-cert.pem}}:/etc/coturn/certs/cert.pem:ro
+      - ${SSL_KEY_PATH:-${CERTS_DIR:-../certs}/${KEY_FILE:-key.pem}}:/etc/coturn/certs/key.pem:ro
+    restart: unless-stopped
+
+  cert-renewer:
+    build:
+      context: ../
+      dockerfile: config/Dockerfile.cert-renewer
+    container_name: P00RIJA-Chat_CertRenewer
+    logging: *default-logging
+    # Run through the shell rather than exec'd directly: the script is mounted
+    # from the tree, and a checkout or an rsync does not always keep its
+    # executable bit — when it did not, the container refused to start.
+    entrypoint: ["/bin/sh", "/usr/local/bin/cert-renewer.sh"]
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      EXTERNAL_IP: ${EXTERNAL_IP:-}
+      # letsencrypt | existing | self-signed; empty follows DOMAIN (a name is
+      # letsencrypt, localhost or an address is self-signed).
+      CERT_MODE: ${CERT_MODE:-}
+      CERT_SANS: ${CERT_SANS:-}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
+      CERT_DEPLOY_DIR: /deploy-certs
+      CERT_FILE: ${CERT_FILE:-cert.pem}
+      KEY_FILE: ${KEY_FILE:-key.pem}
+      # The folder and files as the host names them: how 3X-UI's settings and
+      # acme.sh refer to them, and what nginx and coturn were handed.
+      CERTS_DIR_ON_HOST: ${CERTS_DIR:-../certs}
+      SSL_CERT_PATH_ON_HOST: ${SSL_CERT_PATH:-${CERTS_DIR:-../certs}/${CERT_FILE:-cert.pem}}
+      SSL_KEY_PATH_ON_HOST: ${SSL_KEY_PATH:-${CERTS_DIR:-../certs}/${KEY_FILE:-key.pem}}
+      LETSENCRYPT_DIR: /etc/letsencrypt
+      # Renewed automatically when ten days are left (a third of its life, for
+      # a six-day certificate on an IP address).
+      RENEW_BEFORE_DAYS: ${CERT_RENEW_BEFORE_DAYS:-10}
+      CHECK_INTERVAL_SECONDS: ${CERT_CHECK_INTERVAL_SECONDS:-21600}
+      APP_CONTAINER: P00RIJA-Chat_App
+      COTURN_CONTAINER: P00RIJA-Chat_Coturn
+      RENEWER_CONTAINER: P00RIJA-Chat_CertRenewer
+      COTURN_KEY_UID: ${COTURN_KEY_UID:-65534}
+    network_mode: host
+    volumes:
+      - ${CERTS_DIR:-../certs}:/deploy-certs
+      - /etc/letsencrypt:/etc/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The script from this tree rather than the copy baked into the image,
+      # so a fix to it reaches the server with an ordinary deploy instead of
+      # an image rebuild that has to reach PyPI for certbot. A file mount
+      # keeps the inode it started with, so sync-to-server.sh restarts the
+      # renewer when its copy differs from the tree.
+      - ../scripts/cert-renewer.sh:/usr/local/bin/cert-renewer.sh:ro
+    restart: unless-stopped
+
+networks:
+  p00rija_chat_net:
+    driver: bridge

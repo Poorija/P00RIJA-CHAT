@@ -1,0 +1,369 @@
+/* Dialogs, toasts, sheets: what appears over the app. An alert is a centred
+   glass card with its buttons under hairlines; a sheet comes up from the
+   bottom with a grabber; a toast is a capsule at the top. */
+
+/* ---- alerts and questions (js/dialogs.js) ------------------------------------ */
+
+html.msgr .poorija-dialog-backdrop {
+  background: rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+html.msgr .poorija-dialog {
+  width: min(100%, 320px);
+  max-width: 320px;
+  padding: 20px 0 0;
+  border: 0;
+  border-radius: 26px;
+  background: var(--cell);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 0 0 0.5px var(--sep), 0 30px 80px rgba(0, 0, 0, 0.4);
+  color: var(--label);
+  text-align: center;
+  overflow: hidden;
+}
+html.msgr .poorija-dialog-title { margin: 0; padding: 0 20px; font-size: calc(17px * var(--fs, 1)); font-weight: 600; letter-spacing: -0.3px; color: var(--label); }
+html.msgr .poorija-dialog-message { margin: 6px 0 0; padding: 0 20px 18px; font-size: calc(14px * var(--fs, 1)); line-height: 1.4; color: var(--label-2); }
+html.msgr .poorija-dialog-input,
+html.msgr .poorija-dialog-confirm-input {
+  display: block;
+  width: calc(100% - 40px);
+  margin: 0 20px 12px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+}
+html.msgr .poorija-dialog-error { margin: 0; padding: 0 20px 12px; font-size: calc(13px * var(--fs, 1)); color: var(--red); }
+html.msgr .poorija-dialog-actions {
+  display: flex;
+  gap: 0;
+  margin-top: 0;
+  border-top: 0.5px solid var(--sep);
+}
+html.msgr .poorija-dialog-btn {
+  flex: 1 1 0;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--tint);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  font-weight: 400;
+  box-shadow: none;
+}
+html.msgr .poorija-dialog-btn + .poorija-dialog-btn { border-inline-start: 0.5px solid var(--sep); }
+html.msgr .poorija-dialog-ok { font-weight: 600; }
+html.msgr .poorija-dialog-btn:active { background: var(--fill); }
+/* The OK button is focused when the dialog opens; a ring there read as a thick line. */
+html.msgr .poorija-dialog-btn, html.msgr .poorija-dialog-btn:focus, html.msgr .poorija-dialog-btn:focus-visible { outline: 0; }
+html.msgr .poorija-dialog-actions { border-top: 0; }
+html.msgr .poorija-dialog-actions > .poorija-dialog-btn { border-top: 0.5px solid var(--sep); }
+html.msgr .poorija-dialog-actions > .poorija-dialog-btn + .poorija-dialog-btn { border-inline-start: 0; }
+html.msgr .poorija-dialog-btn.is-danger, html.msgr .poorija-dialog-ok.is-danger, html.msgr .poorija-dialog-btn.danger { color: var(--red); }
+html.msgr .poorija-dialog-choices { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+html.msgr .poorija-dialog-choice {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+  text-align: start;
+}
+html.msgr .poorija-dialog-choice-hint { display: block; margin-top: 2px; font-size: calc(13px * var(--fs, 1)); color: var(--label-2); }
+
+/* ---- toasts ---------------------------------------------------------------------- */
+
+html.msgr .toast-stack { inset-block-start: 0; inset-block-end: auto; align-items: center; }
+/* sileo's own viewport added the 47pt the old shell measured on top of the stack's offset: two
+   safe areas. One, the device's own, plus a hair, so a toast starts under the island. */
+html.msgr .toast-stack-sileo [data-sileo-viewport] { padding-top: max(8px, calc(env(safe-area-inset-top, 0px) - 6px)); }
+html.msgr .app-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92vw, 420px);
+  padding: 11px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(190%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(190%);
+  box-shadow: inset 0 1px 0.5px var(--glass-hi), 0 0 0 0.5px var(--glass-edge), 0 14px 40px rgba(0, 0, 0, 0.22);
+  color: var(--label);
+  font-size: calc(15px * var(--fs, 1));
+  font-weight: 500;
+}
+html.msgr .app-toast i { font-size: calc(17px * var(--fs, 1)); }
+html.msgr .app-toast .fa-check-circle, html.msgr .app-toast .fa-circle-check { color: var(--green); }
+html.msgr .app-toast .fa-exclamation-circle, html.msgr .app-toast .fa-exclamation-triangle, html.msgr .app-toast .fa-triangle-exclamation { color: var(--orange); }
+html.msgr .app-toast .fa-times-circle, html.msgr .app-toast .fa-circle-xmark { color: var(--red); }
+html.msgr .app-toast .fa-info-circle, html.msgr .app-toast .fa-circle-info { color: var(--tint); }
+
+/* ---- making a group ---------------------------------------------------------------- */
+
+html.msgr .chat-group-maker { background: rgba(0, 0, 0, 0.38); align-items: flex-end; justify-content: center; padding: 0; }
+html.msgr .chat-group-maker-card {
+  width: min(100%, 520px);
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-radius: 30px 30px 0 0;
+  background: var(--bg);
+  color: var(--label);
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+@media (min-width: 700px) {
+  html.msgr .chat-group-maker { align-items: center; padding: 24px; }
+  html.msgr .chat-group-maker-card { border-radius: 30px; max-height: 86dvh; }
+}
+html.msgr .chat-group-maker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  background: transparent;
+  border: 0;
+}
+html.msgr .chat-group-maker-head strong { font-size: calc(17px * var(--fs, 1)); font-weight: 600; color: var(--label); }
+html.msgr .chat-group-maker-x { width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--fill); color: var(--label-2); }
+html.msgr .chat-group-maker-body { padding: 0 16px 16px; overflow-y: auto; background: transparent; }
+html.msgr .chat-group-maker-identity { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: var(--r-card); background: var(--cell); }
+html.msgr .chat-group-maker-avatar {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--tint);
+  font-size: calc(22px * var(--fs, 1));
+  overflow: hidden;
+}
+html.msgr .chat-group-maker-avatar img { width: 100%; height: 100%; object-fit: cover; }
+html.msgr .chat-group-maker-fields { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+html.msgr .chat-group-maker input[type="text"], html.msgr .chat-group-maker textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+}
+html.msgr .chat-member-picker-title { margin: 16px 4px 6px; font-size: calc(13px * var(--fs, 1)); font-weight: 400; color: var(--label-2); text-transform: uppercase; letter-spacing: 0.2px; }
+html.msgr #chatGroupMembersPanel { border-radius: var(--r-card); background: var(--cell); overflow: hidden; }
+html.msgr .chat-member-option { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 14px; border: 0; border-bottom: 0.5px solid var(--sep); background: transparent; color: var(--label); font-size: calc(17px * var(--fs, 1)); }
+html.msgr .chat-member-option:last-child { border-bottom: 0; }
+html.msgr #chatCreateGroupBtn {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--tint-fill);
+  color: var(--on-tint);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  font-weight: 600;
+}
+
+/* ---- search everywhere ----------------------------------------------------------- */
+
+html.msgr .chat-fsearch-backdrop { background: rgba(0, 0, 0, 0.38); }
+html.msgr .chat-fsearch-panel {
+  border: 0;
+  border-radius: 26px;
+  background: var(--bg);
+  color: var(--label);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
+}
+@media (max-width: 699px) {
+  html.msgr .chat-fsearch-panel { border-radius: 0; }
+}
+html.msgr .chat-fsearch-head { display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 8px; background: var(--bg); border: 0; }
+html.msgr .chat-fsearch-head input[type="search"], html.msgr .chat-fsearch-head input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+}
+html.msgr .chat-fsearch-close { width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--fill); color: var(--label-2); }
+html.msgr .chat-fsearch-chips, html.msgr .chat-fsearch-toolbar { display: flex; gap: 8px; padding: 4px 12px 8px; overflow-x: auto; scrollbar-width: none; background: transparent; border: 0; }
+html.msgr .chat-fsearch-chips button, html.msgr .chat-fsearch-select {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--label-2);
+  font: inherit;
+  font-size: calc(14px * var(--fs, 1));
+}
+html.msgr .chat-fsearch-chips button.is-on, html.msgr .chat-fsearch-chips button.active { background: color-mix(in srgb, var(--tint) 16%, transparent); color: var(--tint); font-weight: 600; }
+html.msgr .chat-fsearch-hit { display: flex; gap: 12px; padding: 10px 16px; border: 0; border-bottom: 0.5px solid var(--sep); background: transparent; color: var(--label); }
+html.msgr .chat-fsearch-hit-title { font-size: calc(16px * var(--fs, 1)); font-weight: 600; color: var(--label); }
+html.msgr .chat-fsearch-hit-snippet, html.msgr .chat-fsearch-hit-when, html.msgr .chat-fsearch-hit-kind, html.msgr .chat-fsearch-count, html.msgr .chat-fsearch-hint { color: var(--label-2); font-size: calc(14px * var(--fs, 1)); }
+html.msgr .chat-fsearch-hit:hover, html.msgr .chat-fsearch-hit.active { background: var(--fill); }
+html.msgr .chat-fsearch-preview { background: var(--wall); color: var(--label); border: 0; }
+
+/* ---- the chat's own sheets: Start chat, an identity, a QR code ------------------- */
+
+html.msgr .chat-modal {
+  background: rgba(0, 0, 0, 0.38);
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+html.msgr .chat-modal-card {
+  position: relative;
+  width: min(100%, 520px);
+  max-height: 92dvh;
+  overflow-y: auto;
+  padding: 22px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  border: 0;
+  border-radius: 30px 30px 0 0;
+  background: var(--bg);
+  color: var(--label);
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.3);
+}
+html.msgr .chat-modal-card::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline: 0;
+  margin-inline: auto;
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--fill-2);
+}
+@media (min-width: 700px) {
+  html.msgr .chat-modal { align-items: center; padding: 24px; }
+  html.msgr .chat-modal-card { border-radius: 30px; }
+  html.msgr .chat-modal-card::before { display: none; }
+}
+html.msgr .chat-modal-card h3 { margin: 6px 0 16px; font-size: calc(20px * var(--fs, 1)); font-weight: 700; letter-spacing: -0.3px; text-align: center; color: var(--label); }
+html.msgr .chat-modal-close {
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline-end: 14px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--label-2);
+}
+html.msgr .chat-start-actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+html.msgr .chat-modal-card .chat-primary-btn,
+html.msgr .chat-modal-card .chat-soft-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--cell);
+  color: var(--label);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  text-align: start;
+  box-shadow: none;
+}
+html.msgr .chat-modal-card .chat-start-actions i, html.msgr .chat-modal-card .chat-soft-btn i { width: 24px; text-align: center; color: var(--tint); }
+html.msgr .chat-modal-card .chat-primary-btn { background: var(--tint-fill); color: var(--on-tint); font-weight: 600; }
+html.msgr .chat-modal-card .chat-primary-btn i { color: var(--on-tint); }
+html.msgr .chat-modal-card input[type="text"], html.msgr .chat-modal-card textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+  box-sizing: border-box;
+}
+html.msgr .chat-qr-fallback { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+
+/* ---- the plus beside the field: its menu opens upward from the button ---------- */
+
+html.msgr .chat-plus-wrap .chat-actions-sheet {
+  position: absolute;
+  inset-block-end: calc(100% + 10px);
+  inset-block-start: auto;
+  /* The plus is at the left in both writing directions, so the menu is too:
+     physical edges (the old stylesheet's -204px left pushed it off the screen). */
+  left: 0;
+  right: auto;
+  width: min(280px, calc(100vw - 24px));
+  min-width: 0;
+  max-width: none;
+  /* Whatever the keys have not taken, minus the header and the field. */
+  max-height: min(60dvh, calc(100dvh - var(--app-keyboard-inset, 0px) - 200px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 30;
+}
+html.msgr .chat-plus-wrap .chat-actions-sheet .chat-action-row { white-space: nowrap; }
+html.msgr .chat-thread-menu.chat-actions-sheet {
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-end: 0;
+  inset-inline-start: auto;
+  min-width: 232px;
+  background: var(--cell);
+  z-index: 30;
+}
+
+/* The sticker panel keeps colours it was given for the dark theme: pale
+   slate on a pale panel in the light one. */
+html.msgr:not(.dark) .chat-sticker-empty-title { color: var(--label); }
+html.msgr:not(.dark) .chat-sticker-empty-note { color: var(--label-2); }
+html.msgr:not(.dark) .chat-sticker-empty-btn { color: var(--tint); background: color-mix(in srgb, var(--tint) 14%, transparent); }
+html.msgr:not(.dark) .chat-sticker-shelf.is-active { color: var(--tint); }
+/* The panel's head buttons (Stickers, GIF) and its empty-state button kept the
+   legacy slate and a tinted fill that read below 4.5:1 in Pastel and Nord. */
+html.msgr #mainApp #content-chat .chat-sticker-head-btn { color: var(--label-2); }
+html.msgr #mainApp #content-chat .chat-sticker-head-btn.is-active { color: var(--tint); background: var(--fill-2); }
+html.msgr .chat-sticker-empty-btn { color: color-mix(in srgb, var(--tint) 85%, var(--label)); background: var(--fill); }
+html.msgr #mainApp #content-chat .chat-sticker-shelf { color: var(--label-2); }
+html.msgr #mainApp #content-chat .chat-sticker-shelf.is-active { color: color-mix(in srgb, var(--tint) 85%, var(--label)); background: var(--fill); }
+
+/* The QR sheet's density line is amber while it works; amber-500 on the light card was 1.96:1. */
+html.msgr:not(.dark) .chat-qr-meta.is-busy { color: #b45309; }
+/* The plain density line ("reads easily") was the legacy rule's 75 % opacity
+   over body text: 3.07:1 on the light card. It only showed once the identity
+   v4 card made the code small enough to read easily; the secondary ink at
+   full opacity is the label colour every other footnote uses. */
+html.msgr .chat-qr-meta:not(.is-busy) { opacity: 1; color: var(--label-2); }
+/* A disclosure line is a tap target like any other: 24px is the floor (WCAG 2.5.8), 28 is the rule here. */
+html.msgr summary { min-height: 28px; padding-block: 4px; box-sizing: border-box; }

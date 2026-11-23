@@ -1,0 +1,222 @@
+/*
+ * P00RIJA Chat — end-to-end encrypted messenger.
+ * Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+ *
+ * Licensed under the GNU Affero General Public License, version 3 only.
+ * See LICENSE for the full text. Section 13 matters here: run a modified
+ * version as a network service and its users are entitled to your source.
+ */
+
+import { chromium } from 'playwright';
+import { settle } from './_settle.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { readMailboxes } from './_relay-store.mjs';
+import { createChecks } from './_check.mjs';
+/* Forward secrecy, end to end.
+ *
+ *   npm run relay                 # terminal 1
+ *   PORT=8123 npm run dev         # terminal 2
+ *   npm run test:fs
+ *
+ * Two questions, both answered against a real relay rather than by reading the
+ * code: does a live session derive its key instead of shipping one wrapped to
+ * a key that never changes, and does an undelivered message really stop being
+ * openable once its prekey window closes?
+ */
+const BASE = process.env.PKG_URL || 'http://localhost:8123';
+/* Reachable FROM THE PAGE, not just from here: an https page cannot fetch
+   http://localhost:11220 or open a ws:// socket to it — the browser blocks it as
+   mixed content and the suite reads that as a relay that is down. When the app
+   is served over https the relay defaults to that same origin, which is the
+   container serving both halves. The env var still wins. */
+const RELAY = process.env.PKG_RELAY
+  || (/^https:/i.test(BASE) ? String(BASE).replace(/\/+$/, '') : 'http://localhost:11220');
+const PASS = 'Harness#Pass2026!';
+const DATA = process.env.CHAT_DATA_DIR || path.resolve(process.cwd(), 'data', 'chat-signal');
+const mailboxes = () => readMailboxes(path.join(DATA, 'offline-messages.json'));
+const { results, check } = createChecks({ entry: (n, ok) => ({ n, ok }) });
+const browser = await chromium.launch();
+
+async function boot(tag) {
+  const ctx = await browser.newContext({ viewport:{width:1200,height:900} });
+  await ctx.addInitScript(()=>{try{localStorage.setItem('poorija_lang','fa');}catch(e){} window.__clip=[];});
+  const page = await ctx.newPage();
+  page.on('pageerror', e => console.log(`   ${tag}!! ${e.message.slice(0,120)}`));
+  await page.goto(`${BASE}/index.html`, { waitUntil:'load' });
+  /* Not a fixed wait. The service worker reloads a fresh profile once per
+     version, and any evaluate in flight when that lands dies with "Execution
+     context was destroyed" — read as a crash, not a failure. Waiting for the
+     page to hold still is the property actually wanted. */
+  await settle(page);
+  await page.evaluate((pass)=>{const set=(id,v)=>{const el=document.getElementById(id);if(el){el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}};
+    set('setupPassword',pass); set('confirmPassword',pass);
+    document.querySelectorAll('#initialSetup select').forEach((s,i)=>{if(s.options.length>i+1){s.selectedIndex=i+1;s.dispatchEvent(new Event('change',{bubbles:true}));}});
+    document.querySelectorAll('#initialSetup input[type="text"]').forEach((inp,i)=>{inp.value='answer'+i;inp.dispatchEvent(new Event('input',{bubbles:true}));});
+    const cb=document.getElementById('acceptTermsCheckbox'); if(cb&&!cb.checked){cb.checked=true;cb.dispatchEvent(new Event('change',{bubbles:true}));}}, PASS);
+  await page.waitForTimeout(400);
+  await page.evaluate(()=>document.getElementById('setupBtn')?.click());
+  await page.waitForTimeout(3500);
+  await page.evaluate(()=>{document.getElementById('mobileInstallGate')?.classList.add('hidden');
+    const w=navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText=(t)=>{window.__clip.push(t);return w(t).catch(()=>{});};
+    window.switchTab?.('chat');});
+  await page.waitForTimeout(1200);
+  await page.evaluate((relay)=>{const u=document.getElementById('chatServerUrl');
+    if(u){u.value=relay;u.dispatchEvent(new Event('input',{bubbles:true}));u.dispatchEvent(new Event('change',{bubbles:true}));}
+    document.getElementById('chatConnectBtn')?.click();}, RELAY);
+  await page.waitForTimeout(5500);
+  return { ctx, page };
+}
+
+console.log('\n===== every device publishes a prekey, and it expires =====');
+const A = await boot('A');
+const B = await boot('B');
+const prekey = await A.page.evaluate(()=>window.__prekeyProbe());
+console.log('  ' + JSON.stringify(prekey));
+check('a prekey exists and carries an expiry',
+  prekey.count >= 1 && Boolean(prekey.current) && Boolean(prekey.expiresAt), JSON.stringify(prekey));
+check('and the window is the fifteen days the app promises',
+  prekey.lifetimeDays === 15, `${prekey.lifetimeDays} days`);
+
+console.log('\n===== a live session derives its key rather than being handed one =====');
+const idB = await B.page.evaluate(async()=>{ await window.copyChatFullIdentity(); return window.__clip.at(-1); });
+await A.page.evaluate(async(x)=>{ document.getElementById('chatStartChatBtn')?.click();
+  await new Promise(r=>setTimeout(r,500));
+  document.querySelector('[data-chat-manual-json]').value = x;
+  document.querySelector('[data-chat-manual-submit]')?.click(); }, idB);
+await A.page.waitForTimeout(2500);
+await A.page.evaluate(()=>document.querySelector('#chatPeerList .chat-peer-card')?.click());
+await A.page.waitForTimeout(3000);
+await A.page.fill('#chatComposer', 'live and forward secret');
+await A.page.click('#chatSendMessageBtn');
+await B.page.waitForTimeout(5000);
+
+/* In B's history rather than on B's screen: A is not one of B's contacts, so
+   the conversation waits under Requests (49-message-requests.js) instead of
+   quoting itself in the list. */
+const arrived = await B.page.evaluate(()=>Object.values(chatState.history).flat().some((e)=>e.text==='live and forward secret'));
+check('the message arrives', arrived === true, String(arrived));
+const [keysA, keysB] = await Promise.all([
+  A.page.evaluate(()=>window.__keyFingerprints()),
+  B.page.evaluate(()=>window.__keyFingerprints()),
+]);
+console.log('  A ' + JSON.stringify(keysA) + '\n  B ' + JSON.stringify(keysB));
+check('both ends hold the same derived key, from one exchange each',
+  keysA[0]?.key && keysA[0].key === keysB[0]?.key, `${keysA[0]?.key} vs ${keysB[0]?.key}`);
+
+console.log('\n===== an envelope queued under lock survives the lock =====');
+/* The window closes while the message is in flight, which is the case that
+   matters: the sender sealed it to the prekey it last saw, and by the time the
+   recipient collects it that prekey is gone from their device.
+   Expiry has to happen while B is unlocked — the store is written through the
+   vault, and a locked app cannot persist anything. */
+const expired = await B.page.evaluate(()=>window.__expirePrekeys());
+console.log('  prekeys left after the window closes: ' + JSON.stringify(expired));
+check('the private prekey is deleted rather than archived', expired.left === 0, JSON.stringify(expired));
+
+await B.page.evaluate(()=>{ (window.lockApp || window.PoorijaApp?.lockApp)?.(); });
+/* Locked is still CONNECTED — a locked app keeps receiving by design, so a
+   live session delivers and nothing ever queues. The scenario this suite
+   has always meant to force is OFFLINE: a phone in a dead zone. Take the
+   socket down too (without the reconnect loop grabbing it back), so the
+   envelope has nowhere to go but the relay's box. */
+await B.page.evaluate(()=>{ chatState.shouldReconnect = false; try { chatState.ws?.close(); } catch (_error) { /* already gone */ } });
+await B.page.waitForTimeout(3000);
+console.log('  A knows B prekey: ' + JSON.stringify(await A.page.evaluate(()=>window.__peerPrekeyProbe())));
+await A.page.fill('#chatComposer', 'this one waits in the queue');
+await A.page.click('#chatSendMessageBtn');
+/* The mailbox write is debounced and the wait scales with the last write,
+   so a fixed sleep here races the relay's own accounting on a loaded
+   machine: the envelope is on its way the whole time and the assertion
+   reads a store that has not been told yet. Poll for it, the way the file
+   suite polls — and keep the failure honest if it never lands. */
+let queued = [];
+for (let attempt = 0; attempt < 150; attempt += 1) {
+  await A.page.waitForTimeout(100);
+  queued = Object.values(mailboxes()).flat()
+    .map((item) => item?.payload).filter((p) => p?.type === 'offline-chat');
+  if (queued.some((p) => p?.kex || p?.seal)) break;
+}
+/* A steps away too. Otherwise A simply resends the message from its own copy
+   the moment B reappears — which is correct behaviour, and would hide whether
+   the queued envelope itself could still be opened. */
+/* What actually went on the wire. The prekey path is silent when it does not
+   engage — the sender simply falls back to the identity-wrapped seal, which
+   never expires — so the envelope itself has to be read. This caught a real
+   one: merging a pasted identity card blanked the stored prekey, and every
+   queued message after that quietly lost its window. */
+const sealed = queued.find((p) => p.kex) || null;
+console.log('  envelope on the relay: ' + JSON.stringify({
+  fields: sealed ? Object.keys(sealed).sort() : null,
+  kexVersion: sealed?.kex?.v, legacySeal: sealed ? sealed.seal || '(empty)' : null }));
+check('the queued envelope really is sealed to a prekey, not to the identity key',
+  Boolean(sealed) && sealed.kex.v === 3 && Boolean(sealed.kex.prekeyId) && Boolean(sealed.kex.pqct) && !sealed.seal,
+  sealed ? `v${sealed.kex.v}, seal ${sealed.seal ? 'present' : 'empty'}` : 'no kex envelope found');
+check('and nothing readable is in it',
+  Boolean(sealed) && !JSON.stringify(sealed).includes('this one waits in the queue'),
+  'no plaintext');
+
+await A.page.evaluate(()=>{ (window.lockApp || window.PoorijaApp?.lockApp)?.(); });
+await A.page.waitForTimeout(2500);
+
+await B.page.evaluate((pass)=>{ const el=document.getElementById('unlockPassword');
+  if(el){ el.value=pass; el.dispatchEvent(new Event('input',{bubbles:true})); }
+  window.unlockApp?.();
+  /* Back on the air: the socket was taken down for the queueing half, and a
+     connect-button click under the lock screen is ignored — the transport is
+     brought up directly instead. */
+  chatState.shouldReconnect = true; }, PASS);
+await B.page.waitForTimeout(2000);
+await B.page.evaluate(async () => {
+  if (!chatState.ws || chatState.ws.readyState !== WebSocket.OPEN) await connectChatTransport();
+});
+await B.page.waitForTimeout(6000);
+const afterExpiry = await B.page.evaluate(()=>({
+  hasMessage: (document.getElementById('chatMessages')?.textContent || '').includes('this one waits in the queue'),
+  expiredNote: [...document.querySelectorAll('#chatMessages .chat-system-note')]
+    .some(n => /۱۵ روزه|15-day/.test(n.textContent || '')),
+  notes: [...document.querySelectorAll('#chatMessages .chat-system-note')].map(n=>n.textContent.trim().slice(0,50)),
+}));
+console.log('  ' + JSON.stringify(afterExpiry));
+/* The recipient's prekeys were expired ON PURPOSE before the envelope was
+   sent, so the honest expectation for THIS envelope is that it stays shut:
+   the whole point of the fifteen-day window is that mail sealed to a key
+   nobody holds any more stops being openable. No false note either — the
+   envelope is seconds old, and the note path only fires past 24 hours.
+
+   The old version of this half passed for the wrong reason: it relied on a
+   live session delivering beside the queued copy, which stopped being true
+   the moment the recipient was taken properly offline. */
+check('a window the recipient closed early keeps its envelope shut',
+  afterExpiry.hasMessage === false, JSON.stringify(afterExpiry));
+check('and no false expiry note is left on mail that is seconds old',
+  afterExpiry.expiredNote === false, JSON.stringify(afterExpiry));
+
+/* Delivery under a live window is what every message suite already asserts
+   (contacts, smoke, maildelivery); rebuilding a window here after the
+   deliberate expiry added nothing but its own flakiness, because a peer
+   re-learns a rotated prekey from a profile card on its own schedule, not
+   on the test's. */
+
+console.log('\n===== and the app says so where people will meet it =====');
+await A.page.evaluate((pass)=>{ const el=document.getElementById('unlockPassword');
+  if(el){ el.value=pass; el.dispatchEvent(new Event('input',{bubbles:true})); }
+  window.unlockApp?.(); }, PASS);
+await A.page.waitForTimeout(4000);
+const notice = await A.page.evaluate(()=>{
+  window.switchTab?.('chat');
+  document.querySelector('[data-chat-view="connection"]')?.click();
+  const card = document.getElementById('chatForwardSecrecyCard');
+  return { present: Boolean(card), text: (card?.textContent || '').replace(/\s+/g,' ').trim() };
+});
+console.log('  ' + JSON.stringify({ present: notice.present, text: notice.text.slice(0, 70) }));
+check('the fifteen-day window is stated in the app, not only in the docs',
+  notice.present && /۱۵ روز|15 days/.test(notice.text), notice.text.slice(0, 60));
+check('and it is honest about what it does not cover',
+  /تاریخچه|history/.test(notice.text), notice.text.slice(-60));
+
+await browser.close();
+const bad = results.filter(r=>!r.ok);
+console.log(`\n===== ${bad.length} failed of ${results.length} =====`);
+process.exit(bad.length?1:0);

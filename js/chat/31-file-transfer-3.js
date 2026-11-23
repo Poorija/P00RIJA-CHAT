@@ -1,0 +1,2887 @@
+/*
+ * P00RIJA Chat — end-to-end encrypted messenger.
+ * Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+ *
+ * Licensed under the GNU Affero General Public License, version 3 only.
+ * See LICENSE for the full text. Section 13 matters here: run a modified
+ * version as a network service and its users are entitled to your source.
+ */
+
+/* Part 31 of 36 of the Secure Chat module.
+   Split out of the original single-file js/chat.js — see js/chat/README.md.
+   These files share one global scope and are loaded in order; the numbering is
+   that order and must not be changed.
+
+   Streaming file transfer
+*/
+
+async function playMediaElement(element) {
+if (!element) return;
+try {
+await element.play?.();
+} catch (_error) {
+/* ignore autoplay failures */
+}
+}
+function streamHasLiveVideo(stream) {
+return Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
+}
+function prepareVideoElement(element, { muted = false } = {}) {
+if (!element) return;
+element.autoplay = true;
+element.setAttribute('autoplay', 'autoplay');
+element.playsInline = true;
+element.setAttribute('playsinline', 'true');
+element.setAttribute('webkit-playsinline', 'true');
+element.preload = 'auto';
+element.disablePictureInPicture = true;
+element.controls = false;
+if (muted) {
+element.muted = true;
+element.defaultMuted = true;
+element.setAttribute('muted', 'muted');
+}
+}
+function syncVideoElementFit(element) {
+if (!element) return;
+const width = Number(element.videoWidth || 0);
+const height = Number(element.videoHeight || 0);
+const hasDimensions = width > 0 && height > 0;
+const orientation = hasDimensions
+? (height > width ? 'portrait' : 'landscape')
+: 'unknown';
+element.classList.toggle('portrait-mode', orientation === 'portrait');
+element.classList.toggle('landscape-mode', orientation === 'landscape');
+element.dataset.videoOrientation = orientation;
+/* No inline object-fit/transform here any more. Pinning every stream to
+   `contain` letterboxed phone-to-phone calls that should have filled the
+   screen, and `transform: none` fought the mirror; applyCallStageFit decides
+   both from the measured shapes instead. */
+const stage = element.closest('.chat-remote-stage, .chat-local-stage');
+if (stage) {
+stage.dataset.videoOrientation = orientation;
+if (hasDimensions) {
+stage.style.setProperty('--video-aspect', `${width} / ${height}`);
+}
+applyCallStageFit(stage);
+}
+syncCallStageState();
+}
+function stopStream(stream) {
+if (!stream) return;
+stream.getTracks().forEach((track) => {
+try {
+track.stop();
+} catch (_error) {
+/* noop */
+}
+});
+}
+function clearMediaElement(id) {
+const element = document.getElementById(id);
+if (!element) return;
+element.pause?.();
+element.srcObject = null;
+element.removeAttribute('src');
+}
+function activeCallPeerRecord() {
+return findPeerRecordByPeerId(chatState.currentCall?.peer || chatState.pendingIncomingCall?.peer || chatState.pendingIncomingInvite?.peerId || '') || activePeer() || null;
+}
+function syncFloatingCallPeerIdentity() {
+const peer = activeCallPeerRecord() || getActiveConversation();
+const avatar = document.getElementById('chatFloatingRemoteAvatar');
+if (avatar && peer) {
+avatar.textContent = initials(peer.username || peer.name || peer.peerId || 'P');
+avatar.classList.toggle('has-avatar', Boolean(peer.avatarData));
+avatar.innerHTML = peer.avatarData ? `<img src="${peer.avatarData}" alt="">` : app().escapeHTML(initials(peer.username || peer.name || peer.peerId || 'P'));
+}
+const title = document.getElementById('chatFloatingCallTitle');
+const status = document.getElementById('chatFloatingCallStatus');
+if (title && peer) {
+const modeLabel = chatState.currentCallMode === 'video'
+? t('تماس تصویری فعال', 'Video call active')
+: t('تماس صوتی فعال', 'Voice call active');
+title.textContent = `${modeLabel}`;
+title.setAttribute('data-peer-name', peer.username || peer.name || peer.peerId || '');
+}
+if (status && peer && !chatState.currentCall) {
+status.textContent = app().escapeHTML(peer.username || peer.name || peer.peerId || '');
+}
+}
+function mountChatPortals() {
+const incomingModal = document.getElementById('chatIncomingCallModal');
+const floatingCall = document.getElementById('chatFloatingCall');
+const timerPopover = document.getElementById('chatTimerPopover');
+const avatarChooser = document.getElementById('chatAvatarChooser');
+if (incomingModal && incomingModal.parentElement !== document.body) {
+document.body.appendChild(incomingModal);
+}
+const groupCallShell = document.getElementById('chatGroupCall');
+if (groupCallShell && groupCallShell.parentElement !== document.body) document.body.appendChild(groupCallShell);
+const groupCallInvite = document.getElementById('chatGroupCallInvite');
+if (groupCallInvite && groupCallInvite.parentElement !== document.body) document.body.appendChild(groupCallInvite);
+/* .chat-shell is overflow:hidden, so anything meant to cover the screen has to
+   leave it first. The call picker did not, which is why pressing "add someone"
+   during a call appeared to do nothing and the panel only turned up once the
+   call screen came down. */
+const callPicker = document.getElementById('chatCallPicker');
+if (callPicker && callPicker.parentElement !== document.body) document.body.appendChild(callPicker);
+const groupMaker = document.getElementById('chatGroupMaker');
+if (groupMaker && groupMaker.parentElement !== document.body) document.body.appendChild(groupMaker);
+if (floatingCall && floatingCall.parentElement !== document.body) {
+document.body.appendChild(floatingCall);
+}
+if (timerPopover && timerPopover.parentElement !== document.body) {
+document.body.appendChild(timerPopover);
+}
+if (avatarChooser && avatarChooser.parentElement !== document.body) {
+document.body.appendChild(avatarChooser);
+}
+chatState.portalsMounted = true;
+chatState.timerPortalMounted = true;
+}
+function applyFloatingCallPosition() {
+const overlay = document.getElementById('chatFloatingCall');
+if (!overlay || chatState.callDisplayMode !== 'minimized') return;
+overlay.style.left = `${Math.max(12, chatState.floatingCallPosition.x || 24)}px`;
+overlay.style.top = `${Math.max(12, chatState.floatingCallPosition.y || 24)}px`;
+}
+function syncCallChromeState() {
+const root = document.documentElement;
+const hasCall = Boolean(chatState.currentCall);
+const minimized = hasCall && chatState.callDisplayMode === 'minimized';
+root.classList.toggle('chat-call-active', hasCall && chatState.callDisplayMode === 'fullscreen');
+root.classList.toggle('chat-call-minimized', minimized);
+const banner = document.getElementById('chatActiveCallBanner');
+if (banner) {
+const chatTabActive = appState()?.activeTab === 'chat';
+banner.classList.toggle('hidden', !minimized || !chatTabActive);
+}
+}
+function syncCallOverlayBounds() {
+const overlay = document.getElementById('chatFloatingCall');
+if (!overlay) return;
+if (chatState.callDisplayMode === 'minimized' || isCompactChatLayout()) {
+overlay.style.left = '';
+overlay.style.top = '';
+overlay.style.width = '';
+overlay.style.height = '';
+return;
+}
+if (window.innerWidth >= 768) {
+/* A video call should be as close to fullscreen as the page can get, so it
+   covers the app header too; a voice call keeps the header reachable because
+   there is nothing to look at underneath it. */
+const headerRect = document.getElementById('appHeader')?.getBoundingClientRect();
+const top = chatState.currentCallMode === 'video' ? 0 : Math.max(0, Math.round(headerRect?.bottom || 0));
+overlay.style.left = '0px';
+overlay.style.top = `${top}px`;
+overlay.style.width = `${window.innerWidth}px`;
+overlay.style.height = `${Math.max(0, window.innerHeight - top)}px`;
+return;
+}
+const host = (window.innerWidth >= 768
+? document.getElementById('content-chat')
+: document.querySelector('#content-chat > .chat-shell'))
+|| document.querySelector('.chat-shell');
+if (!host) return;
+const rect = host.getBoundingClientRect();
+overlay.style.left = `${Math.round(rect.left)}px`;
+overlay.style.top = `${Math.round(rect.top)}px`;
+overlay.style.width = `${Math.round(rect.width)}px`;
+overlay.style.height = `${Math.round(rect.height)}px`;
+}
+function setCallDisplayMode(mode = 'fullscreen') {
+chatState.callDisplayMode = mode;
+const overlay = document.getElementById('chatFloatingCall');
+const minimizeBtn = document.getElementById('chatMinimizeCallBtn');
+if (!overlay) return;
+overlay.dataset.callDisplay = mode;
+overlay.classList.toggle('is-minimized', mode === 'minimized');
+if (mode === 'minimized') {
+applyFloatingCallPosition();
+minimizeBtn?.setAttribute('title', t('باز کردن دوباره تماس', 'Restore call'));
+minimizeBtn?.querySelector('i')?.classList.replace('fa-arrow-right', 'fa-up-right-and-down-left-from-center');
+} else {
+overlay.style.left = '';
+overlay.style.top = '';
+minimizeBtn?.setAttribute('title', t('بازگشت به چت / حالت شناور', 'Return to chat / minimize'));
+minimizeBtn?.querySelector('i')?.classList.replace('fa-up-right-and-down-left-from-center', 'fa-arrow-right');
+}
+syncCallChromeState();
+syncCallOverlayBounds();
+}
+function toggleCallDisplayMode() {
+if (!chatState.currentCall) return;
+setCallDisplayMode(chatState.callDisplayMode === 'minimized' ? 'fullscreen' : 'minimized');
+}
+function beginFloatingCallDrag(event) {
+if (chatState.callDisplayMode !== 'minimized') return;
+const overlay = document.getElementById('chatFloatingCall');
+if (!overlay) return;
+const rect = overlay.getBoundingClientRect();
+chatState.draggingFloatingCall = true;
+chatState.floatingDragOffset = {
+x: event.clientX - rect.left,
+y: event.clientY - rect.top,
+};
+overlay.classList.add('dragging');
+}
+function moveFloatingCallDrag(event) {
+if (!chatState.draggingFloatingCall) return;
+const nextX = event.clientX - (chatState.floatingDragOffset?.x || 0);
+const nextY = event.clientY - (chatState.floatingDragOffset?.y || 0);
+const overlay = document.getElementById('chatFloatingCall');
+if (!overlay) return;
+const maxX = Math.max(12, window.innerWidth - overlay.offsetWidth - 12);
+const maxY = Math.max(12, window.innerHeight - overlay.offsetHeight - 12);
+chatState.floatingCallPosition = {
+x: Math.min(maxX, Math.max(12, nextX)),
+y: Math.min(maxY, Math.max(12, nextY)),
+};
+applyFloatingCallPosition();
+}
+function endFloatingCallDrag() {
+chatState.draggingFloatingCall = false;
+chatState.floatingDragOffset = null;
+document.getElementById('chatFloatingCall')?.classList.remove('dragging');
+}
+function isCallBusy() {
+/* A group call on the stage is a call. The check used to see only the 1:1
+   fields, so an offer arriving mid-group-call passed every gate and stacked
+   a second, parallel call UI on top of the stage — two microphones, two
+   connections, and a group nobody could hear over it. */
+return Boolean(chatState.currentCall || chatState.pendingIncomingCall
+|| chatState.pendingIncomingInvite
+|| (typeof groupCallActive === 'function' && groupCallActive()));
+}
+function clearCallTimers() {
+if (chatState.outgoingCallTimer) {
+clearTimeout(chatState.outgoingCallTimer);
+chatState.outgoingCallTimer = null;
+}
+if (chatState.incomingCallTimer) {
+clearTimeout(chatState.incomingCallTimer);
+chatState.incomingCallTimer = null;
+}
+}
+async function requestCallMedia(mode, includeAudio = true) {
+const wantsVideo = mode === 'video';
+/* Started here, which is the earliest moment a call is known to be happening
+   and several round trips before an SDP exists. The camera prompt alone
+   usually outlasts the probe. */
+if (wantsVideo) primeVideoCodecOrder();
+/* The voice at full band (48 kHz, one channel), and the browser's own noise
+   suppression only where this app's is not taking over (60-call-audio.js). */
+if (includeAudio && typeof prepareNoiseSuppressor === 'function') await prepareNoiseSuppressor();
+const audioConstraints = includeAudio
+? (typeof callAudioConstraints === 'function' ? callAudioConstraints() : { echoCancellation: true, noiseSuppression: true, autoGainControl: true })
+: false;
+/* Asked for, not insisted on. `ideal` lets the engine hand back whatever the
+   camera and the machine can actually manage, so a device that cannot do 1080p
+   returns 720p rather than refusing -- and the bitrate ladder below decides
+   what is really sent, which is what the link can carry rather than what the
+   camera can produce. Naming the frame rate matters as much as the size: left
+   unsaid, some engines settle on 15 and a call looks stilted however much
+   bandwidth is going spare. */
+const preferredConstraints = {
+audio: audioConstraints,
+video: wantsVideo
+? {
+facingMode: { ideal: chatState.callFacingMode || 'user' },
+width: { ideal: 1920 },
+height: { ideal: 1080 },
+/* A floor as well as a target. With `ideal` alone a camera is free to drop
+   to 15 or lower whenever it feels like it -- most often in dim light, where
+   a longer exposure per frame is how it brightens the picture -- and no
+   encoder setting can put back frames that were never captured. `min` makes
+   that a constraint the camera has to satisfy or refuse, and the refusal is
+   caught below by asking again for anything it can do. */
+/* Sixty where the camera can: a face that moves smoothly is the
+   difference people notice first. A camera that cannot do 60 at this size
+   gives its best (most do 30), and the ladder below decides what is sent. */
+frameRate: { min: 24, ideal: 60 },
+}
+: false,
+};
+let stream;
+try {
+stream = await navigator.mediaDevices.getUserMedia(preferredConstraints);
+} catch (error) {
+if (!wantsVideo) throw error;
+stream = await navigator.mediaDevices.getUserMedia({
+audio: audioConstraints,
+video: true,
+});
+}
+/* The microphone through the noise suppressor, when it is on. */
+if (includeAudio && typeof denoiseCallStream === 'function') stream = await denoiseCallStream(stream);
+return hintTrackContent(stream);
+}
+/* Tell the encoder what it is looking at.
+ *
+ * MediaStreamTrack.contentHint is how a page says whether a stream is moving
+ * pictures or fine detail, and the engine uses it to decide what to sacrifice
+ * when the link cannot carry everything. Without it every track is "no
+ * preference" and the encoder guesses.
+ *
+ * A camera is 'motion': keep the frame rate and let sharpness go, because a
+ * face that stutters is worse to talk to than one that is slightly soft. A
+ * shared screen is 'detail': the opposite, since unreadable text at 30fps is
+ * no use at all. Audio is 'speech', which lets the encoder spend its bits on
+ * the voice band rather than on music it is not carrying.
+ *
+ * Setting an unknown value throws in some engines, so each one is tried on its
+ * own and a refusal leaves that track as it was. */
+function hintTrackContent(stream, kind = 'camera') {
+  if (!stream?.getTracks) return stream;
+  stream.getTracks().forEach((track) => {
+    try {
+      if (track.kind === 'audio') track.contentHint = 'speech';
+      else if (track.kind === 'video') track.contentHint = kind === 'screen' ? 'detail' : 'motion';
+    } catch (_error) { /* engine does not take this hint; the default stands */ }
+  });
+  return stream;
+}
+
+function attachLocalStream(stream) {
+if (chatState.localStream && chatState.localStream !== stream) {
+stopStream(chatState.localStream);
+}
+chatState.localStream = stream;
+const localVideo = document.getElementById('chatLocalVideo');
+const floatingLocalVideo = document.getElementById('chatFloatingLocalVideo');
+if (localVideo) {
+prepareVideoElement(localVideo, { muted: true });
+localVideo.srcObject = stream;
+localVideo.onloadedmetadata = () => {
+playMediaElement(localVideo);
+syncVideoElementFit(localVideo);
+};
+localVideo.onresize = () => syncVideoElementFit(localVideo);
+playMediaElement(localVideo);
+}
+if (floatingLocalVideo) {
+prepareVideoElement(floatingLocalVideo, { muted: true });
+floatingLocalVideo.srcObject = stream;
+floatingLocalVideo.onloadedmetadata = () => {
+playMediaElement(floatingLocalVideo);
+syncVideoElementFit(floatingLocalVideo);
+};
+floatingLocalVideo.onresize = () => syncVideoElementFit(floatingLocalVideo);
+playMediaElement(floatingLocalVideo);
+}
+document.querySelector('.chat-local-stage')?.classList.toggle('has-video', streamHasLiveVideo(stream));
+syncCallStageState();
+}
+function attachRemoteStream(stream) {
+chatState.remoteStream = stream;
+startCallLevelMeter(stream);
+const remoteVideo = document.getElementById('chatRemoteVideo');
+const floatingRemoteVideo = document.getElementById('chatFloatingRemoteVideo');
+if (remoteVideo) {
+prepareVideoElement(remoteVideo);
+remoteVideo.srcObject = stream;
+remoteVideo.onloadedmetadata = () => {
+playMediaElement(remoteVideo);
+syncVideoElementFit(remoteVideo);
+};
+remoteVideo.onresize = () => syncVideoElementFit(remoteVideo);
+playMediaElement(remoteVideo);
+}
+if (floatingRemoteVideo) {
+prepareVideoElement(floatingRemoteVideo);
+floatingRemoteVideo.srcObject = stream;
+floatingRemoteVideo.onloadedmetadata = () => {
+playMediaElement(floatingRemoteVideo);
+syncVideoElementFit(floatingRemoteVideo);
+};
+floatingRemoteVideo.onresize = () => syncVideoElementFit(floatingRemoteVideo);
+playMediaElement(floatingRemoteVideo);
+}
+syncCallStageState();
+}
+function syncCallStageState() {
+const windowEl = document.querySelector('#chatFloatingCall .chat-floating-call-window');
+if (!windowEl) return;
+const localVideoEnabled = streamHasLiveVideo(chatState.localStream);
+const remoteVideoEnabled = streamHasLiveVideo(chatState.remoteStream);
+windowEl.dataset.callMode = chatState.currentCallMode || 'voice';
+if (chatState.currentCallMode === 'video') {
+if (!['remote', 'local'].includes(chatState.callPrimaryVideo)) {
+chatState.callPrimaryVideo = 'remote';
+}
+if (remoteVideoEnabled) {
+chatState.callPrimaryVideo = chatState.callPrimaryVideo || 'remote';
+}
+} else {
+chatState.callPrimaryVideo = 'remote';
+}
+windowEl.dataset.callPrimary = chatState.callPrimaryVideo || 'remote';
+windowEl.dataset.localVideo = localVideoEnabled ? 'on' : 'off';
+windowEl.dataset.remoteVideo = remoteVideoEnabled ? 'on' : 'off';
+windowEl.dataset.remoteOrientation = document.getElementById('chatFloatingRemoteVideo')?.dataset.videoOrientation
+|| document.getElementById('chatRemoteVideo')?.dataset.videoOrientation
+|| 'unknown';
+windowEl.dataset.localOrientation = document.getElementById('chatFloatingLocalVideo')?.dataset.videoOrientation
+|| document.getElementById('chatLocalVideo')?.dataset.videoOrientation
+|| 'unknown';
+const avatar = document.getElementById('chatFloatingRemoteAvatar');
+const showAvatar = chatState.currentCallMode === 'voice' || !remoteVideoEnabled;
+if (avatar) avatar.classList.toggle('hidden', !showAvatar);
+document.querySelector('#chatFloatingCall .chat-call-hero')?.classList.toggle('hidden', !showAvatar);
+syncCallHeroCopy();
+bindCallSelfViewGestures();
+document.querySelector('.chat-local-stage')?.classList.toggle('has-video', localVideoEnabled);
+document.querySelector('.chat-local-stage-placeholder')?.classList.toggle('hidden', localVideoEnabled);
+watchCallStageSize();
+refreshCallLayout();
+}
+/* Presenting in a one-to-one call.
+   Two things were wrong with the old version. It handed the whole display
+   stream to attachLocalStream, which stops the previous stream — including the
+   microphone track the audio sender was still transmitting, so sharing your
+   screen quietly muted you. And it could only ever offer screen capture, which
+   no mobile browser has. Both are fixed by swapping only the video track and
+   letting the source be a screen or a picture. */
+async function toggleScreenShare(source = 'screen') {
+if (!chatState.currentCall || chatState.currentCallMode !== 'video') return;
+if (chatState.screenStream) {
+await stopDirectPresentation();
+return;
+}
+let track = null;
+let stop = null;
+try {
+if (source === 'screen') {
+if (!screenCaptureSupported()) {
+notify(t('این مرورگر اجازهٔ ضبط صفحه نمی‌دهد.', 'This browser cannot capture the screen.'), 'warning');
+return;
+}
+try { if (typeof noteHighRiskAction === 'function') noteHighRiskAction(activePeer?.(), 'screen'); } catch (_error) { /* a line of advice never stops a share */ }
+const stream = hintTrackContent(await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }), 'screen');
+track = stream.getVideoTracks()[0];
+stop = () => stream.getTracks().forEach((item) => item.stop());
+} else {
+const file = await pickImageFile();
+if (!file) return;
+const picture = await pictureTrackFromFile(file);
+track = picture.track;
+stop = picture.stop;
+}
+} catch (error) {
+if (error?.name !== 'NotAllowedError') {
+notify(t('شروع پرزنت ممکن نشد.', 'Could not start presenting.'), 'warning');
+}
+return;
+}
+if (!track) return;
+const sender = chatState.currentCall.peerConnection?.getSenders?.().find((item) => item.track?.kind === 'video');
+if (!sender) {
+stop?.();
+notify(t('این تماس مسیر تصویری ندارد.', 'This call has no video path.'), 'warning');
+return;
+}
+chatState.callCameraTrack = chatState.localStream?.getVideoTracks?.()[0] || null;
+await sender.replaceTrack(track);
+swapLocalStreamVideo(chatState.localStream, track);
+refreshLocalPreview();
+chatState.screenStream = { source, stop };
+track.addEventListener('ended', () => { stopDirectPresentation().catch(() => {}); });
+refreshCallControls();
+broadcastCallState();
+notify(source === 'screen'
+? t('صفحهٔ شما در حال پخش است.', 'Your screen is being shared.')
+: t('تصویر شما در حال پخش است.', 'Your picture is being shared.'), 'success');
+}
+
+async function stopDirectPresentation() {
+if (!chatState.screenStream) return;
+try { chatState.screenStream.stop?.(); } catch (_error) { /* already gone */ }
+chatState.screenStream = null;
+let camera = chatState.callCameraTrack;
+if (!camera || camera.readyState !== 'live') {
+/* The camera track can be gone if the browser released it while presenting;
+   ask for a fresh one rather than leaving the far side on a frozen frame. */
+try {
+const stream = await requestCallMedia('video', false);
+camera = stream.getVideoTracks()[0] || null;
+} catch (_error) { camera = null; }
+}
+chatState.callCameraTrack = null;
+const sender = chatState.currentCall?.peerConnection?.getSenders?.().find((item) => item.track?.kind === 'video');
+if (sender) {
+try { await sender.replaceTrack(camera || null); } catch (_error) { /* call may be ending */ }
+}
+swapLocalStreamVideo(chatState.localStream, camera);
+refreshLocalPreview();
+refreshCallControls();
+broadcastCallState();
+}
+
+/* Re-point the preview elements at the same stream. Swapping a track inside a
+   MediaStream does not always wake an attached <video>, and a frozen self-view
+   is indistinguishable from a broken camera. */
+function refreshLocalPreview() {
+const stream = chatState.localStream;
+['chatLocalVideo', 'chatFloatingLocalVideo'].forEach((id) => {
+const element = document.getElementById(id);
+if (!element || !stream) return;
+element.srcObject = null;
+element.srcObject = stream;
+playMediaElement(element);
+syncVideoElementFit(element);
+});
+syncCallStageState();
+}
+
+function spawnReactionAnimation(emoji, messageId) {
+const bubble = document.querySelector(`.chat-message-bubble[data-id="${messageId}"]`);
+if (!bubble) return;
+const anim = document.createElement('div');
+anim.className = 'chat-reaction-animation';
+anim.textContent = emoji;
+// Position near the bubble center
+const rect = bubble.getBoundingClientRect();
+anim.style.left = (rect.left + rect.width / 2) + 'px';
+anim.style.top = rect.top + 'px';
+document.body.appendChild(anim);
+setTimeout(() => anim.remove(), 1600);
+}
+function setCallControlState(id, active, disabled = false) {
+const button = document.getElementById(id);
+if (!button) return;
+button.classList.toggle('active', Boolean(active));
+button.disabled = Boolean(disabled);
+}
+function refreshCallControls() {
+setCallControlState('chatMuteToggleBtn', chatState.callMuted, !chatState.currentCall);
+setCallControlState('chatHoldToggleBtn', chatState.callHeld, !chatState.currentCall);
+setCallControlState('chatSpeakerToggleBtn', chatState.callSpeakerEnabled, !chatState.currentCall);
+setCallControlState('chatVideoToggleBtn', !chatState.callVideoEnabled, !chatState.currentCall || chatState.currentCallMode !== 'video');
+setCallControlState('chatFlipCameraBtn', false, !chatState.currentCall || chatState.currentCallMode !== 'video');
+setCallControlState('chatScreenShareBtn', Boolean(chatState.screenStream), !chatState.currentCall || chatState.currentCallMode !== 'video');
+setCallControlState('chatEndCallControlBtn', false, !chatState.currentCall);
+const isVideoMode = chatState.currentCallMode === 'video';
+const pipSupported = typeof document !== 'undefined' && Boolean(document.pictureInPictureEnabled);
+const fullscreenSupported = typeof document !== 'undefined' && Boolean(document.fullscreenEnabled);
+setCallControlState('chatMirrorVideoBtn', chatState.callMirrorSelf, !chatState.currentCall || !isVideoMode);
+setCallControlState('chatSwapVideoLayoutBtn', chatState.callPrimaryVideo === 'local', !chatState.currentCall || !isVideoMode);
+setCallControlState('chatCallScreenshotBtn', false, !chatState.currentCall || !isVideoMode);
+setCallControlState('chatCallPiPBtn', Boolean(document.pictureInPictureElement), !chatState.currentCall || !pipSupported);
+setCallControlState('chatCallFullscreenBtn', Boolean(document.fullscreenElement), !chatState.currentCall || !fullscreenSupported);
+setCallControlState('chatCallSettingsBtn', false, !chatState.currentCall);
+document.getElementById('chatVideoToggleBtn')?.classList.toggle('hidden', !isVideoMode);
+document.getElementById('chatFlipCameraBtn')?.classList.toggle('hidden', !isVideoMode);
+document.getElementById('chatScreenShareBtn')?.classList.toggle('hidden', !isVideoMode);
+document.getElementById('chatCallScreenshotBtn')?.classList.toggle('hidden', !isVideoMode);
+document.getElementById('chatMirrorVideoBtn')?.classList.toggle('hidden', !isVideoMode);
+document.getElementById('chatSwapVideoLayoutBtn')?.classList.toggle('hidden', !isVideoMode);
+document.getElementById('chatCallPiPBtn')?.classList.toggle('hidden', !pipSupported);
+document.getElementById('chatCallFullscreenBtn')?.classList.toggle('hidden', !fullscreenSupported);
+syncCallStageState();
+syncCallVerification().catch(() => { /* the call is fine without the strip */ });
+}
+function getRingtoneOption(id = chatState.profile.ringtoneId) {
+return CHAT_RINGTONE_OPTIONS.find((option) => option.id === id) || CHAT_RINGTONE_OPTIONS[0];
+}
+function getMessageToneOption(id = chatState.profile.messageToneId) {
+return CHAT_MESSAGE_TONE_OPTIONS.find((option) => option.id === id) || CHAT_MESSAGE_TONE_OPTIONS[0];
+}
+/* A picked audio file wins over the synthesised patterns: if the stored id
+   matches an imported sound, that file is what rings. */
+function selectedSoundFile(slot) {
+  const id = slot === 'message' ? chatState.profile.messageToneId : chatState.profile.ringtoneId;
+  const record = findCustomSound(id);
+  return record && record.slot === slot ? record : null;
+}
+function soundSelectMarkup(builtIns, customs, currentId) {
+  const builtInGroup = builtIns.map((option) => (
+    `<option value="${option.id}">${app().escapeHTML(t(option.labelFa, option.labelEn))}</option>`
+  )).join('');
+  if (!customs.length) return builtInGroup;
+  const customGroup = customs.map((sound) => (
+    `<option value="${sound.id}">${app().escapeHTML(sound.title || t('صدای دلخواه', 'Custom sound'))}</option>`
+  )).join('');
+  return `${builtInGroup}<optgroup label="${app().escapeHTML(t('صداهای من', 'My sounds'))}">${customGroup}</optgroup>`;
+}
+function renderRingtoneSettings() {
+const callSounds = chatState.customSounds.filter((sound) => sound.slot === 'call');
+const messageSounds = chatState.customSounds.filter((sound) => sound.slot === 'message');
+const ringtoneSelect = document.getElementById('chatRingtoneSelect');
+if (ringtoneSelect) {
+const stored = chatState.profile.ringtoneId;
+const current = findCustomSound(stored)?.id || getRingtoneOption(stored).id;
+ringtoneSelect.innerHTML = soundSelectMarkup(CHAT_RINGTONE_OPTIONS, callSounds, current);
+ringtoneSelect.value = current;
+}
+const messageSelect = document.getElementById('chatMessageToneSelect');
+if (messageSelect) {
+const stored = chatState.profile.messageToneId;
+const current = findCustomSound(stored)?.id || getMessageToneOption(stored).id;
+messageSelect.innerHTML = soundSelectMarkup(CHAT_MESSAGE_TONE_OPTIONS, messageSounds, current);
+messageSelect.value = current;
+}
+document.getElementById('chatDeleteRingtoneBtn')?.classList.toggle('hidden', !selectedSoundFile('call'));
+document.getElementById('chatDeleteMessageToneBtn')?.classList.toggle('hidden', !selectedSoundFile('message'));
+}
+function ensureRingtoneContext() {
+const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+if (!AudioContextClass) return null;
+if (!chatState.ringtoneAudioContext || chatState.ringtoneAudioContext.state === 'closed') {
+chatState.ringtoneAudioContext = new AudioContextClass();
+}
+return chatState.ringtoneAudioContext;
+}
+function primeRingtoneAudio() {
+const ctx = ensureRingtoneContext();
+if (!ctx) return;
+ctx.resume?.().catch(() => {});
+chatState.ringtonePrimed = true;
+}
+function playRingtonePattern(id = chatState.profile.ringtoneId) {
+const ctx = ensureRingtoneContext();
+if (!ctx) return;
+ctx.resume?.().catch(() => {});
+const option = getRingtoneOption(id);
+const masterGain = ctx.createGain();
+masterGain.gain.setValueAtTime(0.085, ctx.currentTime);
+masterGain.connect(ctx.destination);
+option.tones.forEach(([frequency, delayMs, durationMs]) => {
+const startAt = ctx.currentTime + (delayMs / 1000);
+const endAt = startAt + (durationMs / 1000);
+const osc = ctx.createOscillator();
+const gain = ctx.createGain();
+osc.type = option.wave || 'sine';
+osc.frequency.setValueAtTime(frequency, startAt);
+gain.gain.setValueAtTime(0, startAt);
+gain.gain.linearRampToValueAtTime(1, startAt + 0.025);
+gain.gain.exponentialRampToValueAtTime(0.001, Math.max(startAt + 0.03, endAt));
+osc.connect(gain);
+gain.connect(masterGain);
+osc.start(startAt);
+osc.stop(endAt + 0.02);
+});
+window.setTimeout(() => masterGain.disconnect(), Math.max(900, option.gap + 120));
+}
+/* An imported ringtone is an <audio> element on loop rather than an oscillator
+   schedule, so it needs its own start/stop — and stopRingtoneLoop has to kill
+   both, or answering a call would leave the file playing under the call. */
+function startCustomRingtone(record) {
+  stopCustomRingtone();
+  const audio = new Audio(customSoundUrl(record));
+  audio.loop = true;
+  audio.volume = 0.85;
+  chatState.customRingtoneAudio = audio;
+  return audio.play().catch(() => { /* blocked until a gesture; the UI still shows the call */ });
+}
+function stopCustomRingtone() {
+  const audio = chatState.customRingtoneAudio;
+  if (!audio) return;
+  chatState.customRingtoneAudio = null;
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+  } catch (_error) { /* already torn down */ }
+}
+function startRingtoneLoop() {
+if (chatState.ringtoneInterval || chatState.customRingtoneAudio) return Promise.resolve();
+const custom = selectedSoundFile('call');
+if (custom) return startCustomRingtone(custom);
+primeRingtoneAudio();
+playRingtonePattern();
+const option = getRingtoneOption();
+chatState.ringtoneInterval = window.setInterval(() => playRingtonePattern(), Math.max(900, option.gap));
+return Promise.resolve();
+}
+function stopRingtoneLoop() {
+stopCustomRingtone();
+if (chatState.ringtoneInterval) {
+window.clearInterval(chatState.ringtoneInterval);
+chatState.ringtoneInterval = null;
+}
+if (chatState.ringtoneStopTimer) {
+window.clearTimeout(chatState.ringtoneStopTimer);
+chatState.ringtoneStopTimer = null;
+}
+}
+function testRingtone() {
+stopRingtoneLoop();
+const custom = selectedSoundFile('call');
+if (custom) {
+startCustomRingtone(custom);
+chatState.ringtoneStopTimer = window.setTimeout(stopRingtoneLoop, 4000);
+return;
+}
+primeRingtoneAudio();
+playRingtonePattern();
+chatState.ringtoneStopTimer = window.setTimeout(stopRingtoneLoop, 2300);
+}
+const sounds = {
+// Standard ringing sound (synthesized)
+ringing: {
+play: function() {
+return startRingtoneLoop();
+},
+pause: function() {
+stopRingtoneLoop();
+},
+stop: function() { this.pause(); },
+currentTime: 0
+},
+message: {
+currentTime: 0,
+play: () => playMessageChime(),
+pause: () => {},
+}
+};
+// Modern Audio Player state and helpers
+const audioPlayers = new Map();
+function playSound(name) {
+try {
+const sound = sounds[name];
+if (sound) {
+sound.currentTime = 0;
+const result = sound.play?.();
+if (!result?.catch) return;
+result.catch(() => {
+// Fallback: try playing on next click if blocked by browser
+const once = () => {
+const retry = sound.play?.();
+retry?.catch?.(() => {});
+document.removeEventListener('click', once);
+};
+document.addEventListener('click', once);
+});
+}
+} catch (e) { /* noop */ }
+}
+function playMessageChime(id = chatState.profile.messageToneId) {
+const customTone = findCustomSound(id);
+if (customTone && customTone.slot === 'message') {
+const audio = new Audio(customSoundUrl(customTone));
+audio.volume = 0.85;
+return audio.play().catch(() => {});
+}
+const context = ensureRingtoneContext();
+if (!context) return Promise.resolve();
+const option = getMessageToneOption(id);
+if (!option.tones.length) return Promise.resolve();
+context.resume?.().catch(() => {});
+const now = context.currentTime;
+const masterGain = context.createGain();
+masterGain.gain.setValueAtTime(0.085, now);
+masterGain.connect(context.destination);
+option.tones.forEach(([frequency, delayMs, durationMs]) => {
+const startAt = now + (delayMs / 1000);
+const endAt = startAt + (durationMs / 1000);
+const oscillator = context.createOscillator();
+const gain = context.createGain();
+oscillator.type = option.type || 'sine';
+oscillator.frequency.setValueAtTime(frequency, startAt);
+gain.gain.setValueAtTime(0.0001, startAt);
+gain.gain.exponentialRampToValueAtTime(1, startAt + 0.018);
+gain.gain.exponentialRampToValueAtTime(0.0001, Math.max(startAt + 0.03, endAt));
+oscillator.connect(gain);
+gain.connect(masterGain);
+oscillator.start(startAt);
+oscillator.stop(endAt + 0.02);
+});
+window.setTimeout(() => masterGain.disconnect(), 650);
+return Promise.resolve();
+}
+function testMessageTone() {
+primeRingtoneAudio();
+return playMessageChime();
+}
+function stopSound(name) {
+try {
+const sound = sounds[name];
+if (sound) {
+sound.pause();
+sound.currentTime = 0;
+}
+} catch (e) { /* noop */ }
+}
+function showIncomingCall(call, invite = null) {
+if (call && typeof rememberCallRoute === 'function') rememberCallRoute(call);
+const incomingPeerId = call?.peer || invite?.peerId || '';
+if (isPeerKeyBlocked(incomingPeerId)) {
+/* Blocked callers are hung up on silently, exactly like a blocked message. */
+call?.close?.();
+return;
+}
+/* A message request does not ring (49-message-requests.js): the call is
+   written down as missed and the person decides later. */
+if (typeof callFromMessageRequest === 'function'
+&& callFromMessageRequest(incomingPeerId, { provenFingerprint: invite?.provenFingerprint || '' })) {
+const requestPeer = findPeerRecordByPeerId(incomingPeerId);
+appendCall({
+name: requestPeer?.username || call?.metadata?.username || invite?.name || incomingPeerId,
+peerId: incomingPeerId,
+mode: call?.metadata?.mode || invite?.mode || 'voice',
+status: 'missed',
+direction: 'in',
+});
+call?.close?.();
+return;
+}
+if (chatState.currentCall && incomingPeerId !== chatState.currentCall?.peer) {
+const busyPeer = findPeerRecordByPeerId(incomingPeerId);
+if (busyPeer) {
+sendRelayEnvelope(busyPeer, {
+type: 'call-busy',
+mode: call?.metadata?.mode || invite?.mode || 'voice',
+name: chatState.profile.name,
+peerId: chatState.peerId,
+});
+}
+call?.close?.();
+return;
+}
+const mode = call?.metadata?.mode || invite?.mode || 'voice';
+const peer = findPeerRecordByPeerId(incomingPeerId);
+const name = call?.metadata?.username || invite?.name || peer?.username || incomingPeerId || t('کاربر P00RIJA', 'P00RIJA User');
+const avatarData = peer?.avatarData || '';
+navigator.vibrate?.([500, 250, 500, 250, 500]);
+// Remove existing if any
+document.getElementById('chatIncomingCallModal')?.remove();
+const modal = document.createElement('div');
+modal.id = 'chatIncomingCallModal';
+modal.className = 'chat-incoming-call-modal animate-fade-in';
+/* Telegram's incoming screen: the caller's own picture, blurred, IS the
+   backdrop; the avatar sits inside breathing rings; the two actions are far
+   apart so a half-awake thumb cannot answer when it meant to decline. */
+modal.innerHTML = `
+<div class="chat-incoming-backdrop" ${avatarData ? `style="background-image:url('${avatarData}')"` : ''}></div>
+<div class="chat-incoming-call-content">
+<div class="chat-incoming-hero">
+<div class="chat-incoming-rings"><span></span><span></span><span></span></div>
+<div class="chat-incoming-call-avatar-hero">
+${avatarData ? `<img src="${avatarData}" alt="">` : `<span>${initials(name)}</span>`}
+</div>
+</div>
+<div class="chat-incoming-copy">
+<h2>${app().escapeHTML(name)}</h2>
+<div class="chat-incoming-kind">
+<i class="fas ${mode === 'video' ? 'fa-video' : 'fa-phone-volume'}"></i>
+<span>${mode === 'video' ? t('تماس تصویری ورودی', 'Incoming video call') : t('تماس صوتی ورودی', 'Incoming voice call')}</span>
+</div>
+<div class="chat-incoming-e2ee"><i class="fas fa-shield-halved"></i><span>${app().escapeHTML(t('رمزنگاری سرتاسری', 'End-to-end encrypted'))}</span></div>
+</div>
+<div class="chat-incoming-call-actions">
+<div class="chat-incoming-action">
+<button id="chatModalRejectBtn" class="chat-incoming-btn is-reject" aria-label="${app().escapeHTML(t('رد کردن', 'Decline'))}">
+<i class="fas fa-phone-slash"></i>
+</button>
+<span>${t('رد کردن', 'Decline')}</span>
+</div>
+<div class="chat-incoming-action">
+<button id="chatModalAcceptBtn" class="chat-incoming-btn is-accept" aria-label="${app().escapeHTML(t('پاسخ دادن', 'Answer'))}">
+<i class="fas fa-phone"></i>
+</button>
+<span>${t('پاسخ دادن', 'Answer')}</span>
+</div>
+</div>
+<button id="chatModalReplyBtn" type="button" class="chat-incoming-reply">
+<i class="fas fa-comment-dots"></i><span>${app().escapeHTML(t('رد کردن و ارسال پیام', 'Decline with a message'))}</span>
+</button>
+</div>
+`;
+document.body.appendChild(modal);
+document.getElementById('chatModalRejectBtn')?.addEventListener('click', rejectIncomingCall);
+document.getElementById('chatModalAcceptBtn')?.addEventListener('click', acceptIncomingCall);
+document.getElementById('chatModalReplyBtn')?.addEventListener('click', () => {
+rejectIncomingCall();
+const record = findPeerRecordByPeerId(incomingPeerId);
+if (record) {
+chatState.activePeerClientId = record.clientId || '';
+chatState.activeConversationId = getConversationKey(record);
+setChatView('chats');
+renderPeers();
+renderActivePeer();
+}
+const composer = document.getElementById('chatComposer');
+if (composer) {
+composer.value = t('الان نمی‌توانم صحبت کنم.', 'Can\'t talk right now.');
+focusComposerWithoutPageJump(composer);
+syncComposerDirection();
+syncComposerHeight(composer);
+}
+});
+playSound('ringing');
+if (call) chatState.pendingIncomingCall = call;
+if (invite) chatState.pendingIncomingInvite = invite;
+if (chatState.incomingCallTimer) clearTimeout(chatState.incomingCallTimer);
+chatState.incomingCallTimer = setTimeout(() => {
+const pendingCall = chatState.pendingIncomingCall;
+const pendingInvite = chatState.pendingIncomingInvite;
+const missedPeerId = pendingCall?.peer || pendingInvite?.peerId || incomingPeerId;
+appendCall({
+name,
+peerId: missedPeerId,
+mode,
+status: 'missed',
+direction: 'in',
+});
+clearIncomingCall();
+}, CALL_RING_TIMEOUT_MS);
+syncCallChromeState();
+renderActivePeer();
+}
+function hideIncomingCall() {
+stopSound('ringing');
+document.getElementById('chatIncomingCallModal')?.remove();
+renderActivePeer();
+}
+/* An incoming ring can end four ways: answered, declined, timed out, or
+   cancelled by the caller. Three of them cleared the pending call; the cancel
+   path only took the modal off the screen. isCallBusy() reads those pending
+   fields, so a caller who hung up before you answered left you permanently
+   "in a call" -- every later call, placed or received, was refused until the
+   page was reloaded. One definition of "the ring is over", used by all of
+   them. */
+function clearIncomingCall() {
+chatState.pendingIncomingCall?.close?.();
+chatState.pendingIncomingCall = null;
+chatState.pendingIncomingInvite = null;
+chatState.pendingIncomingAccept = false;
+if (chatState.incomingCallTimer) {
+clearTimeout(chatState.incomingCallTimer);
+chatState.incomingCallTimer = null;
+}
+hideIncomingCall();
+}
+async function acceptIncomingCall() {
+const call = chatState.pendingIncomingCall;
+const invite = chatState.pendingIncomingInvite;
+/* This device took the call: the siblings still ringing it stand down —
+   see announceCallHandled. */
+announceCallHandled(invite?.peerId || call?.peer || '', 'answered');
+hideIncomingCall();
+if (chatState.incomingCallTimer) {
+clearTimeout(chatState.incomingCallTimer);
+chatState.incomingCallTimer = null;
+}
+if (!call && invite) {
+chatState.pendingIncomingAccept = true;
+    /* A cross-relay invite accepted from the mailbox has no live offer behind
+       it (the offer was ephemeral and was dropped while the recipient was
+       away). Without this timer the app sits on connecting forever. */
+    if (chatState.incomingStaleTimer) clearTimeout(chatState.incomingStaleTimer);
+    chatState.incomingStaleTimer = setTimeout(() => {
+      if (chatState.pendingIncomingAccept) {
+        chatState.pendingIncomingAccept = false;
+        notify(t('اتصال برقرار نشد — دعواست قدیمی بوده است.', 'Connection failed — the invite was stale.'), 'warning');
+      }
+    }, 15000);
+notify(t('در حال برقراری اتصال امن...', 'Establishing secure connection...'), 'info');
+return;
+}
+if (!call) return;
+chatState.pendingIncomingAccept = false;
+try {
+const wantsVideo = call.metadata?.mode === 'video';
+const stream = await requestCallMedia(wantsVideo ? 'video' : 'voice');
+attachLocalStream(stream);
+/* Answering builds the peer connection too, so the reorder belongs here as
+   well — and the caller is known by now, which is what makes it per contact. */
+if (typeof ensureFreshTurnCredentials === 'function') await ensureFreshTurnCredentials();
+prepareIceForContact(activeCallPeerRecord() || findPeerByAnyKey(call.peer));
+call.answer(stream, { sdpTransform: preferCallCodecs });
+appendCall({
+name: call.metadata?.username || call.peer,
+peerId: call.peer,
+mode: wantsVideo ? 'video' : 'voice',
+status: 'answered',
+direction: 'in',
+logToChat: false,
+});
+bindMediaCall(call, wantsVideo ? 'video' : 'voice', { answered: true, direction: 'in' });
+/* Say so out loud. Until now the only sign the caller had that this side
+   picked up was the media arriving - and on a slow link, or one that has to
+   go the long way round through TURN, that can take several seconds or fail
+   outright. The caller was left listening to a ringing tone next to a call
+   that was already up, with no way to tell the difference from no answer. */
+{
+  const them = findPeerRecordByPeerId(call.peer);
+  if (them) {
+    relaySessionEvent(them, {
+      type: 'call-accepted',
+      mode: wantsVideo ? 'video' : 'voice',
+      peerId: chatState.peerId,
+      createdAt: new Date().toISOString(),
+    });
+  }
+}
+} catch (error) {
+console.error(error);
+notify(t('دسترسی به میکروفون/دوربین ممکن نشد', 'Could not access microphone/camera'), 'error');
+call.close();
+}
+}
+function rejectIncomingCall() {
+const call = chatState.pendingIncomingCall;
+const invite = chatState.pendingIncomingInvite;
+const peerId = call?.peer || invite?.peerId;
+/* This device refused the ring: the siblings still ringing the same call
+   stand down — see announceCallHandled. */
+announceCallHandled(peerId, 'rejected');
+if (peerId) {
+const peer = findPeerRecordByPeerId(peerId);
+if (peer) {
+sendRelayEnvelope(peer, {
+type: 'call-reject',
+mode: call?.metadata?.mode || invite?.mode || 'voice',
+name: chatState.profile.name,
+peerId: chatState.peerId,
+});
+}
+}
+if (call) {
+appendCall({
+name: call.metadata?.username || call.peer,
+peerId: call.peer,
+mode: call.metadata?.mode || 'voice',
+status: 'rejected',
+direction: 'in',
+});
+call.close();
+} else if (invite) {
+appendCall({
+name: invite.name || peerId,
+peerId,
+mode: invite.mode || 'voice',
+status: 'rejected',
+direction: 'in',
+});
+}
+clearIncomingCall();
+}
+function startCallDurationTimer() {
+stopCallDurationTimer();
+const durationEl = document.getElementById('chatCallDuration');
+if (!durationEl) return;
+durationEl.classList.remove('hidden');
+chatState.callTimerInterval = window.setInterval(() => {
+if (!chatState.currentCallAnsweredAt) return;
+durationEl.textContent = formatDuration(Date.now() - chatState.currentCallAnsweredAt);
+}, 1000);
+}
+function stopCallDurationTimer() {
+if (chatState.callTimerInterval) {
+clearInterval(chatState.callTimerInterval);
+chatState.callTimerInterval = null;
+}
+const durationEl = document.getElementById('chatCallDuration');
+if (durationEl) {
+durationEl.classList.add('hidden');
+durationEl.textContent = '';
+}
+}
+function setCallQuality(level, mineLevel = level) {
+chatState.callQuality = level;
+const badge = document.getElementById('chatCallQualityBadge');
+if (!badge) return;
+/* The badge is a pill with one segment per direction, and each segment
+   carries its own colour: "mine" is what the other side receives from this
+   device (the remote's own receiver report), "theirs" is what this device
+   receives. A call can be asymmetric — good here, breaking up there — and a
+   single colour flattened exactly that away. */
+const worst = [level, mineLevel].includes('bad') ? 'bad'
+  : [level, mineLevel].includes('ok') ? 'ok'
+  : [level, mineLevel].includes('good') ? 'good' : 'unknown';
+badge.classList.remove('good', 'ok', 'bad');
+if (worst !== 'unknown') badge.classList.add(worst);
+const worstIn = (chatState.callQualityReadings || [])
+  .filter((reading) => reading.rtt !== null)
+  .sort((a, b) => b.rtt - a.rtt)[0];
+const worstOut = (chatState.callQualityReadings || [])
+  .filter((reading) => reading.mine && reading.mine.rtt !== null)
+  .map((reading) => reading.mine)
+  .sort((a, b) => b.rtt - a.rtt)[0];
+const paintSide = (sideId, valueId, whoFa, whoEn, reading, legLevel) => {
+  const side = document.getElementById(sideId);
+  if (!side) return;
+  side.classList.remove('good', 'ok', 'bad');
+  if (legLevel && legLevel !== 'unknown') side.classList.add(legLevel);
+  const who = side.querySelector('.chat-call-quality-who');
+  if (who) who.textContent = t(whoFa, whoEn);
+  const value = document.getElementById(valueId);
+  if (value) value.textContent = reading && reading.rtt !== null ? `${reading.rtt}ms` : '—';
+};
+paintSide('chatCallQualityMine', 'chatCallQualityMineValue', 'من', 'Me', worstOut, mineLevel);
+paintSide('chatCallQualityTheirs', 'chatCallQualityTheirsValue', 'او', 'Them', worstIn, level);
+badge.title = worst === 'good'
+? t('کیفیت اتصال: عالی', 'Connection quality: excellent')
+: worst === 'ok'
+? t('کیفیت اتصال: متوسط', 'Connection quality: fair')
+: worst === 'bad'
+? t('کیفیت اتصال: ضعیف', 'Connection quality: poor')
+: t('کیفیت اتصال', 'Connection quality');
+}
+/* The panel, drawn from the readings the monitor already took.
+ *
+ * The question people ask during a bad call is not "what is my jitter" — it is
+ * "is it me, them, or this app". So the numbers come with an answer to that,
+ * and the answer names the network when the network is what is wrong. */
+function renderCallQualityCard() {
+  const card = document.getElementById('chatCallQualityCard');
+  const body = document.getElementById('chatCallQualityBody');
+  if (!card || !body || card.classList.contains('hidden')) return;
+
+  const readings = chatState.callQualityReadings || [];
+  const esc = (value) => window.PoorijaApp?.escapeHTML?.(String(value ?? '')) ?? String(value ?? '');
+
+  if (!readings.length) {
+    body.innerHTML = `<p class="chat-call-quality-empty">${esc(t(
+      'هنوز اندازه‌ای نیست. چند ثانیه پس از برقراری تماس پر می‌شود.',
+      'No reading yet. This fills in a few seconds after the call connects.'))}</p>`;
+    return;
+  }
+
+  const verdictFor = (reading) => {
+    const level = callQualityLevel(reading);
+    if (level === 'unknown') return t('در حال برقراری', 'connecting');
+    if (level === 'good') return t('خوب', 'good');
+    if (level === 'ok') return t('قابل‌قبول', 'usable');
+    return t('ضعیف — مشکل از شبکه است، نه برنامه',
+      'poor — this is the network, not the app');
+  };
+
+  const nameFor = (reading) => {
+    if (!reading.key) return t('طرف مقابل', 'the other side');
+    const member = chatState.groupCall?.connections?.get(reading.key);
+    return member?.username || member?.name || reading.key;
+  };
+
+  /* The path, in words rather than ICE vocabulary. It answers the question the
+     round trip alone cannot: a slow call that is going direct is a slow link,
+     while a slow call that fell back to a TURN half a world away is a routing
+     problem with a different fix. 'through both TURNs' is the two-hop path --
+     each end on its own nearby server, the long leg between the two. */
+  const routeLabel = (reading) => {
+    if (reading.route === 'direct') return t('مستقیم', 'direct');
+    if (reading.route === 'both') return t('از TURN هر دو طرف', 'through both TURNs');
+    if (reading.route === 'local') return t('از TURN شما', 'through your TURN');
+    if (reading.route === 'remote') return t('از TURN طرف مقابل', 'through their TURN');
+    return '';
+  };
+  const relayLabel = (reading) => (reading.relayServer && reading.relayProtocol
+    ? `${reading.relayServer} · ${reading.relayProtocol}`
+    : reading.relayServer || '');
+
+  const rows = readings.map((reading) => {
+    const level = callQualityLevel(reading);
+    const stat = (label, value) =>
+      `<div class="chat-call-quality-stat"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+    return `<article class="chat-call-quality-row is-${esc(level)}">
+      <header>
+        <span class="chat-call-quality-peer">${esc(nameFor(reading))}</span>
+        <span class="chat-call-quality-verdict">${esc(verdictFor(reading))}</span>
+      </header>
+      <div class="chat-call-quality-stats">
+        ${stat(t('رفت‌وبرگشت', 'round trip'), reading.rtt === null ? '—' : `${reading.rtt} ms`)}
+        ${stat(t('اتلاف بسته', 'packet loss'), `${reading.lossPercent}%`)}
+        ${stat(t('لرزش', 'jitter'), reading.jitter === null ? '—' : `${reading.jitter} ms`)}
+        ${stat(t('دریافت‌شده', 'received'),
+          window.PoorijaApp?.formatBytes?.(reading.bytes) ?? `${reading.bytes} B`)}
+        ${reading.recvSize ? stat(t('تصویر', 'picture'), reading.recvSize) : ''}
+        ${reading.recvFps === null || reading.recvFps === undefined
+          ? '' : stat(t('فریم', 'frame rate'), `${reading.recvFps}/s`)}
+        ${reading.recvCodec ? stat(t('کدک', 'codec'), reading.recvCodec) : ''}
+        ${routeLabel(reading) ? stat(t('مسیر', 'route'), routeLabel(reading)) : ''}
+        ${relayLabel(reading) ? stat(t('سرور TURN شما', 'your TURN'), relayLabel(reading)) : ''}
+      </div>
+    </article>`;
+  });
+  /* The outbound direction, in the same terms: what the other side receives
+   * from this device. Null when the browser does not report it. */
+  /* Two things off the same worst leg: `mine` is how the far end says our
+     stream arrived, and the leg itself carries what our encoder did with it.
+     They describe one direction, so they belong in one row. */
+  const worstOutLeg = readings
+    .filter((reading) => reading.mine)
+    .sort((a, b) => (b.mine.rtt ?? 0) - (a.mine.rtt ?? 0))[0];
+  const mineWorst = worstOutLeg?.mine;
+  const outgoing = worstOutLeg || {};
+  if (mineWorst) {
+    const mineLevel = callQualityLevel({ rtt: mineWorst.rtt, lossPercent: mineWorst.lossPercent });
+    const stat = (label, value) =>
+      `<div class="chat-call-quality-stat"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+    rows.unshift(`<article class="chat-call-quality-row is-${esc(mineLevel)}">
+      <header>
+        <span class="chat-call-quality-peer">${esc(t('شما — آنچه طرف مقابل دریافت می‌کند', 'You — as the other side receives you'))}</span>
+        <span class="chat-call-quality-verdict">${esc(verdictFor({ rtt: mineWorst.rtt, lossPercent: mineWorst.lossPercent }))}</span>
+      </header>
+      <div class="chat-call-quality-stats">
+        ${stat(t('رفت‌وبرگشت', 'round trip'), mineWorst.rtt === null ? '—' : `${mineWorst.rtt} ms`)}
+        ${stat(t('اتلاف بسته', 'packet loss'), `${mineWorst.lossPercent}%`)}
+        ${stat(t('لرزش', 'jitter'), mineWorst.jitter === null ? '—' : `${mineWorst.jitter} ms`)}
+        ${outgoing.sentSize ? stat(t('تصویر', 'picture'), outgoing.sentSize) : ''}
+        ${outgoing.sentFps === null || outgoing.sentFps === undefined
+          ? '' : stat(t('فریم', 'frame rate'), `${outgoing.sentFps}/s`)}
+        ${outgoing.sentCodec ? stat(t('کدک', 'codec'), outgoing.sentCodec) : ''}
+        ${outgoing.limitReason
+          ? stat(t('محدودشده توسط', 'limited by'), outgoing.limitReason === 'cpu'
+            ? t('توان دستگاه', 'this device')
+            : outgoing.limitReason === 'bandwidth'
+              ? t('پهنای باند', 'bandwidth')
+              : outgoing.limitReason)
+          : ''}
+        ${/* What the app decided to do about it, next to the reason. Seeing
+              "limited by this device" and "picture 540p" together is the whole
+              story in two lines: it could not manage more, so it was given
+              fewer pixels and kept the bitrate. */''}
+        ${outgoing.pixelBudget && outgoing.pixelBudget > 1
+          ? stat(t('کاهش پیکسل', 'pixels reduced'), `÷${outgoing.pixelBudget}`) : ''}
+      </div>
+    </article>`);
+  }
+  body.innerHTML = rows.join('');
+}
+
+function isCallSignalFromActivePeer(payload, message) {
+const activeRecord = chatState.currentCall ? activeCallPeerRecord() : null;
+if (!activeRecord) return false;
+return payload.peerId === activeRecord.peerId || message.fromFingerprint === activeRecord.fingerprint;
+}
+async function handleCallRenegotiateOffer(payload, message) {
+if (!isCallSignalFromActivePeer(payload, message)) return;
+const pc = chatState.currentCall?.peerConnection;
+if (!pc || !payload.sdp) return;
+try {
+/* The caller moved the call to a relay path: this side gathers relay
+   candidates only as well, with the same borrowed TURN available, so the two
+   ends can meet on one server. */
+if (payload.forceRelay && typeof buildIceConfigFor === 'function') {
+  try {
+    const fresh = await buildIceConfigFor(activeCallPeerRecord(), { forceRelay: true });
+    pc.setConfiguration({ ...pc.getConfiguration(), iceServers: fresh.iceServers, iceTransportPolicy: fresh.iceTransportPolicy || 'relay' });
+  } catch (error) { console.warn('[Call] the relay configuration could not be applied:', error?.message || error); }
+}
+await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+const answer = await pc.createAnswer();
+answer.sdp = preferCallCodecs(answer.sdp);
+await pc.setLocalDescription(answer);
+const peerRecord = activeCallPeerRecord();
+if (peerRecord) {
+sendRelayEnvelope(peerRecord, {
+type: 'call-renegotiate-answer',
+peerId: chatState.peerId,
+sdp: { type: answer.type, sdp: answer.sdp },
+});
+}
+// Open our own candidate trickle for the restarted session.
+chatState.iceRestartAttempt = Math.max(chatState.iceRestartAttempt, 1);
+setCallStatusText(t('در حال بازیابی تماس...', 'Recovering the call...'));
+} catch (error) {
+console.warn('[Call] Renegotiation offer rejected:', error);
+}
+}
+async function handleCallRenegotiateAnswer(payload, message) {
+if (!isCallSignalFromActivePeer(payload, message)) return;
+const pc = chatState.currentCall?.peerConnection;
+if (!pc || !payload.sdp) return;
+try {
+await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+} catch (error) {
+console.warn('[Call] Renegotiation answer rejected:', error);
+}
+}
+async function handleCallRemoteCandidate(payload, message) {
+if (!isCallSignalFromActivePeer(payload, message)) return;
+const pc = chatState.currentCall?.peerConnection;
+if (!pc || !payload.candidate) return;
+try {
+await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+} catch (error) {
+console.warn('[Call] Remote candidate rejected:', error);
+}
+}
+function clearIceRecoveryTimer() {
+if (chatState.iceRecoveryTimer) {
+clearTimeout(chatState.iceRecoveryTimer);
+chatState.iceRecoveryTimer = null;
+}
+}
+function setCallStatusText(text) {
+const el = document.getElementById('chatFloatingCallStatus');
+if (el) el.textContent = text;
+}
+// PeerJS 1.5 never renegotiates: its Negotiator makes exactly one offer and
+// closes any connection that receives a second one. So restartIce() on its own
+// is inert here — the new offer would have nowhere to go. We carry the ICE
+// restart over the app's own relay channel instead, which is already
+// authenticated and already used for call-invite/call-state.
+async function sendIceRestartOffer(pc, { forceRelay = false } = {}) {
+const peerRecord = activeCallPeerRecord();
+if (!peerRecord || !pc) return false;
+try {
+/* A restart onto a relay path is gathered with the contact's relay TURN as
+   well (a connection across relays needs a TURN both ends can reach), and
+   says so to the other side, which restricts its own gathering the same way. */
+if (forceRelay && typeof buildIceConfigFor === 'function') {
+  try {
+    const fresh = await buildIceConfigFor(peerRecord, { forceRelay: true });
+    pc.setConfiguration({ ...pc.getConfiguration(), iceServers: fresh.iceServers, iceTransportPolicy: fresh.iceTransportPolicy || 'relay' });
+  } catch (error) { console.warn('[Call] the relay configuration could not be applied:', error?.message || error); }
+}
+const relayOnly = pc.getConfiguration?.().iceTransportPolicy === 'relay';
+const offer = await pc.createOffer({ iceRestart: true });
+offer.sdp = preferCallCodecs(offer.sdp);
+await pc.setLocalDescription(offer);
+return sendRelayEnvelope(peerRecord, {
+type: 'call-renegotiate',
+peerId: chatState.peerId,
+sdp: { type: offer.type, sdp: offer.sdp },
+...(relayOnly ? { forceRelay: true } : {}),
+});
+} catch (error) {
+console.warn('[Call] ICE restart offer failed:', error);
+return false;
+}
+}
+function attemptCallRecovery(pc, reason) {
+if (!chatState.currentCall || chatState.currentCall.peerConnection !== pc) return;
+// Both ends can see the failure at the same moment. Let only the caller
+// re-offer, otherwise the two offers collide and neither side recovers.
+if ((chatState.currentCallDirection || 'out') !== 'out') {
+setCallStatusText(t('در حال بازیابی تماس...', 'Recovering the call...'));
+// The caller drives the restart, but do not wait on it forever.
+clearIceRecoveryTimer();
+chatState.iceRecoveryTimer = setTimeout(() => {
+chatState.iceRecoveryTimer = null;
+if (!chatState.currentCall || chatState.currentCall.peerConnection !== pc) return;
+if (['connected', 'completed'].includes(pc.iceConnectionState)) return;
+notifyTransportTrouble(t('تماس به دلیل قطع شدن شبکه پایان یافت.', 'The call ended because the network dropped.'));
+endCurrentCall({ closePeer: false });
+}, 25000);
+return;
+}
+if (chatState.iceRestartAttempt >= 3) {
+notifyTransportTrouble(t('تماس به دلیل قطع شدن شبکه پایان یافت.', 'The call ended because the network dropped.'));
+endCurrentCall({ closePeer: false });
+return;
+}
+chatState.iceRestartAttempt += 1;
+console.warn(`[Call] ICE recovery attempt ${chatState.iceRestartAttempt} (${reason})`);
+setCallStatusText(t('در حال بازیابی تماس...', 'Recovering the call...'));
+/* A direct path that died is the path to give up on: an outbound-started UDP
+   flow from inside Iran is cut after a few packets, and restarting ICE onto
+   the same pair only reproduces that. The restart goes relay-only, and the
+   contact is remembered so the next call starts there. A second failed
+   attempt goes relay-only whatever the first one was. */
+const diedDirect = (typeof lastCallRoute === 'function' && lastCallRoute(pc) === 'direct') || chatState.iceRestartAttempt >= 2;
+if (diedDirect && typeof noteDirectPath === 'function') noteDirectPath(activeCallPeerRecord()?.fingerprint, false);
+sendIceRestartOffer(pc, { forceRelay: diedDirect });
+clearIceRecoveryTimer();
+chatState.iceRecoveryTimer = setTimeout(() => {
+chatState.iceRecoveryTimer = null;
+if (!chatState.currentCall || chatState.currentCall.peerConnection !== pc) return;
+if (['connected', 'completed'].includes(pc.iceConnectionState)) return;
+attemptCallRecovery(pc, 'restart-did-not-take');
+}, 9000);
+}
+function bindCallIceRecovery(pc, call) {
+chatState.iceRestartAttempt = 0;
+clearIceRecoveryTimer();
+// PeerJS's own negotiator installs an ICE listener that hangs up the moment
+// iceConnectionState reaches "failed" -- see Negotiator._setupListeners. That
+// is the second reason calls died on a brief loss of the media path: the
+// library tore the call down before any restart could be attempted. Take the
+// handler over and keep everything it did except the hang-up.
+pc.oniceconnectionstatechange = () => {
+const state = pc.iceConnectionState;
+if (state === 'completed') pc.onicecandidate = () => {};
+try { call?.emit?.('iceStateChanged', state); } catch (_error) { /* optional */ }
+};
+// Trickle our own candidates over the relay so a restarted ICE session can
+// actually complete; PeerJS stops forwarding them once it has negotiated.
+pc.addEventListener('icecandidate', (event) => {
+if (!event.candidate || !chatState.iceRestartAttempt) return;
+const peerRecord = activeCallPeerRecord();
+if (!peerRecord) return;
+sendRelayEnvelope(peerRecord, {
+type: 'call-ice',
+peerId: chatState.peerId,
+candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
+});
+});
+pc.addEventListener('iceconnectionstatechange', () => {
+const state = pc.iceConnectionState;
+if (['connected', 'completed'].includes(state)) {
+clearIceRecoveryTimer();
+chatState.iceRestartAttempt = 0;
+setCallStatusText(t('اتصال امن برقرار است', 'Secure call is active'));
+return;
+}
+if (state === 'disconnected') {
+// ICE recovers from this on its own most of the time, so give it a
+// grace period before spending a renegotiation on it.
+setCallStatusText(t('شبکه ناپایدار است؛ تماس حفظ می‌شود...', 'Network unstable; holding the call...'));
+clearIceRecoveryTimer();
+chatState.iceRecoveryTimer = setTimeout(() => {
+chatState.iceRecoveryTimer = null;
+if (!chatState.currentCall || chatState.currentCall.peerConnection !== pc) return;
+if (pc.iceConnectionState === 'disconnected') attemptCallRecovery(pc, 'disconnected');
+}, 5000);
+return;
+}
+if (state === 'failed') {
+// The old code hung up here. A failed ICE session is recoverable by
+// restarting it, which is what every mainstream client does.
+attemptCallRecovery(pc, 'failed');
+return;
+}
+if (state === 'closed') {
+clearIceRecoveryTimer();
+endCurrentCall({ closePeer: false });
+}
+});
+}
+/* Which video codec this device can actually afford.
+ *
+ * Ranked by how much picture they carry per bit, AV1 beats VP9 by roughly a
+ * third and VP9 beats VP8 and the constrained-baseline H264 that WebRTC
+ * negotiates by roughly a third again. Preferring the newest one outright
+ * would be the obvious move and the wrong one: AV1 encode is software on
+ * nearly every phone shipping today, and software AV1 at 1080p30 cannot keep
+ * up -- which produces exactly the dropped frames on movement that a better
+ * codec was supposed to cure. A sharper codec the device cannot run is worse
+ * than a coarser one it can.
+ *
+ * mediaCapabilities answers the question directly. `powerEfficient` is the
+ * browser saying a hardware encoder is behind this, and `smooth` that it can
+ * hold the frame rate. A codec gets to go first only when both are true.
+ *
+ * Probed once and remembered: it describes the hardware, which does not
+ * change between calls.
+ */
+let videoCodecOrderPromise = null;
+
+/* Kicked off before the first offer is built, so the answers are in chatState
+   by the time an SDP needs them. Safe to call repeatedly. */
+function primeVideoCodecOrder() {
+  videoCodecOrder().then((order) => { chatState.videoCodecOrder = order; }).catch(() => {});
+  videoPixelCeiling().then((step) => { chatState.videoPixelCeiling = step; }).catch(() => {});
+}
+
+/* The most pixels this device can encode without falling behind.
+ *
+ * Starting every call at 1080p and waiting to be told otherwise means the
+ * first seconds are always the worst ones: the encoder is asked for more than
+ * it can manage, the frames drop, and only then does the ladder walk down. A
+ * phone that has never once managed 1080p30 pays that toll on every call.
+ *
+ * The same API that ranks the codecs answers this. `smooth` is the browser
+ * saying it can hold the frame rate at that size and `powerEfficient` that
+ * hardware is doing the work; a size counts only when both are true. The
+ * answer becomes the starting pixel step, so a device that can do 720p starts
+ * at 720p and climbs if it turns out to have room, rather than starting at
+ * 1080p and falling.
+ *
+ * It is a ceiling on ambition, not a promise -- the ladder still reacts to
+ * what actually happens, because a probe cannot know how warm the phone is or
+ * what else it is doing.
+ */
+let videoPixelCeilingPromise = null;
+
+function videoPixelCeiling() {
+  if (videoPixelCeilingPromise) return videoPixelCeilingPromise;
+  videoPixelCeilingPromise = (async () => {
+    const api = navigator.mediaCapabilities;
+    /* No answer available is not a reason to be timid: without the API this
+       behaves as it did before, starting at full size and reacting. */
+    if (!api?.encodingInfo) return 0;
+
+    const codecs = await videoCodecOrder().catch(() => ['VP9']);
+    const contentType = `video/${codecs[0] || 'VP9'}`;
+
+    /* Same order as SCALE_STEPS in the ladder: index 0 is full size. */
+    const sizes = [
+      [1920, 1080, 8_000_000],
+      [1280, 720, 4_000_000],
+      [960, 540, 2_500_000],
+      [640, 360, 1_200_000],
+    ];
+    for (let step = 0; step < sizes.length; step += 1) {
+      const [width, height, bitrate] = sizes[step];
+      try {
+        const info = await api.encodingInfo({
+          type: 'webrtc',
+          video: { contentType, width, height, bitrate, framerate: 30 },
+        });
+        if (info?.supported && info?.smooth && info?.powerEfficient) return step;
+      } catch (_error) {
+        /* An engine that does not understand the question tells us nothing
+           about the device, so stop asking and start optimistic. */
+        return 0;
+      }
+    }
+    /* Nothing came back affordable. The smallest step is still better than
+       demanding the largest and discovering the same thing the hard way. */
+    return sizes.length - 1;
+  })();
+  return videoPixelCeilingPromise;
+}
+
+function videoCodecOrder() {
+  if (videoCodecOrderPromise) return videoCodecOrderPromise;
+  videoCodecOrderPromise = (async () => {
+    /* The order to fall back to. VP9 first because it is the best of the three
+       that have been hardware-encoded for years; H264 second because it is the
+       one every phone has in silicon; VP8 last. */
+    const fallback = ['VP9', 'H264', 'VP8'];
+    const api = navigator.mediaCapabilities;
+    if (!api?.encodingInfo) return fallback;
+
+    const affordable = async (contentType) => {
+      try {
+        const info = await api.encodingInfo({
+          type: 'webrtc',
+          video: {
+            contentType,
+            /* The shape a call actually asks for, not a token frame: a codec
+               can be power-efficient at 360p and software at 1080p. */
+            width: 1920,
+            height: 1080,
+            bitrate: 6_000_000,
+            framerate: 30,
+          },
+        });
+        return Boolean(info?.supported && info?.smooth && info?.powerEfficient);
+      } catch (_error) {
+        /* An engine that does not know 'webrtc' here throws. That is not a no
+           to the codec, only to the question, so the fallback stands. */
+        return false;
+      }
+    };
+
+    const order = [];
+    if (await affordable('video/AV1')) order.push('AV1');
+    if (await affordable('video/VP9')) order.push('VP9');
+    for (const name of fallback) if (!order.includes(name)) order.push(name);
+    return order;
+  })();
+  return videoCodecOrderPromise;
+}
+
+/* Ask Opus for the two things that decide how a call holds up.
+ *
+ * useinbandfec=1 lets the encoder carry a coarse copy of the previous frame
+ * inside the current one, so a single lost packet is reconstructed rather than
+ * heard as a gap. It is a request to the far end about what to send us, which
+ * is why both sides run this transform -- an offer that asks for it and an
+ * answer that asks back. Chrome turns it on by default and others do not, and
+ * saying so costs nothing where it was already true.
+ *
+ * maxaveragebitrate says the same thing as the sender ceiling applied through
+ * setParameters, in the one place an engine that ignores setParameters will
+ * still read. Some WebKit builds are exactly that, and the sender path here
+ * already carries a fallback for them.
+ *
+ * Nothing existing is removed: an fmtp line that already carries a key keeps
+ * its own value, since it came from an engine that knows its own encoder
+ * better than this does. */
+function tuneOpus(lines, codecs) {
+  /* And the voice at its best: full band (48 kHz both ways), one channel
+     (a voice is mono; stereo would halve the bits per channel for nothing),
+     and no DTX — "discontinuous transmission" saves a little bandwidth in
+     pauses at the price of clipped word onsets and pumping background. */
+  const wanted = {
+    useinbandfec: '1',
+    maxaveragebitrate: '128000',
+    usedtx: '0',
+    stereo: '0',
+    'sprop-stereo': '0',
+    maxplaybackrate: '48000',
+    'sprop-maxcapturerate': '48000',
+  };
+  for (const [payloadType, name] of codecs) {
+    if (name !== 'opus') continue;
+    const at = lines.findIndex((line) => line.startsWith(`a=fmtp:${payloadType} `));
+    const existing = at < 0 ? '' : lines[at].slice(`a=fmtp:${payloadType} `.length);
+    const params = new Map(existing.split(';').filter(Boolean).map((pair) => {
+      const eq = pair.indexOf('=');
+      return eq < 0 ? [pair.trim(), ''] : [pair.slice(0, eq).trim(), pair.slice(eq + 1).trim()];
+    }));
+    for (const [key, value] of Object.entries(wanted)) if (!params.has(key)) params.set(key, value);
+    const rebuilt = `a=fmtp:${payloadType} ${[...params].map(([k, v]) => (v === '' ? k : `${k}=${v}`)).join(';')}`;
+    if (at < 0) {
+      /* No fmtp line for this payload type yet. It belongs after the rtpmap
+         that names it, where an engine reading the section expects to find it. */
+      const rtpmap = lines.findIndex((line) => line.startsWith(`a=rtpmap:${payloadType} `));
+      if (rtpmap < 0) continue;
+      lines.splice(rtpmap + 1, 0, rebuilt);
+    } else {
+      lines[at] = rebuilt;
+    }
+  }
+}
+
+/* Prefer interoperable codecs without removing any fallback or RTX/FEC payload.
+   PeerJS creates its first offer inside peer.call(), before it exposes the PC;
+   its documented sdpTransform hook is therefore used for initial negotiation. */
+function preferCallCodecs(sdp) {
+  if (typeof sdp !== 'string') return sdp;
+  return sdp.split(/(?=^m=)/m).map((section) => {
+    const lines = section.split('\r\n');
+    const media = /^m=(audio|video) /.exec(lines[0]);
+    if (!media) return section;
+    /* The order videoCodecOrder() worked out for this device.
+     *
+     * Read from a cache rather than awaited: PeerJS hands this hook a string
+     * and wants one back, so there is nowhere to wait. The probe is started
+     * when a call is being set up, which is several round trips before an SDP
+     * exists, and until it answers this uses the same VP9-first order it
+     * would have used anyway -- so the worst case of losing that race is the
+     * previous behaviour, not a broken one.
+     *
+     * Reordering, never excluding: every payload type the far end offered is
+     * still in the list, so a device missing the first choice negotiates the
+     * next and a call never ends up with no codec in common. */
+    const preferred = media[1] === 'audio'
+      ? ['opus']
+      : (chatState.videoCodecOrder || ['VP9', 'H264', 'VP8']);
+    const codecs = new Map();
+    lines.forEach((line) => {
+      const match = /^a=rtpmap:(\d+) ([^/]+)/.exec(line);
+      if (match) codecs.set(match[1], match[2].toLowerCase());
+    });
+    const fields = lines[0].split(' ');
+    const rank = (pt) => {
+      const i = preferred.findIndex((name) => name.toLowerCase() === codecs.get(pt));
+      return i < 0 ? preferred.length : i;
+    };
+    lines[0] = [...fields.slice(0, 3), ...fields.slice(3).sort((a, b) => rank(a) - rank(b))].join(' ');
+    if (media[1] === 'audio') tuneOpus(lines, codecs);
+    return lines.join('\r\n');
+  }).join('');
+}
+
+/* ===================== انتخاب بین دو TURN ===================== */
+/* Which TURN server to relay a call through, when this device has more than
+ * one.
+ *
+ * ICE measures every candidate pair for real — a connectivity check is a
+ * round trip that actually happened — and then picks by a PRIORITY FORMULA
+ * rather than by what it measured. So there is a number in front of it that
+ * it does not use, and with two TURN servers the one it picks can be the
+ * slower one for this particular contact.
+ *
+ * Per contact, not globally. A device with a TURN near it and one far away
+ * has two different right answers: the near one for somebody on the same
+ * side of the world, and sometimes the far one for somebody beside it. A
+ * single global choice cannot be right for both.
+ *
+ * What is remembered is a round trip and a loss rate against a server
+ * address, per contact. The call log already records who was called and
+ * when, so this adds no fact about the conversation that was not already on
+ * this device; what it adds is how the network behaved.
+ *
+ * Two places it acts, and they are not equally strong:
+ *
+ *   at the start, by putting the remembered server first in the list ICE is
+ *   given. That is a nudge — ICE weights order, it does not obey it.
+ *
+ *   in the middle, by reconfiguring and restarting ICE when the call is
+ *   actually bad. That one decides, and it costs a short gap in the audio,
+ *   which is why it waits for several poor samples in a row and happens at
+ *   most once in a call.
+ */
+const TURN_MEMORY_CONTACTS = 40;
+const TURN_MEMORY_SERVERS = 4;
+/* Five consecutive poor samples at the monitor's cadence. The same shape of
+   hysteresis the video ladder uses, for the same reason: one bad sample is a
+   hiccup, and acting on it costs more than it fixes. */
+const TURN_SWITCH_AFTER_BAD = 5;
+/* Loss against round trip, in the same proportion callQualityLevel already
+   treats them: it calls a call good below 250 ms AND below 2% loss, so at
+   the edge of "good" one percent of loss is worth about 125 ms. Derived from
+   a threshold that was already there rather than invented here. */
+const TURN_LOSS_WEIGHT = 125;
+/* How fast a new measurement displaces the old. A server does not become bad
+   because of one call, and must not stay good forever either. */
+const TURN_MEMORY_WEIGHT = 0.3;
+
+function turnMemory() {
+chatState.prefs = chatState.prefs || {};
+if (!chatState.prefs.turnChoices || typeof chatState.prefs.turnChoices !== 'object') {
+chatState.prefs.turnChoices = {};
+}
+return chatState.prefs.turnChoices;
+}
+function turnScore(entry) {
+if (!entry || !Number.isFinite(entry.rtt)) return Infinity;
+return entry.rtt + (Number(entry.loss) || 0) * TURN_LOSS_WEIGHT;
+}
+/* Oldest contacts first, so a long address book does not grow this without
+   bound. */
+function pruneTurnMemory(memory) {
+const keys = Object.keys(memory);
+if (keys.length <= TURN_MEMORY_CONTACTS) return;
+keys
+.sort((a, b) => (newestTurnEntry(memory[a]) - newestTurnEntry(memory[b])))
+.slice(0, keys.length - TURN_MEMORY_CONTACTS)
+.forEach((key) => { delete memory[key]; });
+}
+function newestTurnEntry(byServer) {
+return Math.max(0, ...Object.values(byServer || {}).map((entry) => Date.parse(entry?.at || 0) || 0));
+}
+function rememberTurnResult(fingerprint, label, reading) {
+if (!fingerprint || !label || !Number.isFinite(reading?.rtt)) return;
+const memory = turnMemory();
+const byServer = memory[fingerprint] || (memory[fingerprint] = {});
+const previous = byServer[label];
+const loss = Number(reading.lossPercent) || 0;
+byServer[label] = previous && Number.isFinite(previous.rtt)
+? {
+rtt: Math.round(previous.rtt * (1 - TURN_MEMORY_WEIGHT) + reading.rtt * TURN_MEMORY_WEIGHT),
+loss: Math.round((previous.loss * (1 - TURN_MEMORY_WEIGHT) + loss * TURN_MEMORY_WEIGHT) * 10) / 10,
+samples: (previous.samples || 0) + 1,
+at: new Date().toISOString(),
+}
+: { rtt: Math.round(reading.rtt), loss, samples: 1, at: new Date().toISOString() };
+/* Only the few this device actually uses; a contact reached through five
+   different servers is a contact whose oldest answer no longer matters. */
+const servers = Object.keys(byServer);
+if (servers.length > TURN_MEMORY_SERVERS) {
+servers
+.sort((a, b) => (Date.parse(byServer[a].at) || 0) - (Date.parse(byServer[b].at) || 0))
+.slice(0, servers.length - TURN_MEMORY_SERVERS)
+.forEach((key) => { delete byServer[key]; });
+}
+pruneTurnMemory(memory);
+saveChatPrefs();
+}
+/* The best remembered server for this contact, or '' when nothing is known.
+   One sample is enough to prefer something over nothing — it is a nudge, and
+   waiting for certainty means never using what was measured. */
+function bestTurnLabelFor(fingerprint) {
+const byServer = turnMemory()[String(fingerprint || '')];
+if (!byServer) return '';
+let best = '';
+let bestScore = Infinity;
+for (const [label, entry] of Object.entries(byServer)) {
+const score = turnScore(entry);
+if (score < bestScore) { bestScore = score; best = label; }
+}
+return best;
+}
+/* A TURN url reduced to the form turnServerLabel() produces, so a measured
+   candidate and a configured url can be compared. */
+function turnUrlLabel(url) {
+const match = String(url || '').match(/^(turns?):([^?]+)/i);
+return match ? `${match[1].toLowerCase()}:${match[2]}` : '';
+}
+/* Reorders the urls inside each TURN entry so the remembered server comes
+   first. Nothing is ever removed: a server that was slow last week is still
+   better than no call at all. */
+function orderIceServersFor(fingerprint, iceServers) {
+const preferred = bestTurnLabelFor(fingerprint);
+if (!preferred || !Array.isArray(iceServers)) return iceServers;
+let moved = false;
+const ordered = iceServers.map((entry) => {
+const urls = Array.isArray(entry?.urls) ? entry.urls : (entry?.urls ? [entry.urls] : []);
+if (urls.length < 2 || !urls.some((url) => turnUrlLabel(url) === preferred)) return entry;
+const first = urls.filter((url) => turnUrlLabel(url) === preferred);
+const rest = urls.filter((url) => turnUrlLabel(url) !== preferred);
+if (!rest.length) return entry;
+moved = true;
+return { ...entry, urls: [...first, ...rest] };
+});
+/* The original array when nothing moved — a remembered server that is no
+   longer configured must not look like a change, or prepareIceForContact
+   rewrites an identical list and reports that it did something. */
+return moved ? ordered : iceServers;
+}
+/* PeerJS builds the peer connection — and its first offer — inside call() and
+   answer(), before it hands the connection back, so there is no moment
+   afterwards at which the server list can still be reordered. It reads the
+   list from peer.options.config at that instant, which is why this writes
+   there and does it just before dialling.
+   Guarded on the shape rather than assumed: a vendored library that changes
+   this loses the nudge and keeps the call. */
+function prepareIceForContact(peerRecord) {
+const config = chatState.peer?.options?.config;
+if (!config || !Array.isArray(config.iceServers)) return false;
+/* Ordered from the CONFIGURED list, not from whatever the last call left
+   behind. The peer object is shared across every call, so reordering it in
+   place and never putting it back meant a call to somebody with no history
+   started on the previous contact's preference — which is not per contact at
+   all, it is last-contact-wins. */
+let canonical;
+try {
+canonical = peerOptions().config.iceServers;
+} catch (_error) {
+canonical = config.iceServers;
+}
+const ordered = orderIceServersFor(peerRecord?.fingerprint, canonical);
+config.iceServers = ordered;
+if (typeof applyPathPolicyToPeerOptions === 'function') applyPathPolicyToPeerOptions(peerRecord);
+return ordered !== canonical;
+}
+const callRouteState = new WeakMap();
+/* Runs on every quality sample beside the video ladder. It records what this
+   server is doing for this contact, and — only when the call is genuinely bad
+   and there is somewhere else to go — moves it. */
+async function adaptCallRoute(pc, reading) {
+if (!pc || !reading) return;
+const peerRecord = activeCallPeerRecord();
+/* Direct path first: whether the path ICE chose keeps holding is judged here,
+   and a direct path that does not is moved to a relay one. */
+if (typeof watchCallPath === 'function') watchCallPath(pc, reading, peerRecord);
+const fingerprint = peerRecord?.fingerprint || '';
+if (!fingerprint) return;
+const relayed = reading.route === 'local' || reading.route === 'both';
+if (relayed && reading.relayServer) rememberTurnResult(fingerprint, reading.relayServer, reading);
+
+const state = callRouteState.get(pc) || { bad: 0, switched: false };
+callRouteState.set(pc, state);
+if (state.switched || !relayed || !reading.relayServer) { state.bad = 0; return; }
+state.bad = callQualityLevel(reading) === 'bad' ? state.bad + 1 : 0;
+if (state.bad < TURN_SWITCH_AFTER_BAD) return;
+
+const config = pc.getConfiguration?.();
+if (!config || !Array.isArray(config.iceServers)) return;
+/* Somewhere else to go: a configured TURN this call is not already using. */
+const others = config.iceServers.flatMap((entry) => {
+const urls = Array.isArray(entry?.urls) ? entry.urls : (entry?.urls ? [entry.urls] : []);
+return urls.map(turnUrlLabel).filter((label) => label && label !== reading.relayServer);
+});
+if (!others.length) return;
+/* Marked before the attempt, not after: a restart that fails must not lead
+   to a second one, because the gap is the cost and two gaps are worse than a
+   poor call. */
+state.switched = true;
+state.bad = 0;
+const target = others.find((label) => turnScore(turnMemory()[fingerprint]?.[label]) < turnScore(turnMemory()[fingerprint]?.[reading.relayServer]))
+|| others[0];
+try {
+pc.setConfiguration({ ...config, iceServers: orderIceServersFor(fingerprint, config.iceServers).map((entry) => {
+const urls = Array.isArray(entry?.urls) ? entry.urls : (entry?.urls ? [entry.urls] : []);
+if (!urls.some((url) => turnUrlLabel(url) === target)) return entry;
+const first = urls.filter((url) => turnUrlLabel(url) === target);
+return { ...entry, urls: [...first, ...urls.filter((url) => turnUrlLabel(url) !== target)] };
+}) });
+pc.restartIce?.();
+console.log(`[Call] the relay path was poor through ${reading.relayServer}; trying ${target}`);
+notify(t('کیفیت تماس ضعیف بود؛ مسیر دیگری امتحان می‌شود.',
+'The call path was poor; trying another route.'), 'info');
+} catch (error) {
+console.warn('[Call] could not change the relay path:', error?.message || error);
+}
+}
+const callAdaptationState = new WeakMap();
+const callQualitySamples = new WeakMap();
+function callIntervalLoss(pc, stats) {
+  const previous = callQualitySamples.get(pc) || new Map();
+  const next = new Map();
+  let lost = 0, received = 0, fraction = null;
+  stats.forEach((report) => {
+    if (report.type !== 'remote-inbound-rtp') return;
+    const current = { lost: Number(report.packetsLost || 0), received: Number(report.packetsReceived || 0), timestamp: report.timestamp };
+    next.set(report.id, current);
+    const old = previous.get(report.id);
+    // RTCP reports can remain unchanged across several polls.
+    if (!old || old.timestamp === current.timestamp) return;
+    if (Number.isFinite(report.fractionLost)) fraction = Math.max(fraction || 0, report.fractionLost * 100);
+    lost += Math.max(0, current.lost - old.lost);
+    received += Math.max(0, current.received - old.received);
+  });
+  callQualitySamples.set(pc, next);
+  return fraction !== null ? fraction : lost + received > 0 ? 100 * lost / (lost + received) : null;
+}
+
+async function adaptCallSenders(pc, reading) {
+  if (!pc?.getSenders || pc.signalingState === 'closed' || !reading) return;
+  let state = callAdaptationState.get(pc);
+  if (!state) {
+    /* Where to begin, rather than beginning at the ceiling and falling.
+     *
+     * Two things are known before the first frame is encoded. The device was
+     * asked what it can manage (videoPixelCeiling), and the last call that
+     * reached a steady state left its answer behind. Starting from the more
+     * cautious of the two, minus one step so there is somewhere to climb,
+     * replaces the opening seconds of every call -- which used to be spent
+     * asking for 1080p, failing, and walking down -- with a setting that
+     * probably holds and a ladder that probes upward from it.
+     *
+     * Cautious, not fixed: everything below still reacts to what actually
+     * happens, because no probe knows how warm the phone is or what else it
+     * is doing. */
+    const probed = Number(chatState.videoPixelCeiling || 0);
+    const remembered = Number(chatState.prefs?.callPixelStep ?? 0);
+    const start = Math.max(0, Math.min(3, Math.max(probed, remembered) - 1));
+    /* `scale` is the pixel budget and `level` the bit budget. They answer to
+       different things -- see the note above the CPU branch below. */
+    state = { level: 2, scale: start, healthy: 0, easing: 0, steady: 0, busy: false, applied: new WeakMap() };
+    callAdaptationState.set(pc, state);
+  }
+  if (state.busy) return;
+  const rtt = reading.mine?.rtt ?? reading.rtt;
+  const loss = reading.outboundLoss;
+  const bandwidth = reading.availableOutgoingBitrate;
+  const known = rtt != null || loss != null || bandwidth != null;
+  if (!known) return;
+  const bad = (rtt != null && rtt >= 500) || (loss != null && loss >= 8) || (bandwidth != null && bandwidth < 300000);
+  const strained = (rtt != null && rtt >= 250) || (loss != null && loss >= 2) || (bandwidth != null && bandwidth < 1000000);
+  const target = bad ? 0 : strained ? 1 : 2;
+
+  if (target < state.level) { state.level = target; state.healthy = 0; }
+  else if (target > state.level) {
+    if (++state.healthy >= 3) { state.level++; state.healthy = 0; }
+  } else state.healthy = 0;
+
+  /* A struggling encoder is given fewer PIXELS, not fewer bits.
+   *
+   * Lowering the bitrate was the wrong remedy, and the report that followed
+   * said so: both limits were being seen, one after the other. Fewer bits do
+   * nothing for an encoder that cannot keep up -- it still has to get through
+   * 1920x1080 thirty times a second, and the cost of that is pixels. Worse,
+   * the rung it dropped to capped video at 600 kbit/s, so a link that could
+   * carry three megabits had most of it thrown away too; three healthy samples
+   * later it climbed back, the encoder failed again, and that oscillation IS
+   * the instability.
+   *
+   * So the budgets are separate. Bits answer to the link, through its own
+   * estimate, which is what the estimate is for. Pixels answer to the encoder:
+   * halve them and the work halves, while the bitrate stays whatever the link
+   * will carry -- and 540p with three megabits behind it looks far better than
+   * 1080p starved of them.
+   *
+   * Steps of 1, 1.5, 2 and 3 are 1080p, 720p, 540p and 360p out of a 1080p
+   * capture. Easing back up takes six clear samples rather than three: a
+   * device that has just been overloaded is usually still warm, and asking too
+   * early is how the oscillation starts again. */
+  const SCALE_STEPS = [1, 1.5, 2, 3];
+  if (reading.limitedByCpu) {
+    state.easing = 0;
+    state.steady = 0;
+    if (state.scale < SCALE_STEPS.length - 1) state.scale += 1;
+  } else if (state.scale > 0) {
+    state.steady += 1;
+    if (++state.easing >= 6) { state.scale -= 1; state.easing = 0; }
+  } else {
+    state.easing = 0;
+    state.steady += 1;
+  }
+
+  /* What held, written down for next time.
+   *
+   * A call between the same two devices over the same networks converges on
+   * the same answer every time, and rediscovering it from scratch is what
+   * makes the first stretch of every call the worst of it. Recorded only once
+   * a setting has actually held for a while -- a step it fell out of a moment
+   * later is not worth remembering -- and read back above as a starting point
+   * one step more ambitious, so an upgraded phone or network is not held to
+   * last month's answer. */
+  if (state.steady === 8) {
+    const settled = state.scale;
+    if (chatState.prefs && chatState.prefs.callPixelStep !== settled) {
+      chatState.prefs.callPixelStep = settled;
+      if (typeof saveChatPrefs === 'function') { try { saveChatPrefs(); } catch (_error) { /* not fatal */ } }
+    }
+  }
+  state.busy = true;
+  try {
+    for (const sender of pc.getSenders()) {
+      if (!sender.track || sender.track.readyState === 'ended' || !sender.getParameters || !sender.setParameters) continue;
+      const video = sender.track.kind === 'video';
+      const screen = ['detail', 'text'].includes(sender.track.contentHint);
+      /* Top of the video ladder is what a good link can carry at 1080p30. It
+         is a ceiling and rarely the operating point: the estimate below takes
+         precedence whenever there is one, so asking for more on a link that
+         cannot carry it costs nothing. */
+      /* The top of the video ladder is 8 Mbit/s, not 4.
+       *
+       * A still 1080p30 picture needs about two; the same picture with the
+       * camera panning or the subject moving needs three or four times that
+       * for the same sharpness, because almost nothing can be predicted from
+       * the frame before. At a 4 Mbit/s ceiling that shortfall had to come out
+       * of something, and it came out as blocking and dropped frames the
+       * moment anything moved.
+       *
+       * It is a ceiling and rarely the operating point: the measured estimate
+       * below still decides, so a link that cannot carry 8 never sees it. */
+      /* The rungs are a ceiling on ambition, not a cap on what the link is
+         offering. They used to be both, and that was the other half of the
+         oscillation: a strained rung pinned video at 600 kbit/s even where the
+         estimate said three megabits were available, so a moment of high round
+         trip cost most of the picture and kept costing it until three clean
+         samples had gone by. The estimate is measured and the rung is a guess,
+         so where they disagree the measurement wins -- the rung's job is to
+         stop this asking for more than the situation deserves, not to refuse
+         what the link has already said it can carry. */
+      /* At sixty frames a second the same sharpness needs more bits than at
+         thirty; the top rung grows with the frame rate the camera delivers. */
+      const captureFps = video ? Number(sender.track.getSettings?.().frameRate || 30) : 0;
+      const ceilings = video ? [1500000, 3000000, captureFps > 32 ? 12000000 : 8000000] : [24000, 48000, 128000];
+      let bitrate = ceilings[state.level];
+      if (bandwidth != null) {
+        /* Video bids for most of the link. Audio never does -- it is small
+           enough that a share this modest still reaches the top of its ladder
+           on any link worth calling over, and leaving the rest to video is
+           what keeps the two from bidding past the estimate between them.
+           Both have a floor, because the thing to protect when a link
+           collapses is that the call continues at all. */
+        bitrate = Math.min(bitrate, video
+          ? Math.max(64000, Math.floor(bandwidth * 0.75))
+          : Math.max(24000, Math.floor(bandwidth * 0.15)));
+      }
+      /* A moving picture keeps its frame rate; a shared screen keeps its
+         resolution.
+         'balanced' was the top rung's answer and it is the wrong one for a
+         camera: on a motion spike it lets the engine give up frames AND
+         detail at once, which is the stutter-plus-smear that gets reported.
+         A face that is momentarily a little softer is still a conversation; a
+         face that jumps is not. Text on a shared screen is the opposite --
+         legibility is the whole point, so that one keeps its pixels. */
+      const preference = screen ? 'maintain-resolution' : 'maintain-framerate';
+      /* The frame rate is asked for; the resolution is not pinned.
+       *
+       * Pinning both was a mistake worth naming. The bitrate ceiling is fixed,
+       * so on a motion spike SOMETHING has to give -- and with the resolution
+       * held at 1 and the frame rate held at 30, the only thing left to give
+       * was the quantiser, which is blocking, or whole frames. That is exactly
+       * the "severe frame and quality drop when the camera moves" this is
+       * fixing. Naming the frame rate still matters, because an engine left to
+       * guess settles on 15 and a call looks stilted with bandwidth to spare;
+       * letting the resolution flex is what gives the encoder somewhere to go. */
+      const topRung = video && !screen && state.level === 2;
+      const signature = `${sender.track.id}:${bitrate}:${video ? preference : ''}:${topRung}:${state.scale}`;
+      if (state.applied.get(sender) === signature) continue;
+      try {
+        const params = sender.getParameters();
+        if (!params.encodings?.length) continue; // Not negotiated yet; retry on the next sample.
+        params.encodings.forEach((encoding) => {
+          encoding.maxBitrate = Math.floor(bitrate / params.encodings.length);
+          if (!video) return;
+          /* Never pinned: this is the knob the encoder needs when the picture
+             moves, and holding it at 1 is what turned a motion spike into
+             dropped frames. degradationPreference above decides what it may
+             trade, which is the right place for that decision. */
+          /* The pixel budget. At step 0 nothing is set, so the engine may still
+             scale down on a motion spike -- that freedom is what keeps
+             movement smooth. Above step 0 it is held there, because the reason
+             for being above it is that the device could not manage more. */
+          if (SCALE_STEPS[state.scale] > 1) encoding.scaleResolutionDownBy = SCALE_STEPS[state.scale];
+          else delete encoding.scaleResolutionDownBy;
+          if (topRung) {
+            /* Whatever the camera delivers, up to 60. */
+            encoding.maxFramerate = Math.max(24, Math.min(60, Math.round(captureFps || 30)));
+            /* Video is what a call is watching. Saying so lets the stack put it
+               ahead of whatever else this page is sending when the two compete
+               -- a file transfer in another conversation most of all, which
+               otherwise takes its share out of the picture. */
+            encoding.networkPriority = 'high';
+          } else {
+            delete encoding.maxFramerate;
+          }
+        });
+        if (video) params.degradationPreference = preference;
+        try { await sender.setParameters(params); }
+        catch (error) {
+          if (!video || !['TypeError', 'NotSupportedError', 'InvalidModificationError'].includes(error.name)) throw error;
+          // Some WebKit versions support the bitrate cap but not this hint.
+          const fallback = sender.getParameters();
+          if (!fallback.encodings?.length) continue;
+          fallback.encodings.forEach((encoding) => { encoding.maxBitrate = Math.floor(bitrate / fallback.encodings.length); });
+          delete fallback.degradationPreference;
+          await sender.setParameters(fallback);
+        }
+        state.applied.set(sender, signature);
+      } catch (_error) { /* Renegotiation/track replacement may race this poll. Retry later. */ }
+    }
+  } finally { state.busy = false; }
+}
+
+/* One reading from one peer connection.
+ *
+ * Audio AND video inbound streams are counted. The old version summed only
+ * `kind === 'video'`, so on a voice call packetsReceived stayed zero, the loss
+ * ratio came out as a clean 0%, and a call breaking up reported itself as
+ * perfect. A wrong number is worse than no number: it ends the investigation.
+ */
+/* The TURN server a relayed candidate came through, named the way somebody
+   would recognise it. `url` is the ICE server the browser allocated from and
+   is the precise answer; Firefox leaves it off, and there the relayed address
+   is the TURN's own address, which names it just as well. */
+function turnServerLabel(candidate) {
+  const url = String(candidate?.url || '');
+  const match = url.match(/^(turns?):([^?]+)/i);
+  if (match) return `${match[1].toLowerCase()}:${match[2]}`;
+  return String(candidate?.address || candidate?.ip || '');
+}
+async function readCallQuality(pc, key = '') {
+  if (!pc?.getStats) return null;
+  const stats = await pc.getStats();
+  let rtt = null;
+  let availableOutgoingBitrate = null;
+  let jitter = null;
+  let lost = 0;
+  let received = 0;
+  let bytes = 0;
+  /* Sent as well as received. Only the inbound side was counted, which is half
+     a call: the calls list now reports both directions, and on a metered
+     connection the uploaded half is the one people are asked about. */
+  let bytesOut = 0;
+  /* Set when the encoder says it is the bottleneck, and the lowest frame rate
+     any video sender is managing. Both are about this side's hardware rather
+     than the link. */
+  let limitedByCpu = false;
+  let limitReason = '';
+  let sentFps = null;
+  let sentSize = '';
+  let sentCodec = '';
+  /* The same three for the inbound picture: what is arriving, how fast, and
+     in what. A call that looks fine going out and poor coming in is a
+     different problem, and the panel could not tell them apart. */
+  let recvFps = null;
+  let recvSize = '';
+  let recvCodec = '';
+  let kinds = new Set();
+  /* The other direction, as the OTHER SIDE experiences it. `remote-inbound-rtp`
+     is the remote receiver's own report about our outbound stream — its loss,
+     jitter and round trip come back inside our own getStats, no signalling
+     needed. Where the browser does not produce it (older WebKit), mine stays
+     null and the pill shows a dash for that side rather than a guess. */
+  let mineRtt = null;
+  let mineJitter = null;
+  let mineLost = 0;
+  let mineReceived = 0;
+
+  let selectedPairId = null;
+  const succeededPairs = [];
+  stats.forEach((report) => {
+    if (report.type === 'transport' && report.selectedCandidatePairId) selectedPairId = report.selectedCandidatePairId;
+    if (report.type === 'candidate-pair' && report.state === 'succeeded') succeededPairs.push(report);
+  });
+  const selectedPair = (selectedPairId && stats.get(selectedPairId))
+    || succeededPairs.find((pair) => pair.nominated === true)
+    || (succeededPairs.length === 1 ? succeededPairs[0] : null);
+  /* WHERE the picture and the sound are going, which nothing here could see.
+   *
+   * Call media never touches the signalling relay: it is either peer to peer
+   * or it goes through a TURN server. Those two have very different round
+   * trips and very different bills, and the panel reported neither -- so a
+   * call that quietly fell back to a TURN on another continent looked exactly
+   * like a direct one that happened to be slow.
+   *
+   * The selected pair names its two candidates; each candidate says what kind
+   * it is. 'relay' on a side means that side's media is going through a TURN.
+   * Both sides relayed is the two-hop path: each end reaches its own nearby
+   * TURN and the long leg runs between the two servers. That is ordinary ICE,
+   * and it is the thing a second TURN closer to one of the two is FOR -- but
+   * only a reading like this one can say whether it actually happened. */
+  const localCandidate = selectedPair?.localCandidateId ? stats.get(selectedPair.localCandidateId) : null;
+  const remoteCandidate = selectedPair?.remoteCandidateId ? stats.get(selectedPair.remoteCandidateId) : null;
+  const localType = String(localCandidate?.candidateType || '');
+  const remoteType = String(remoteCandidate?.candidateType || '');
+  const relayServer = localType === 'relay' ? turnServerLabel(localCandidate) : '';
+  /* udp, tcp or tls -- how this device reaches its TURN. For media the three
+     are not equivalent: TCP and TLS put a reliable, ordered stream under
+     something that would rather drop a late packet than wait for it, so a
+     call on either sounds worse than the same call on udp. Worth showing,
+     because the remedy is a firewall change and not an app setting. */
+  const relayProtocol = localType === 'relay' ? String(localCandidate?.relayProtocol || '') : '';
+  const route = (!localType && !remoteType) ? ''
+    : (localType === 'relay' && remoteType === 'relay') ? 'both'
+      : localType === 'relay' ? 'local'
+        : remoteType === 'relay' ? 'remote'
+          : 'direct';
+  stats.forEach((report) => {
+    if (report.id === selectedPair?.id && report.type === 'candidate-pair'
+      && (report.state === 'succeeded' || report.nominated === true)
+      && typeof report.currentRoundTripTime === 'number') {
+      rtt = report.currentRoundTripTime * 1000;
+      if (Number.isFinite(report.availableOutgoingBitrate)) availableOutgoingBitrate = report.availableOutgoingBitrate;
+    }
+    if (report.type === 'inbound-rtp' && !report.isRemote) {
+      if (report.kind) kinds.add(report.kind);
+      if (report.kind === 'video') {
+        if (Number.isFinite(report.framesPerSecond)) {
+          recvFps = recvFps === null ? report.framesPerSecond : Math.min(recvFps, report.framesPerSecond);
+        }
+        if (Number.isFinite(report.frameWidth) && Number.isFinite(report.frameHeight)) {
+          recvSize = `${report.frameWidth}x${report.frameHeight}`;
+        }
+        if (report.codecId) {
+          const codec = stats.get(report.codecId);
+          const mime = String(codec?.mimeType || '');
+          if (mime) recvCodec = mime.replace(/^video\//i, '');
+        }
+      }
+      lost += Number(report.packetsLost || 0);
+      received += Number(report.packetsReceived || 0);
+      bytes += Number(report.bytesReceived || 0);
+      /* Jitter is per stream and reported in seconds; the worst one is what a
+         listener actually hears. */
+      if (typeof report.jitter === 'number') {
+        const ms = report.jitter * 1000;
+        jitter = jitter === null ? ms : Math.max(jitter, ms);
+      }
+    }
+    if (report.type === 'outbound-rtp' && !report.isRemote) {
+      bytesOut += Number(report.bytesSent || 0);
+      /* Why the encoder is sending less than it was asked for.
+       *
+       * The ladder decided on RTT, loss and the bandwidth estimate alone --
+       * all three of which describe the LINK. None of them moves when the
+       * encoder is the thing that cannot keep up: a phone that cannot encode
+       * 1080p in real time drops frames while the round trip stays low, the
+       * loss stays zero and the estimate stays high, so the ladder saw a
+       * flawless connection and went on demanding a resolution the device had
+       * already given up on. That is what "it lags on the high setting" is,
+       * and nothing here could see it.
+       *
+       * 'cpu' is the encoder saying so in as many words. Taken across every
+       * video sender, because one struggling stream is enough. */
+      if (report.kind === 'video') {
+        if (report.qualityLimitationReason === 'cpu') limitedByCpu = true;
+        /* Kept verbatim as well, because 'cpu' and 'bandwidth' have opposite
+           remedies and the panel is where somebody looks to tell them apart:
+           one says the device cannot encode this, the other says the link
+           cannot carry it. */
+        if (report.qualityLimitationReason && report.qualityLimitationReason !== 'none') {
+          limitReason = report.qualityLimitationReason;
+        }
+        if (Number.isFinite(report.framesPerSecond)) {
+          sentFps = sentFps === null ? report.framesPerSecond : Math.min(sentFps, report.framesPerSecond);
+        }
+        /* What is actually leaving, which is not what the camera was asked for
+           once degradationPreference has traded some of it away. */
+        if (Number.isFinite(report.frameWidth) && Number.isFinite(report.frameHeight)) {
+          sentSize = `${report.frameWidth}x${report.frameHeight}`;
+        }
+        if (report.codecId) {
+          const codec = stats.get(report.codecId);
+          const mime = String(codec?.mimeType || '');
+          if (mime) sentCodec = mime.replace(/^video\//i, '');
+        }
+      }
+    }
+    if (report.type === 'remote-inbound-rtp') {
+      if (typeof report.roundTripTime === 'number') {
+        const ms = report.roundTripTime * 1000;
+        mineRtt = mineRtt === null ? ms : Math.max(mineRtt, ms);
+      }
+      if (typeof report.jitter === 'number') {
+        const ms = report.jitter * 1000;
+        mineJitter = mineJitter === null ? ms : Math.max(mineJitter, ms);
+      }
+      mineLost += Number(report.packetsLost || 0);
+      mineReceived += Number(report.packetsReceived || 0);
+    }
+  });
+
+  if (rtt === null && received === 0 && bytesOut === 0 && mineRtt === null && availableOutgoingBitrate === null) return null;
+  const expected = lost + received;
+  const mineExpected = mineLost + mineReceived;
+  const mine = (mineRtt === null && mineExpected === 0) ? null : {
+    rtt: mineRtt === null ? null : Math.round(mineRtt),
+    jitter: mineJitter === null ? null : Math.round(mineJitter),
+    lossPercent: mineExpected ? Math.round((mineLost / mineExpected) * 1000) / 10 : 0,
+  };
+  return {
+    outboundLoss: callIntervalLoss(pc, stats),
+    availableOutgoingBitrate,
+    key: String(key).slice(0, 10),
+    rtt: rtt === null ? null : Math.round(rtt),
+    jitter: jitter === null ? null : Math.round(jitter),
+    lossPercent: expected ? Math.round((lost / expected) * 1000) / 10 : 0,
+    packets: received,
+    bytes,
+    bytesOut,
+    kinds: Array.from(kinds),
+    /* '' until ICE settles, then one of: direct, local, remote, both. */
+    route,
+    relayServer,
+    relayProtocol,
+    limitedByCpu,
+    limitReason,
+    /* What the ladder settled on for this connection, so the panel can show
+       the decision beside the reason for it. */
+    pixelBudget: callAdaptationState.get(pc)?.scale
+      ? [1, 1.5, 2, 3][callAdaptationState.get(pc).scale] : 1,
+    sentFps: sentFps === null ? null : Math.round(sentFps),
+    sentSize,
+    sentCodec,
+    recvFps: recvFps === null ? null : Math.round(recvFps),
+    recvSize,
+    recvCodec,
+    mine,
+  };
+}
+
+/* Every connection in the call: the one peer of a two-person call, or every
+   leg of a group call's mesh. */
+async function collectCallQuality() {
+  const connections = [];
+  const direct = chatState.currentCall?.peerConnection || chatState.callConnection;
+  if (direct) connections.push(['', direct]);
+  for (const [key, entry] of (chatState.groupCall?.participants || new Map()).entries()) {
+    if (entry?.call?.peerConnection) connections.push([key, entry.call.peerConnection]);
+  }
+  const readings = [];
+  for (const [key, pc] of connections) {
+    try {
+      const reading = await readCallQuality(pc, key);
+      if (reading) {
+        readings.push(reading);
+        await adaptCallSenders(pc, reading);
+        /* Beside the ladder, not inside it: one decides how much picture to
+           send, the other decides which way to send it. */
+        await adaptCallRoute(pc, reading);
+      }
+    } catch (_error) { /* a connection that closed mid-read */ }
+  }
+  return readings;
+}
+
+function callQualityLevel(reading) {
+  if (!reading || reading.rtt === null) return 'unknown';
+  if (reading.rtt < 250 && reading.lossPercent < 2) return 'good';
+  if (reading.rtt < 500 && reading.lossPercent < 8) return 'ok';
+  return 'bad';
+}
+
+/* The readings used to be computed and thrown away — only good/ok/bad
+   survived, and the actual numbers lived in Settings → Tools, which is behind
+   leaving the call. They are kept here now so the panel in the call header can
+   show them without measuring anything twice. */
+let callQualityMonitorGeneration = 0;
+function startCallQualityMonitor() {
+stopCallQualityMonitor();
+const generation = callQualityMonitorGeneration;
+setCallQuality('unknown');
+const tick = async () => {
+  try {
+    const readings = await collectCallQuality();
+    if (generation !== callQualityMonitorGeneration) return;
+    chatState.callQualityReadings = readings;
+    /* Kept for the call log. getStats() counters are cumulative and the
+       connection is closed by the time the call is recorded, so the last
+       sample taken while it was up is the total — and this poll is already
+       running, so it costs nothing extra. Summed across legs, which is what a
+       group call actually moved. */
+    chatState.currentCallBytesIn = readings.reduce((total, r) => total + Number(r.bytes || 0), 0);
+    chatState.currentCallBytesOut = readings.reduce((total, r) => total + Number(r.bytesOut || 0), 0);
+    /* The worst leg decides each direction: in a group call one bad connection
+       is what the person notices, and averaging it away hides exactly that.
+       The two directions are graded separately — a call can be fine here and
+       breaking up over there. */
+    const levels = readings.map(callQualityLevel);
+    const level = levels.includes('bad') ? 'bad'
+      : levels.includes('ok') ? 'ok'
+      : levels.includes('good') ? 'good' : 'unknown';
+    const mineLevels = readings
+      .filter((reading) => reading.mine)
+      .map((reading) => callQualityLevel({ rtt: reading.mine.rtt, lossPercent: reading.mine.lossPercent }));
+    const mineLevel = mineLevels.includes('bad') ? 'bad'
+      : mineLevels.includes('ok') ? 'ok'
+      : mineLevels.includes('good') ? 'good'
+      : 'unknown';
+    setCallQuality(level, mineLevel);
+    renderCallQualityCard();
+  } catch (_error) {
+    /* stats unavailable */
+  }
+};
+/* Two seconds while somebody is reading the panel, five while it is closed.
+   Five is fine for a coloured dot and far too slow for a number being watched
+   change; two costs one getStats call and nothing else. */
+const schedule = () => {
+  const open = !document.getElementById('chatCallQualityCard')?.classList.contains('hidden');
+  chatState.callQualityTimer = window.setTimeout(async () => {
+    await tick();
+    if (generation === callQualityMonitorGeneration && chatState.callQualityTimer !== null) schedule();
+  }, open ? 2000 : 5000);
+};
+chatState.callQualityTimer = -1;
+tick().then(() => { if (generation === callQualityMonitorGeneration && chatState.callQualityTimer !== null) schedule(); });
+}
+function stopCallQualityMonitor() {
+callQualityMonitorGeneration++;
+if (chatState.callQualityTimer) {
+clearTimeout(chatState.callQualityTimer);
+chatState.callQualityTimer = null;
+}
+chatState.callQualityReadings = [];
+setCallQuality('unknown');
+}
+function broadcastCallState() {
+const peer = activeCallPeerRecord();
+if (!peer || !chatState.currentCall) return;
+sendRelayEnvelope(peer, {
+type: 'call-state',
+name: chatState.profile.name || t('کاربر P00RIJA', 'P00RIJA User'),
+peerId: chatState.peerId,
+state: {
+muted: Boolean(chatState.callMuted),
+held: Boolean(chatState.callHeld),
+videoOff: Boolean(chatState.currentCallMode === 'video' && !chatState.callVideoEnabled),
+screen: Boolean(chatState.screenStream),
+/* Mirroring used to be a purely local CSS flip on my own preview, so the
+   other side kept seeing me unflipped and the setting looked broken. It
+   travels with the rest of the call state now, and the peer applies it to
+   the video of me that they are watching. */
+mirror: Boolean(chatState.callMirrorSelf),
+},
+});
+}
+function applyRemoteCallState(state) {
+const merged = {
+muted: Boolean(state?.muted),
+held: Boolean(state?.held),
+videoOff: Boolean(state?.videoOff),
+screen: Boolean(state?.screen),
+mirror: Boolean(state?.mirror),
+};
+chatState.remoteCallState = merged;
+applyRemoteMirrorView(merged.mirror);
+const badges = document.getElementById('chatRemoteStateBadges');
+if (badges) {
+badges.classList.toggle('hidden', !(merged.muted || merged.videoOff || merged.held || merged.screen));
+badges.querySelectorAll('[data-state]').forEach((badge) => {
+badge.classList.toggle('hidden', !merged[badge.getAttribute('data-state')]);
+});
+}
+if (merged.held) {
+document.getElementById('chatFloatingCallStatus').textContent = t('طرف مقابل تماس را روی hold گذاشت', 'The other side put the call on hold');
+}
+}
+function toggleMirrorVideo() {
+chatState.callMirrorSelf = !chatState.callMirrorSelf;
+try {
+chatState.profile.mirrorSelfVideo = chatState.callMirrorSelf;
+saveEncrypted(CHAT_PROFILE_STORAGE_KEY, chatState.profile);
+} catch (_error) {
+/* profile save best-effort */
+}
+syncMirrorSelfView();
+refreshCallControls();
+/* The flag travelled with the call state, but nothing sent the call state
+   when the flag changed — so the far side only learned about a mirror if the
+   user happened to mute or hold afterwards, and the setting looked as though
+   it applied to the local preview alone. Mute, hold and video-off all
+   broadcast at the point they change; so does this now. */
+broadcastCallState();
+}
+/* The peer asked for their picture to be mirrored; honour it on the element
+   that shows them. Kept off the badge row on purpose — it is a framing
+   preference, not a call state anybody needs announced. */
+function applyRemoteMirrorView(mirrored) {
+['chatFloatingRemoteVideo', 'chatRemoteVideo'].forEach((id) => {
+document.getElementById(id)?.classList.toggle('remote-mirrored', Boolean(mirrored));
+});
+document.querySelectorAll('.chat-remote-stage').forEach((stage) => {
+stage.classList.toggle('remote-mirrored', Boolean(mirrored));
+});
+}
+function syncMirrorSelfView() {
+const mirrored = Boolean(chatState.callMirrorSelf);
+document.querySelectorAll('.chat-local-stage').forEach((stage) => {
+stage.classList.toggle('mirror-on', mirrored);
+stage.classList.toggle('mirror-off', !mirrored);
+});
+const inlineLocal = document.getElementById('chatLocalVideo');
+if (inlineLocal) {
+inlineLocal.classList.toggle('mirror-on', mirrored);
+inlineLocal.classList.toggle('mirror-off', !mirrored);
+}
+}
+function activeCallPrimaryVideoElement() {
+const ids = chatState.callPrimaryVideo === 'local'
+? ['chatFloatingLocalVideo', 'chatLocalVideo']
+: ['chatFloatingRemoteVideo', 'chatRemoteVideo'];
+for (const id of ids) {
+const element = document.getElementById(id);
+if (element && element.videoWidth > 0 && element.srcObject) return element;
+}
+const fallback = document.getElementById('chatFloatingRemoteVideo');
+return fallback?.srcObject ? fallback : document.getElementById('chatFloatingLocalVideo');
+}
+async function captureCallScreenshot() {
+if (!chatState.currentCall) return;
+const video = activeCallPrimaryVideoElement();
+if (!video || !video.videoWidth) {
+notify(t('ویدیویی برای عکس گرفتن در دسترس نیست.', 'No video available to capture.'), 'warning');
+return;
+}
+const canvas = document.createElement('canvas');
+canvas.width = video.videoWidth;
+canvas.height = video.videoHeight;
+const ctx = canvas.getContext('2d');
+ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+const stamp = new Date().toLocaleString();
+ctx.font = `${Math.max(14, Math.round(canvas.height / 36))}px sans-serif`;
+ctx.fillStyle = 'rgba(255,255,255,0.85)';
+ctx.textAlign = 'left';
+ctx.fillText(`P00RIJA · ${stamp}`, 12, canvas.height - 12);
+const peer = activeCallPeerRecord();
+const selfName = chatState.profile.name || t('کاربر P00RIJA', 'P00RIJA User');
+canvas.toBlob((blob) => {
+if (!blob) return;
+const url = URL.createObjectURL(blob);
+const link = document.createElement('a');
+const safeName = String(peer?.username || 'peer').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 32) || 'peer';
+link.href = url;
+link.download = `poorija-call-${safeName}-${Date.now()}.png`;
+document.body.appendChild(link);
+link.click();
+link.remove();
+setTimeout(() => URL.revokeObjectURL(url), 15000);
+}, 'image/png');
+if (peer) {
+const sent = sendRelayEnvelope(peer, {
+type: 'call-screenshot',
+mode: chatState.currentCallMode || 'voice',
+name: selfName,
+peerId: chatState.peerId,
+createdAt: new Date().toISOString(),
+});
+notify(t(
+sent ? 'اسکرین‌شات ذخیره شد و به طرف مقابل اطلاع داده شد.' : 'اسکرین‌شات ذخیره شد ولی اطلاع‌رسانی به طرف مقابل ارسال نشد.',
+sent ? 'Screenshot saved and the other side was notified.' : 'Screenshot saved, but the other side could not be notified.',
+), sent ? 'info' : 'warning');
+} else {
+notify(t('اسکرین‌شات ذخیره شد.', 'Screenshot saved.'), 'info');
+}
+}
+function showScreenshotWarning(name) {
+const warning = document.getElementById('chatScreenshotWarning');
+if (!warning) return;
+warning.querySelector('span').textContent = t(`${name || 'طرف مقابل'} از تماس عکس گرفت.`, `${name || 'The other side'} took a screenshot of the call.`);
+warning.classList.remove('hidden');
+navigator.vibrate?.([120, 80, 120]);
+clearTimeout(showScreenshotWarning._timer);
+showScreenshotWarning._timer = setTimeout(() => warning.classList.add('hidden'), 6000);
+}
+async function toggleCallPiP() {
+try {
+if (document.pictureInPictureElement) {
+await document.exitPictureInPicture();
+return;
+}
+const video = document.getElementById('chatFloatingRemoteVideo');
+if (!video || !video.srcObject) {
+notify(t('ویدیویی برای PiP در دسترس نیست.', 'No video available for PiP.'), 'warning');
+return;
+}
+await video.requestPictureInPicture();
+} catch (_error) {
+notify(t('این مرورگر از حالت تصویر-در-تصویر پشتیبانی نمی‌کند.', 'This browser does not support picture-in-picture.'), 'info');
+}
+}
+async function toggleCallFullscreen() {
+const root = document.querySelector('#chatFloatingCall .chat-floating-call-window');
+if (!root) return;
+try {
+if (document.fullscreenElement) {
+await document.exitFullscreen();
+} else {
+await root.requestFullscreen();
+}
+} catch (_error) {
+notify(t('حالت تمام‌صفحه در این مرورگر در دسترس نیست.', 'Fullscreen is not available in this browser.'), 'info');
+}
+}
+async function listCallDevices() {
+if (!navigator.mediaDevices?.enumerateDevices) return [];
+try {
+return await navigator.mediaDevices.enumerateDevices();
+} catch (_error) {
+return [];
+}
+}
+function closeCallSettingsPanel() {
+document.getElementById('chatCallSettingsPanel')?.classList.add('hidden');
+}
+async function openCallDeviceSettings() {
+const panel = document.getElementById('chatCallSettingsPanel');
+if (!panel) return;
+if (!panel.classList.contains('hidden')) {
+closeCallSettingsPanel();
+return;
+}
+const devices = await listCallDevices();
+const fillSelect = (selectId, kind, currentId) => {
+const select = document.getElementById(selectId);
+if (!select) return;
+const options = devices.filter((device) => device.kind === kind);
+select.innerHTML = options.length
+? options.map((device, index) => `<option value="${device.deviceId}" ${device.deviceId === currentId ? 'selected' : ''}>${app().escapeHTML(device.label || `${kind === 'audioinput' ? 'میکروفون' : kind === 'videoinput' ? 'دوربین' : 'خروجی صدا'} ${index + 1}`)}</option>`).join('')
+: `<option value="">${t('در دسترس نیست', 'Unavailable')}</option>`;
+select.disabled = options.length === 0;
+};
+const audioTrack = chatState.localStream?.getAudioTracks?.()[0];
+const videoTrack = chatState.localStream?.getVideoTracks?.()[0];
+fillSelect('chatMicDeviceSelect', 'audioinput', audioTrack?.label ? devices.find((d) => d.kind === 'audioinput' && d.label === audioTrack.label)?.deviceId : '');
+fillSelect('chatCamDeviceSelect', 'videoinput', videoTrack?.label ? devices.find((d) => d.kind === 'videoinput' && d.label === videoTrack.label)?.deviceId : '');
+const speakerSelect = document.getElementById('chatSpeakerDeviceSelect');
+const outputs = devices.filter((device) => device.kind === 'audiooutput');
+if (speakerSelect) {
+speakerSelect.innerHTML = outputs.length
+? `<option value="default" ${chatState.callActiveSinkId === 'default' ? 'selected' : ''}>${t('پیش‌فرض', 'Default')}</option>` + outputs.filter((d) => d.deviceId !== 'default').map((device) => `<option value="${device.deviceId}" ${chatState.callActiveSinkId === device.deviceId ? 'selected' : ''}>${app().escapeHTML(device.label || t('خروجی صدا', 'Audio output'))}</option>`).join('')
+: `<option value="">${t('در دسترس نیست', 'Unavailable')}</option>`;
+speakerSelect.disabled = outputs.length === 0;
+}
+panel.classList.remove('hidden');
+}
+async function switchCallMediaDevice(kind, deviceId) {
+if (!deviceId || !chatState.currentCall) return;
+try {
+if (kind === 'audiooutput') {
+chatState.callActiveSinkId = deviceId;
+await applyCallSink(deviceId);
+notify(t('خروجی صدا تغییر کرد.', 'Audio output switched.'), 'success');
+return;
+}
+if (kind === 'audioinput' && typeof prepareNoiseSuppressor === 'function') await prepareNoiseSuppressor();
+const constraints = kind === 'audioinput'
+? { audio: typeof callAudioConstraints === 'function' ? callAudioConstraints({ deviceId: { exact: deviceId } }) : { deviceId: { exact: deviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false }
+: { audio: false, video: { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } } };
+let captured = await navigator.mediaDevices.getUserMedia(constraints);
+if (kind === 'audioinput' && typeof denoiseCallStream === 'function') captured = await denoiseCallStream(captured);
+const replacement = hintTrackContent(captured);
+const nextTrack = replacement.getTracks()[0];
+if (!nextTrack) throw new Error('no track');
+const sender = chatState.currentCall.peerConnection?.getSenders?.().find((item) => item.track?.kind === (kind === 'audioinput' ? 'audio' : 'video'));
+await sender?.replaceTrack(nextTrack);
+if (chatState.localStream) {
+chatState.localStream.getTracks().filter((track) => track.kind === (kind === 'audioinput' ? 'audio' : 'video')).forEach((track) => {
+chatState.localStream.removeTrack(track);
+track.stop();
+});
+chatState.localStream.addTrack(nextTrack);
+attachLocalStream(chatState.localStream);
+}
+if (kind === 'videoinput') {
+chatState.callVideoEnabled = true;
+const activeDevice = (await listCallDevices()).find((device) => device.deviceId === deviceId);
+if (activeDevice?.label) chatState.callFacingMode = /back|rear|environment/i.test(activeDevice.label) ? 'environment' : 'user';
+}
+refreshCallControls();
+syncCallStageState();
+notify(t('دستگاه تماس تغییر کرد.', 'Call device switched.'), 'success');
+} catch (error) {
+console.error(error);
+notify(t('تغییر دستگاه ناموفق بود.', 'Could not switch the device.'), 'error');
+}
+}
+async function applyCallSink(deviceId) {
+const targets = ['chatFloatingRemoteVideo', 'chatRemoteVideo'].map((id) => document.getElementById(id)).filter((element) => element && typeof element.setSinkId === 'function');
+if (!targets.length) {
+notify(t('این مرورگر اجازه تغییر خروجی صدا را نمی‌دهد.', 'This browser does not allow changing the audio output.'), 'info');
+return;
+}
+try {
+await Promise.all(targets.map((element) => element.setSinkId(deviceId)));
+} catch (_error) {
+notify(t('تغییر خروجی صدا ناموفق بود.', 'Could not change the audio output.'), 'warning');
+}
+}
+async function toggleSpeakerCall() {
+chatState.callSpeakerEnabled = !chatState.callSpeakerEnabled;
+const outputs = (await listCallDevices()).filter((device) => device.kind === 'audiooutput' && device.deviceId !== 'default');
+if (chatState.callSpeakerEnabled && outputs.length > 0) {
+chatState.callActiveSinkId = outputs[0].deviceId;
+await applyCallSink(outputs[0].deviceId);
+} else if (!chatState.callSpeakerEnabled) {
+chatState.callActiveSinkId = 'default';
+await applyCallSink('default');
+}
+refreshCallControls();
+}
+function redialCall(peerId, mode) {
+const peer = findPeerRecordByPeerId(peerId);
+/* A contact on another relay never carries 'online' in this relay's own
+   broadcast — their presence is answered by their relay and merged by
+   peerLooksOnline. The raw field said "not online" about a person whose dot
+   was green, on every redial, from every button that funnels here. */
+if (!peer || !(typeof peerLooksOnline === 'function' ? peerLooksOnline(peer) : peer.status === 'online')) {
+notify(t('این کاربر آنلاین نیست.', 'This user is not online.'), 'warning');
+return;
+}
+if (chatState.activeConversationId !== `peer:${peer.peerId}`) {
+chatState.activeConversationId = `peer:${peer.peerId}`;
+chatState.activePeerClientId = peer.clientId || '';
+chatState.activeView = 'chats';
+updateChatShellMode();
+renderPeers();
+renderActivePeer();
+}
+startCall(mode === 'video' ? 'video' : 'voice');
+}
+/* Ringing a contact who is not connected.
+   There is no media connection to make yet — the invitation sits on the relay
+   and their device is woken by push. This holds the ringing state for thirty
+   seconds: if they arrive, the real call is placed; if they do not, both sides
+   get a missed call. */
+const OFFLINE_RING_MS = 30000;
+function startOfflineRing(peerRecord, mode) {
+  clearOfflineRing();
+  chatState.currentCallMode = mode;
+  chatState.currentCallDirection = 'out';
+  chatState.offlineRing = { peerId: peerRecord.peerId, mode, startedAt: Date.now() };
+  const win = document.querySelector('#chatFloatingCall .chat-floating-call-window');
+  if (win) {
+    win.dataset.callMode = mode;
+    win.dataset.remoteVideo = 'off';
+    win.dataset.callPrimary = 'remote';
+  }
+  document.getElementById('chatFloatingCall')?.classList.remove('hidden');
+  const title = document.getElementById('chatFloatingCallTitle');
+  if (title) title.textContent = mode === 'video' ? t('تماس تصویری', 'Video call') : t('تماس صوتی', 'Voice call');
+  const status = document.getElementById('chatFloatingCallStatus');
+  if (status) status.textContent = t('در حال زنگ خوردن... (مخاطب آفلاین است)', 'Ringing… (they are offline)');
+  syncFloatingCallPeerIdentity();
+  syncCallHeroCopy();
+  refreshCallControls();
+  playSound('ringing');
+  chatState.offlineRingTimer = setTimeout(() => {
+    if (!chatState.offlineRing) return;
+    clearOfflineRing();
+    sendRelayEnvelope(peerRecord, {
+      type: 'call-missed',
+      mode,
+      name: chatState.profile.name || t('کاربر P00RIJA', 'P00RIJA User'),
+      peerId: chatState.peerId,
+      createdAt: new Date().toISOString(),
+    });
+    appendCall({
+      name: peerRecord.username || peerRecord.peerId,
+      peerId: peerRecord.peerId,
+      mode,
+      status: 'missed',
+      direction: 'out',
+    });
+    notify(t('پاسخی داده نشد؛ به‌صورت بی‌پاسخ ثبت شد.', 'No answer; recorded as a missed call.'), 'info');
+  }, OFFLINE_RING_MS);
+}
+
+/* ---- published to globalThis (roadmap 2.1, tools/esm-chat.cjs) ---- */
+Object.defineProperties(globalThis, {
+  "playMediaElement": { get() { return playMediaElement; }, set(value) { playMediaElement = value; }, configurable: true },
+  "streamHasLiveVideo": { get() { return streamHasLiveVideo; }, set(value) { streamHasLiveVideo = value; }, configurable: true },
+  "prepareVideoElement": { get() { return prepareVideoElement; }, set(value) { prepareVideoElement = value; }, configurable: true },
+  "syncVideoElementFit": { get() { return syncVideoElementFit; }, set(value) { syncVideoElementFit = value; }, configurable: true },
+  "stopStream": { get() { return stopStream; }, set(value) { stopStream = value; }, configurable: true },
+  "clearMediaElement": { get() { return clearMediaElement; }, set(value) { clearMediaElement = value; }, configurable: true },
+  "activeCallPeerRecord": { get() { return activeCallPeerRecord; }, set(value) { activeCallPeerRecord = value; }, configurable: true },
+  "syncFloatingCallPeerIdentity": { get() { return syncFloatingCallPeerIdentity; }, set(value) { syncFloatingCallPeerIdentity = value; }, configurable: true },
+  "mountChatPortals": { get() { return mountChatPortals; }, set(value) { mountChatPortals = value; }, configurable: true },
+  "applyFloatingCallPosition": { get() { return applyFloatingCallPosition; }, set(value) { applyFloatingCallPosition = value; }, configurable: true },
+  "syncCallChromeState": { get() { return syncCallChromeState; }, set(value) { syncCallChromeState = value; }, configurable: true },
+  "syncCallOverlayBounds": { get() { return syncCallOverlayBounds; }, set(value) { syncCallOverlayBounds = value; }, configurable: true },
+  "setCallDisplayMode": { get() { return setCallDisplayMode; }, set(value) { setCallDisplayMode = value; }, configurable: true },
+  "toggleCallDisplayMode": { get() { return toggleCallDisplayMode; }, set(value) { toggleCallDisplayMode = value; }, configurable: true },
+  "beginFloatingCallDrag": { get() { return beginFloatingCallDrag; }, set(value) { beginFloatingCallDrag = value; }, configurable: true },
+  "moveFloatingCallDrag": { get() { return moveFloatingCallDrag; }, set(value) { moveFloatingCallDrag = value; }, configurable: true },
+  "endFloatingCallDrag": { get() { return endFloatingCallDrag; }, set(value) { endFloatingCallDrag = value; }, configurable: true },
+  "isCallBusy": { get() { return isCallBusy; }, set(value) { isCallBusy = value; }, configurable: true },
+  "clearCallTimers": { get() { return clearCallTimers; }, set(value) { clearCallTimers = value; }, configurable: true },
+  "requestCallMedia": { get() { return requestCallMedia; }, set(value) { requestCallMedia = value; }, configurable: true },
+  "hintTrackContent": { get() { return hintTrackContent; }, set(value) { hintTrackContent = value; }, configurable: true },
+  "attachLocalStream": { get() { return attachLocalStream; }, set(value) { attachLocalStream = value; }, configurable: true },
+  "attachRemoteStream": { get() { return attachRemoteStream; }, set(value) { attachRemoteStream = value; }, configurable: true },
+  "syncCallStageState": { get() { return syncCallStageState; }, set(value) { syncCallStageState = value; }, configurable: true },
+  "toggleScreenShare": { get() { return toggleScreenShare; }, set(value) { toggleScreenShare = value; }, configurable: true },
+  "stopDirectPresentation": { get() { return stopDirectPresentation; }, set(value) { stopDirectPresentation = value; }, configurable: true },
+  "refreshLocalPreview": { get() { return refreshLocalPreview; }, set(value) { refreshLocalPreview = value; }, configurable: true },
+  "spawnReactionAnimation": { get() { return spawnReactionAnimation; }, set(value) { spawnReactionAnimation = value; }, configurable: true },
+  "setCallControlState": { get() { return setCallControlState; }, set(value) { setCallControlState = value; }, configurable: true },
+  "refreshCallControls": { get() { return refreshCallControls; }, set(value) { refreshCallControls = value; }, configurable: true },
+  "getRingtoneOption": { get() { return getRingtoneOption; }, set(value) { getRingtoneOption = value; }, configurable: true },
+  "getMessageToneOption": { get() { return getMessageToneOption; }, set(value) { getMessageToneOption = value; }, configurable: true },
+  "selectedSoundFile": { get() { return selectedSoundFile; }, set(value) { selectedSoundFile = value; }, configurable: true },
+  "soundSelectMarkup": { get() { return soundSelectMarkup; }, set(value) { soundSelectMarkup = value; }, configurable: true },
+  "renderRingtoneSettings": { get() { return renderRingtoneSettings; }, set(value) { renderRingtoneSettings = value; }, configurable: true },
+  "ensureRingtoneContext": { get() { return ensureRingtoneContext; }, set(value) { ensureRingtoneContext = value; }, configurable: true },
+  "primeRingtoneAudio": { get() { return primeRingtoneAudio; }, set(value) { primeRingtoneAudio = value; }, configurable: true },
+  "playRingtonePattern": { get() { return playRingtonePattern; }, set(value) { playRingtonePattern = value; }, configurable: true },
+  "startCustomRingtone": { get() { return startCustomRingtone; }, set(value) { startCustomRingtone = value; }, configurable: true },
+  "stopCustomRingtone": { get() { return stopCustomRingtone; }, set(value) { stopCustomRingtone = value; }, configurable: true },
+  "startRingtoneLoop": { get() { return startRingtoneLoop; }, set(value) { startRingtoneLoop = value; }, configurable: true },
+  "stopRingtoneLoop": { get() { return stopRingtoneLoop; }, set(value) { stopRingtoneLoop = value; }, configurable: true },
+  "testRingtone": { get() { return testRingtone; }, set(value) { testRingtone = value; }, configurable: true },
+  "sounds": { get() { return sounds; }, set() { throw new TypeError('Assignment to constant variable sounds.'); }, configurable: true },
+  "audioPlayers": { get() { return audioPlayers; }, set() { throw new TypeError('Assignment to constant variable audioPlayers.'); }, configurable: true },
+  "playSound": { get() { return playSound; }, set(value) { playSound = value; }, configurable: true },
+  "playMessageChime": { get() { return playMessageChime; }, set(value) { playMessageChime = value; }, configurable: true },
+  "testMessageTone": { get() { return testMessageTone; }, set(value) { testMessageTone = value; }, configurable: true },
+  "stopSound": { get() { return stopSound; }, set(value) { stopSound = value; }, configurable: true },
+  "showIncomingCall": { get() { return showIncomingCall; }, set(value) { showIncomingCall = value; }, configurable: true },
+  "hideIncomingCall": { get() { return hideIncomingCall; }, set(value) { hideIncomingCall = value; }, configurable: true },
+  "clearIncomingCall": { get() { return clearIncomingCall; }, set(value) { clearIncomingCall = value; }, configurable: true },
+  "acceptIncomingCall": { get() { return acceptIncomingCall; }, set(value) { acceptIncomingCall = value; }, configurable: true },
+  "rejectIncomingCall": { get() { return rejectIncomingCall; }, set(value) { rejectIncomingCall = value; }, configurable: true },
+  "startCallDurationTimer": { get() { return startCallDurationTimer; }, set(value) { startCallDurationTimer = value; }, configurable: true },
+  "stopCallDurationTimer": { get() { return stopCallDurationTimer; }, set(value) { stopCallDurationTimer = value; }, configurable: true },
+  "setCallQuality": { get() { return setCallQuality; }, set(value) { setCallQuality = value; }, configurable: true },
+  "renderCallQualityCard": { get() { return renderCallQualityCard; }, set(value) { renderCallQualityCard = value; }, configurable: true },
+  "isCallSignalFromActivePeer": { get() { return isCallSignalFromActivePeer; }, set(value) { isCallSignalFromActivePeer = value; }, configurable: true },
+  "handleCallRenegotiateOffer": { get() { return handleCallRenegotiateOffer; }, set(value) { handleCallRenegotiateOffer = value; }, configurable: true },
+  "handleCallRenegotiateAnswer": { get() { return handleCallRenegotiateAnswer; }, set(value) { handleCallRenegotiateAnswer = value; }, configurable: true },
+  "handleCallRemoteCandidate": { get() { return handleCallRemoteCandidate; }, set(value) { handleCallRemoteCandidate = value; }, configurable: true },
+  "clearIceRecoveryTimer": { get() { return clearIceRecoveryTimer; }, set(value) { clearIceRecoveryTimer = value; }, configurable: true },
+  "setCallStatusText": { get() { return setCallStatusText; }, set(value) { setCallStatusText = value; }, configurable: true },
+  "sendIceRestartOffer": { get() { return sendIceRestartOffer; }, set(value) { sendIceRestartOffer = value; }, configurable: true },
+  "attemptCallRecovery": { get() { return attemptCallRecovery; }, set(value) { attemptCallRecovery = value; }, configurable: true },
+  "bindCallIceRecovery": { get() { return bindCallIceRecovery; }, set(value) { bindCallIceRecovery = value; }, configurable: true },
+  "videoCodecOrderPromise": { get() { return videoCodecOrderPromise; }, set(value) { videoCodecOrderPromise = value; }, configurable: true },
+  "primeVideoCodecOrder": { get() { return primeVideoCodecOrder; }, set(value) { primeVideoCodecOrder = value; }, configurable: true },
+  "videoPixelCeilingPromise": { get() { return videoPixelCeilingPromise; }, set(value) { videoPixelCeilingPromise = value; }, configurable: true },
+  "videoPixelCeiling": { get() { return videoPixelCeiling; }, set(value) { videoPixelCeiling = value; }, configurable: true },
+  "videoCodecOrder": { get() { return videoCodecOrder; }, set(value) { videoCodecOrder = value; }, configurable: true },
+  "tuneOpus": { get() { return tuneOpus; }, set(value) { tuneOpus = value; }, configurable: true },
+  "preferCallCodecs": { get() { return preferCallCodecs; }, set(value) { preferCallCodecs = value; }, configurable: true },
+  "TURN_MEMORY_CONTACTS": { get() { return TURN_MEMORY_CONTACTS; }, set() { throw new TypeError('Assignment to constant variable TURN_MEMORY_CONTACTS.'); }, configurable: true },
+  "TURN_MEMORY_SERVERS": { get() { return TURN_MEMORY_SERVERS; }, set() { throw new TypeError('Assignment to constant variable TURN_MEMORY_SERVERS.'); }, configurable: true },
+  "TURN_SWITCH_AFTER_BAD": { get() { return TURN_SWITCH_AFTER_BAD; }, set() { throw new TypeError('Assignment to constant variable TURN_SWITCH_AFTER_BAD.'); }, configurable: true },
+  "TURN_LOSS_WEIGHT": { get() { return TURN_LOSS_WEIGHT; }, set() { throw new TypeError('Assignment to constant variable TURN_LOSS_WEIGHT.'); }, configurable: true },
+  "TURN_MEMORY_WEIGHT": { get() { return TURN_MEMORY_WEIGHT; }, set() { throw new TypeError('Assignment to constant variable TURN_MEMORY_WEIGHT.'); }, configurable: true },
+  "turnMemory": { get() { return turnMemory; }, set(value) { turnMemory = value; }, configurable: true },
+  "turnScore": { get() { return turnScore; }, set(value) { turnScore = value; }, configurable: true },
+  "pruneTurnMemory": { get() { return pruneTurnMemory; }, set(value) { pruneTurnMemory = value; }, configurable: true },
+  "newestTurnEntry": { get() { return newestTurnEntry; }, set(value) { newestTurnEntry = value; }, configurable: true },
+  "rememberTurnResult": { get() { return rememberTurnResult; }, set(value) { rememberTurnResult = value; }, configurable: true },
+  "bestTurnLabelFor": { get() { return bestTurnLabelFor; }, set(value) { bestTurnLabelFor = value; }, configurable: true },
+  "turnUrlLabel": { get() { return turnUrlLabel; }, set(value) { turnUrlLabel = value; }, configurable: true },
+  "orderIceServersFor": { get() { return orderIceServersFor; }, set(value) { orderIceServersFor = value; }, configurable: true },
+  "prepareIceForContact": { get() { return prepareIceForContact; }, set(value) { prepareIceForContact = value; }, configurable: true },
+  "callRouteState": { get() { return callRouteState; }, set() { throw new TypeError('Assignment to constant variable callRouteState.'); }, configurable: true },
+  "adaptCallRoute": { get() { return adaptCallRoute; }, set(value) { adaptCallRoute = value; }, configurable: true },
+  "callAdaptationState": { get() { return callAdaptationState; }, set() { throw new TypeError('Assignment to constant variable callAdaptationState.'); }, configurable: true },
+  "callQualitySamples": { get() { return callQualitySamples; }, set() { throw new TypeError('Assignment to constant variable callQualitySamples.'); }, configurable: true },
+  "callIntervalLoss": { get() { return callIntervalLoss; }, set(value) { callIntervalLoss = value; }, configurable: true },
+  "adaptCallSenders": { get() { return adaptCallSenders; }, set(value) { adaptCallSenders = value; }, configurable: true },
+  "turnServerLabel": { get() { return turnServerLabel; }, set(value) { turnServerLabel = value; }, configurable: true },
+  "readCallQuality": { get() { return readCallQuality; }, set(value) { readCallQuality = value; }, configurable: true },
+  "collectCallQuality": { get() { return collectCallQuality; }, set(value) { collectCallQuality = value; }, configurable: true },
+  "callQualityLevel": { get() { return callQualityLevel; }, set(value) { callQualityLevel = value; }, configurable: true },
+  "callQualityMonitorGeneration": { get() { return callQualityMonitorGeneration; }, set(value) { callQualityMonitorGeneration = value; }, configurable: true },
+  "startCallQualityMonitor": { get() { return startCallQualityMonitor; }, set(value) { startCallQualityMonitor = value; }, configurable: true },
+  "stopCallQualityMonitor": { get() { return stopCallQualityMonitor; }, set(value) { stopCallQualityMonitor = value; }, configurable: true },
+  "broadcastCallState": { get() { return broadcastCallState; }, set(value) { broadcastCallState = value; }, configurable: true },
+  "applyRemoteCallState": { get() { return applyRemoteCallState; }, set(value) { applyRemoteCallState = value; }, configurable: true },
+  "toggleMirrorVideo": { get() { return toggleMirrorVideo; }, set(value) { toggleMirrorVideo = value; }, configurable: true },
+  "applyRemoteMirrorView": { get() { return applyRemoteMirrorView; }, set(value) { applyRemoteMirrorView = value; }, configurable: true },
+  "syncMirrorSelfView": { get() { return syncMirrorSelfView; }, set(value) { syncMirrorSelfView = value; }, configurable: true },
+  "activeCallPrimaryVideoElement": { get() { return activeCallPrimaryVideoElement; }, set(value) { activeCallPrimaryVideoElement = value; }, configurable: true },
+  "captureCallScreenshot": { get() { return captureCallScreenshot; }, set(value) { captureCallScreenshot = value; }, configurable: true },
+  "showScreenshotWarning": { get() { return showScreenshotWarning; }, set(value) { showScreenshotWarning = value; }, configurable: true },
+  "toggleCallPiP": { get() { return toggleCallPiP; }, set(value) { toggleCallPiP = value; }, configurable: true },
+  "toggleCallFullscreen": { get() { return toggleCallFullscreen; }, set(value) { toggleCallFullscreen = value; }, configurable: true },
+  "listCallDevices": { get() { return listCallDevices; }, set(value) { listCallDevices = value; }, configurable: true },
+  "closeCallSettingsPanel": { get() { return closeCallSettingsPanel; }, set(value) { closeCallSettingsPanel = value; }, configurable: true },
+  "openCallDeviceSettings": { get() { return openCallDeviceSettings; }, set(value) { openCallDeviceSettings = value; }, configurable: true },
+  "switchCallMediaDevice": { get() { return switchCallMediaDevice; }, set(value) { switchCallMediaDevice = value; }, configurable: true },
+  "applyCallSink": { get() { return applyCallSink; }, set(value) { applyCallSink = value; }, configurable: true },
+  "toggleSpeakerCall": { get() { return toggleSpeakerCall; }, set(value) { toggleSpeakerCall = value; }, configurable: true },
+  "redialCall": { get() { return redialCall; }, set(value) { redialCall = value; }, configurable: true },
+  "OFFLINE_RING_MS": { get() { return OFFLINE_RING_MS; }, set() { throw new TypeError('Assignment to constant variable OFFLINE_RING_MS.'); }, configurable: true },
+  "startOfflineRing": { get() { return startOfflineRing; }, set(value) { startOfflineRing = value; }, configurable: true },
+});

@@ -1,0 +1,225 @@
+/*
+ * P00RIJA Chat — end-to-end encrypted messenger.
+ * Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+ *
+ * Licensed under the GNU Affero General Public License, version 3 only.
+ * See LICENSE for the full text. Section 13 matters here: run a modified
+ * version as a network service and its users are entitled to your source.
+ */
+
+/* The guide, as data.
+ *
+ * It used to be a wall of markup: every entry written twice, once per language,
+ * with no way to search it and no relationship to the screen the reader was
+ * actually looking at. Keeping it as a list means one place to edit, a filter
+ * that works, and a "what is this screen" button that can ask for the entries
+ * belonging to one tab.
+ *
+ * Each entry: an id, the tab it belongs to, a category, a title and a body in
+ * both languages, and optional steps. Bodies are plain text on purpose - this
+ * is rendered with escaping, so nothing here can inject markup. */
+(function () {
+  const CATEGORIES = [
+    { id: 'start', fa: 'شروع', en: 'Getting started' },
+    { id: 'chat', fa: 'چت امن', en: 'Secure chat' },
+    { id: 'groups', fa: 'گروه‌ها و تماس', en: 'Groups and calls' },
+    { id: 'crypto', fa: 'رمزنگاری', en: 'Encryption' },
+    { id: 'files', fa: 'فایل‌ها', en: 'Files' },
+    { id: 'passwords', fa: 'رمزها', en: 'Passwords' },
+    { id: 'security', fa: 'امنیت و حریم خصوصی', en: 'Security and privacy' },
+    { id: 'install', fa: 'نصب', en: 'Installing' },
+    { id: 'tools', fa: 'ابزارها', en: 'Tools' },
+  ];
+
+  const ENTRIES = [
+    {
+      id: 'identity-card', tab: 'chat', cat: 'chat',
+      fa: { t: 'کارت شناسایی', b: 'برای شروع گفتگو، کارت شناسایی خود را به طرف مقابل می‌دهید و کارت او را وارد می‌کنید. کارت شامل کلید عمومی و اثرانگشت شماست — چیزی محرمانه در آن نیست.',
+        steps: ['در تب چت امن روی «شروع چت» بزنید', 'کارت خودتان را کپی کنید و برای طرف مقابل بفرستید', 'کارت او را در همان کادر بچسبانید', 'از این پس نامش در فهرست گفتگوها می‌آید'] },
+      en: { t: 'The identity card', b: 'To start a conversation you hand somebody your identity card and paste theirs. The card holds your public key and fingerprint - nothing secret is in it.',
+        steps: ['Open Secure chat and press "Start a chat"', 'Copy your own card and send it to them', 'Paste theirs into the same box', 'Their name then appears in your conversation list'] },
+    },
+    {
+      id: 'safety-number', tab: 'chat', cat: 'security',
+      fa: { t: 'اثرانگشت و هشدار تغییر کلید', b: 'کلید هر مخاطب هنگام اولین تماس پین می‌شود. اگر روزی عوض شود، پیش از آنکه چیزی بنویسید هشدار می‌گیرید. اثرانگشت را از راهی جدا — تماس صوتی یا حضوری — با هم مقایسه کنید؛ همین کار حمله‌ی میانی را بی‌اثر می‌کند.' },
+      en: { t: 'Fingerprints and key-change warnings', b: 'A contact’s key is pinned the first time you meet. If it ever changes you are told before you type anything. Compare the fingerprint over a separate channel - a voice call or in person - and a man-in-the-middle has nothing left to work with.' },
+    },
+    {
+      id: 'offline-messages', tab: 'chat', cat: 'chat',
+      fa: { t: 'پیام به کسی که آنلاین نیست', b: 'اگر طرف مقابل آنلاین نباشد، پیام مهروموم و روی رله صف می‌شود تا برگردد. کلیدی که آن پاکت را باز می‌کند حداکثر ۱۵ روز زنده است؛ پس از آن پیام تحویل‌نشده برای همیشه غیرقابل بازکردن می‌شود. این عمدی است و همان چیزی است که تضمین می‌کند سرور نتواند بعداً چیزی را باز کند.' },
+      en: { t: 'Writing to somebody who is away', b: 'If they are offline the message is sealed and queued on the relay until they come back. The key that opens that envelope lives at most 15 days; after that an undelivered message can never be opened again. That is deliberate - it is what stops the server ever being able to open it later.' },
+    },
+    {
+      id: 'disappearing', tab: 'chat', cat: 'chat',
+      fa: { t: 'پیام زمان‌دار و پیام یک‌بارمصرف', b: 'می‌توانید برای پیام‌ها زمان بگذارید تا پس از خوانده شدن پاک شوند، یا رسانه‌ای بفرستید که فقط یک بار باز شود. این‌ها روی هر دو دستگاه اعمال می‌شوند، ولی هیچ برنامه‌ای نمی‌تواند جلوی عکس‌گرفتن از صفحه را بگیرد.' },
+      en: { t: 'Timed and view-once messages', b: 'You can put a timer on messages so they clear after they are read, or send media that opens once. Both apply on either device - but no app can stop somebody photographing their own screen.' },
+    },
+    {
+      id: 'new-group', tab: 'chat', cat: 'groups',
+      fa: { t: 'ساخت گروه', b: 'در تب گروه‌ها دکمهٔ «گروه جدید» یک پنجره باز می‌کند که همه‌چیز را یک‌جا می‌پرسد: نام، عکس، توضیح، اعضا و اینکه اعضا چه کاری می‌توانند بکنند.',
+        steps: ['به تب چت امن و سپس «گروه‌ها» بروید', 'روی «گروه جدید» بزنید', 'نام و در صورت تمایل عکس و توضیح بگذارید', 'اعضا را از فهرست انتخاب کنید', 'اجازه‌ها را تعیین کنید و «ساخت گروه» را بزنید'] },
+      en: { t: 'Making a group', b: 'In the Groups list, "New group" opens one dialog that asks everything at once: the name, a picture, a description, who is in it and what they may do.',
+        steps: ['Open Secure chat, then Groups', 'Press "New group"', 'Give it a name, and a picture and description if you like', 'Pick the members from the list', 'Set the rules and press Create'] },
+    },
+    {
+      id: 'group-presence', tab: 'chat', cat: 'groups',
+      fa: { t: 'عدد کنار نام گروه', b: 'کنار هر گروه چیزی مثل ۲ / ۳ می‌بینید: عدد سبز یعنی چند نفر همین حالا در دسترس‌اند و عدد آبی یعنی گروه چند نفر است. نقطهٔ کنارش سبز است وقتی همه هستند و نارنجی وقتی فقط بخشی از اعضا.' },
+      en: { t: 'The number beside a group', b: 'Each group shows something like 2 / 3: the green number is how many people are reachable right now, the blue one is how many are in the group. The dot beside it is green when everybody is here and amber when only some are.' },
+    },
+    {
+      id: 'group-admins', tab: 'chat', cat: 'groups',
+      fa: { t: 'ادمین‌ها و اجازه‌ها', b: 'سازنده می‌تواند هر تعداد ادمین بگذارد و هر وقت بخواهد عزلشان کند. اجازه‌ها دو لایه دارند: یک قانون برای کل گروه، و در صورت نیاز محدودیت برای یک عضو خاص — مثلاً بستن ارسال پیام فقط برای یک نفر، بدون آنکه گروه عوض شود.' },
+      en: { t: 'Admins and permissions', b: 'The owner can appoint as many admins as they like and take it back at any time. Permissions come in two layers: a rule for the whole group, and if you need it a limit on one person - closing messages for one member without changing anything for the rest.' },
+    },
+    {
+      id: 'group-dissolve', tab: 'chat', cat: 'groups',
+      fa: { t: 'انحلال گروه', b: 'فقط سازنده می‌تواند گروه را منحل کند. پس از آن گفتگو و تاریخچه روی دستگاه همه می‌ماند و خواندنی است، ولی برچسب «منحل شده» می‌گیرد و دیگر چیزی فرستاده نمی‌شود. هرچه از آن گروه روی رله مانده بود پاک می‌شود.' },
+      en: { t: 'Dissolving a group', b: 'Only the owner can dissolve a group. Afterwards the conversation stays readable on everybody’s device but is marked dissolved and nothing more can be sent. Whatever was still queued for it on the relay is dropped.' },
+    },
+    {
+      id: 'group-call', tab: 'chat', cat: 'groups',
+      fa: { t: 'تماس گروهی', b: 'از داخل یک گروه می‌توانید تماس گروهی بگیرید. لازم هم نیست گروهی وجود داشته باشد: در تب تماس‌ها دکمه‌های «تماس گروهی صوتی/تصویری» چند مخاطب را با هم به یک تماس می‌آورند بی‌آنکه چیزی ساخته یا ذخیره شود. حین تماس دو‌نفره هم می‌توانید نفر اضافه کنید و همان تماس گروهی می‌شود.' },
+      en: { t: 'Group calls', b: 'You can call from inside a group - and you do not need a group at all: the Calls tab has "Group voice call" and "Group video call", which bring several contacts into one call without creating or storing anything. During a two-person call you can add somebody and it becomes a group call.' },
+    },
+    {
+      id: 'call-quality', tab: 'chat', cat: 'groups',
+      fa: { t: 'کیفیت صدا و تصویر تماس، و حذف نویز', b: 'تماس تصویری با بالاترین کیفیتی که دوربین، دستگاه و شبکه اجازه می‌دهند برقرار می‌شود: تا 1080p و تا ۶۰ فریم در ثانیه، و هر وقت شبکه یا پردازنده کم بیاورد خودش را تطبیق می‌دهد تا حرکت روان بماند. صدا تمام‌باند (۴۸ کیلوهرتز) با Opus فرستاده می‌شود، با حذف پژواک و تنظیم خودکار بلندی. «حذف نویز محیط در تماس» (در تنظیمات چت و در تنظیمات داخل تماس، به‌طور پیش‌فرض روشن) صدای پس‌زمینه مثل پنکه، خیابان، کیبورد و همهمه را با RNNoise روی خود همین دستگاه از صدای شما جدا می‌کند و چیزی برای آن به جایی فرستاده نمی‌شود. تصویر خودتان به‌طور پیش‌فرض آینه‌ای نیست و همان را می‌بینید که طرف مقابل می‌بیند؛ با دکمهٔ «نمای آینه‌ای خودم» می‌توانید آینه‌ای‌اش کنید.' },
+      en: { t: 'Call sound and picture, and noise removal', b: 'A video call runs at the best the camera, the device and the network allow: up to 1080p and up to 60 frames a second, adapting by itself whenever the network or the processor falls short so that movement stays smooth. Sound goes at full band (48 kHz) with Opus, with echo cancellation and automatic level. "Background noise removal in calls" (in the chat settings and in the call\'s own settings, on by default) takes background sound such as a fan, traffic, a keyboard or chatter out of your voice with RNNoise, on this device itself; nothing is sent anywhere for it. Your own picture is not mirrored by default, so you see what the other side sees; "Mirror my preview" mirrors it.' },
+    },
+    {
+      id: 'link-device-qr', tab: 'chat', cat: 'chat',
+      fa: { t: 'اتصال دستگاه با کد QR', b: 'مثل تلگرام و واتس‌اپ: روی دستگاهی که حساب را دارد «دستگاه‌های من › افزودن دستگاه» و روی دستگاه جدید «هویت شما در چت › اتصال این دستگاه به حساب» را بزنید. یکی از دو دستگاه کد نشان می‌دهد و دیگری با دوربین اسکنش می‌کند؛ کدام کد نشان دهد فرقی نمی‌کند، پس دسکتاپ بی‌دوربین هم کد را نشان می‌دهد و گوشی اسکن می‌کند. برای امنیت کد هر ده ثانیه عوض می‌شود و هر کد فقط نیم دقیقه اعتبار دارد. بعد از اسکن، هر دو صفحه یک عدد شش‌رقمی نشان می‌دهند؛ اگر یکی بود تأیید کنید. هیچ دستگاهی بدون تأیید شما حساب را تحویل نمی‌دهد یا نمی‌پذیرد. همه‌چیز با کلیدی که فقط همان دو دستگاه دارند رمز می‌شود و سرور فقط متن رمزی می‌بیند. بعد از اتصال، تاریخچه و فایل‌ها مستقیم از دستگاه دیگر می‌رسند.' },
+      en: { t: 'Linking a device with a QR code', b: 'The way Telegram and WhatsApp do it: on the device that has the account open "My devices › Add a device", and on the new one "Your chat identity › Link this device to an account". One of the two shows a code and the other scans it with its camera; it does not matter which, so a desktop without a camera shows the code and a phone scans it. For safety the code changes every ten seconds and each one is good for half a minute only. After the scan, both screens show the same six digits; approve only if they match. No device hands over or accepts the account without your approval. Everything is encrypted with a key only those two devices hold, and the server sees nothing but ciphertext. Once linked, the history and files arrive straight from the other device.' },
+    },
+    {
+      id: 'notifications', tab: 'chat', cat: 'security',
+      fa: { t: 'اعلان در پس‌زمینه', b: 'در چت امن ← تنظیمات ← اعلان‌های چت. به‌صورت پیش‌فرض خاموش است. اگر روشنش کنید، رله می‌تواند دستگاهتان را بیدار کند — ولی متن اعلان هیچ‌وقت نام، محتوا یا نام گروه را نمی‌گوید؛ فقط می‌گوید پیام است یا تماس، و اگر گروهی باشد همین را. مدت زندگی اشتراک را خودتان بین ۳۰ تا ۱۸۰ روز انتخاب می‌کنید. کلید «نمایش اعلانات» در تنظیمات اصلی برنامه جداست و همهٔ اعلان‌های برنامه را کنترل می‌کند، نه فقط چت را.' },
+      en: { t: 'Background notifications', b: 'In Secure Chat → Settings → Chat notifications. Off by default. Turn it on and the relay can wake your device - but the text never names a person, a group or anything that was said; it only says whether something is a message or a call, and whether a group is involved. You choose how long the subscription lives, from 30 to 180 days. The "show notifications" switch in the app\'s own settings is a separate thing: it governs every notice the app raises, not only the ones a message causes.' },
+    },
+    {
+      id: 'one-notice-per-message', tab: 'chat', cat: 'chat',
+      fa: { t: 'برای هر پیام یک اعلان', b: 'وقتی برنامه جلوی چشم شماست هیچ اعلان سیستمی نمی‌آید — خودِ صفحه پیام را با نام فرستنده و متنش نشان می‌دهد، و یک اعلان دیگر کنارش یعنی یک پیام دو بار. وقتی برنامه بسته یا پشت برنامهٔ دیگری است، چند پیام پشت سر هم یک ردیف می‌مانند که می‌گوید چندتا خوانده‌نشده دارید، و دستگاه برای هرکدام جداگانه اطلاع می‌دهد. تماس ردیف خودش را دارد تا زیر پیام‌ها گم نشود.' },
+      en: { t: 'One notice per message', b: 'While a window of the app is in front of you, no system notification appears - the page itself shows the message with the sender and the text, and a second notice beside it would be the same message twice. When the app is shut or behind something else, several arrivals stay one row that says how many are unread, and the device alerts for each. A call keeps a row of its own so it is not swallowed by the messages beside it.' },
+    },
+    {
+      id: 'away-and-push', tab: 'chat', cat: 'chat',
+      fa: { t: 'وقتی برنامه در پس‌زمینه است', b: 'روی گوشی، برنامه‌ای که به پس‌زمینه می‌رود اتصالش را نگه می‌دارد ولی چیزی نمی‌خواند. برای بقیه آفلاین نشان داده می‌شوید — که راستش همین است — و پیام هم زنده فرستاده می‌شود و هم به‌صورت اعلان، تا وقتی برمی‌گردید چیزی جا نمانده باشد. «در حال تایپ» و چیزهای گذرا هیچ‌وقت کسی را بیدار نمی‌کنند.' },
+      en: { t: 'When the app is in the background', b: 'On a phone, an app that goes to the background keeps its connection but reads nothing from it. You are shown to everyone else as offline - which is the truth - and the message is sent both live and as a notification, so nothing is missing when you come back. Typing indicators and the other passing signals never wake anybody.' },
+    },
+    {
+      id: 'chat-appearance', tab: 'chat', cat: 'chat',
+      fa: { t: 'ظاهر چت', b: 'در چت امن ← تنظیمات ← ظاهر چت. شش تم چت که جدا از تم برنامه است، پس می‌توانید برنامه را تیره نگه دارید و پیام‌ها را روی کاغذ روشن بخوانید. رنگ هر دو حباب، شفافیت، گردی گوشه‌ها و اندازهٔ متن گفتگو. پس‌زمینه: هفت طرح آماده یا تصویر خودتان، با محو کردن ۰ تا ۲۴ پیکسل. تصویر دلخواه فقط روی همین دستگاه و داخل همین پروفایل می‌ماند و هیچ‌وقت فرستاده نمی‌شود. یک پیش‌نمایش زنده بالای تنظیمات هر تغییر را همان لحظه نشان می‌دهد.' },
+      en: { t: 'Chat appearance', b: 'In Secure Chat → Settings → Chat appearance. Six chat themes, separate from the app\'s theme, so you can keep the app dark and still read your messages on light paper. Both bubble colours, opacity, corner rounding and the size of the conversation text. For the background: seven ready-made designs or a picture of your own, with a 0-24px blur. Your own picture stays on this device inside this profile and is never sent anywhere. A live preview above the settings shows every change as you make it.' },
+    },
+    {
+      id: 'message-ticks', tab: 'chat', cat: 'chat',
+      fa: { t: 'تیک‌های پیام', b: 'یک تیک یعنی پیام از این دستگاه رفت. دو تیک یعنی به دستگاه طرف مقابل رسید ولی هنوز بازش نکرده. دو تیک رنگی یعنی گفتگو را باز کرده و پیام جلوی چشمش بوده. رنگ حالت سوم برای هر تم اندازه‌گیری شده تا روی حباب همان تم خوانده شود؛ اگر با چشم شما جور نبود، در ظاهر چت هر سه رنگ را خودتان انتخاب کنید — کنار هر کدام نوشته می‌شود که چقدر کنتراست دارد.' },
+      en: { t: 'The message ticks', b: 'One tick means the message left this device. Two means it reached theirs and has not been opened. Two in colour means they opened the conversation and the message was on their screen. The third colour is measured for each theme so that it can be read on that theme\'s own bubble; if it does not suit your eyes, pick all three yourself in Chat appearance - the contrast each one achieves is printed beside it.' },
+    },
+    {
+      id: 'large-files', tab: 'chat', cat: 'files',
+      fa: { t: 'فرستادن فایل بزرگ', b: 'بین دو نفری که هر دو آنلاین‌اند تا ۴ گیگابایت، و برای کسی که آنلاین نیست تا ۱۰۰ مگابایت. فایل تکه‌تکه و هر تکه جداگانه رمز می‌شود، و گیرنده هم هر دسته‌ای را که کامل شد همان‌جا روی دیسک می‌نشاند — پس هیچ‌کدام از دو طرف فایل را یکجا در حافظه نگه نمی‌دارند. برای فایل حجیم، اگر هر دو آنلاین‌اید، «ساخت سشن امن» را از منوی بالای چت بزنید تا مسیر مستقیم پیش از ارسال آماده باشد. نوار پیشرفت سرعت و زمان باقی‌مانده را روی هر دو طرف نشان می‌دهد.' },
+      en: { t: 'Sending a large file', b: 'Up to 4 GB between two people who are both online, and up to 100 MB for somebody who is away. The file is split and each chunk encrypted on its own, and the receiver writes each finished run straight out to storage - so neither side ever holds the file whole in memory. For a large file, if you are both online, tap "Create secure session" in the chat\'s top menu so the direct route is ready before you send. The progress bar shows rate and time remaining on both sides.' },
+    },
+    {
+      id: 'limits', tab: 'about', cat: 'security',
+      fa: { t: 'آنچه این برنامه ادعا نمی‌کند', b: 'فراداده پنهان نیست: رله می‌بیند چه کسی آنلاین است و با چه کسی حرف می‌زند، فقط نمی‌داند چه می‌گویند. امنیت پس از افشا هم ندارد — کلید نشست زنده اگر دزدیده شود تا چرخش بعدی همان نشست خواندنی است. تاریخچهٔ روی دیسک هم فقط به قوت رمز مستر شماست. و هیچ ممیزی مستقلی انجام نشده است.' },
+      en: { t: 'What this app does not claim', b: 'Metadata is not hidden: the relay sees who is online and who talks to whom, just not what they say. There is no post-compromise security - a stolen live session key reads that session until it rotates. History on disk is only as strong as your master password. And no independent audit has been done.' },
+    },
+    {
+      id: 'metadata-on-send', tab: 'chat', cat: 'security',
+      fa: { t: 'پاک‌سازی خودکار هنگام ارسال', b: 'به‌صورت پیش‌فرض هر فایلی که در چت امن می‌فرستید، پیش از رمزنگاری از متادیتا پاک می‌شود. اگر فرمتش شناخته نشود یا خیلی بزرگ باشد، دست‌نخورده می‌رود و همین به شما گفته می‌شود. سوئیچش در تنظیمات چت است؛ اگر خاموشش کنید و فایلی مکان یا نام داشته باشد، یک بار هشدار می‌گیرید.' },
+      en: { t: 'Cleaned automatically on send', b: 'By default every file you send in Secure Chat has its metadata removed before it is encrypted. A format that is not recognised, or a file too large to hold in memory, goes as it is and you are told so. The switch is in the chat settings; with it off, a file carrying a location or a name warns you once.' },
+    },
+    {
+      id: 'telegram-stickers', tab: 'chat', cat: 'chat',
+      fa: { t: 'وارد کردن پک استیکر از لینک تلگرام', b: 'در پنل استیکر، دکمهٔ «وارد کردن» را بزنید، «از لینک تلگرام» را انتخاب کنید و لینک اشتراک پک را (مثل t.me/addstickers/نام_پک) بچسبانید. تلگرام پک را فقط از راه API ربات می‌دهد، پس رلهٔ شما آن را می‌گیرد: رله می‌بیند کدام پک خواسته شده و تلگرام آدرس رله را می‌بیند، نه آدرس شما. برای این کار مدیر رله باید یک توکن ربات تلگرام تنظیم کرده باشد؛ رله‌ای که به تلگرام دسترسی ندارد می‌تواند از رلهٔ دیگری کمک بگیرد.' },
+      en: { t: 'Importing a sticker pack from a Telegram link', b: 'In the sticker panel, press Import, choose "From a Telegram link", and paste the pack\'s share link (like t.me/addstickers/pack_name). Telegram hands packs out only through its bot API, so your relay fetches it: the relay sees which pack is asked for, and Telegram sees the relay\'s address, not yours. The relay\'s operator has to have set a Telegram bot token for this; a relay that cannot reach Telegram can ask another relay that can.' },
+    },
+    {
+      id: 'linked-devices', tab: 'chat', cat: 'chat',
+      fa: { t: 'چند دستگاه با یک حساب', b: 'دستگاه‌هایی که یک هویت دارند (مثلاً گوشی و کامپیوتر) یک تاریخچهٔ مشترک دارند. هر تغییری روی یکی (پیام فرستاده یا رسیده، ویرایش، ری‌اکشن، وضعیت، پیام حذف‌شده) همان لحظه به دستگاه‌های آنلاین دیگر می‌رسد. اگر دستگاهی آفلاین باشد، رله فقط همین تغییرها را، رمزگذاری‌شده با کلید خود حساب و بدون هیچ فایلی، برای همان دستگاه نگه می‌دارد. دستگاه وقتی آنلاین شد آن‌ها را می‌گیرد، حتی اگر دستگاه دیگر دیگر آنلاین نباشد، و رله بلافاصله پاکشان می‌کند. فایل‌ها هرگز روی سرور نمی‌مانند: با زدن «دریافت از دستگاه دیگر»، فایل مستقیم از دستگاهی که آن را دارد می‌آید و روی این دستگاه ذخیره می‌شود. با روشن کردن «همگام‌سازی کامل همهٔ محتوا» (در «تنظیمات › دستگاه‌های من» یا «هویت شما در چت › دستگاه‌های متصل»)، هر فایل، عکس، ویدیو، صدا، استیکر و گیفی که دستگاهی ندارد، هر بار که دو دستگاه هم‌زمان آنلاین‌اند خودکار و مستقیم منتقل می‌شود. این انتخاب برای کل حساب است. همهٔ دستگاه‌های حساب همیشه در فهرست دیده می‌شوند، آنلاین یا آفلاین، با زمان آخرین بازدید. دستگاهی که هویت را ساخته «دستگاه اصلی» است. فقط همین دستگاه می‌تواند دسترسی دستگاه دیگری را لغو کند (سرور آن دستگاه را راه نمی‌دهد و خود آن دستگاه حساب را از روی خودش پاک می‌کند) یا این نقش را به دستگاه دیگری بسپارد. هر دستگاه دیگری می‌تواند خودش را جدا کند و با یک هویت تازه، مثل قبل از اتصال، ادامه دهد. دکمهٔ «هم‌اکنون همگام کن» هم کل تاریخچه را به دستگاه‌های آنلاین می‌فرستد.' },
+      en: { t: 'Several devices on one account', b: 'Devices that hold one identity (a phone and a computer, say) share one history. Every change on one (a message sent or received, an edit, a reaction, a status, a deleted message) reaches the others that are online at once. When a device is offline, the relay keeps only those changes for that device, sealed to the account\'s own key and without any file. The device collects them when it comes online, even if the other device is no longer there, and the relay deletes them at once. Files never stay on a server: "Fetch from my other device" brings a file straight from the device that has it and keeps it on this one. With "Sync all content" on (in Settings › My devices, or Your chat identity › Linked devices), every file, photo, video, voice note, sticker and GIF a device lacks moves automatically, device to device, whenever two devices are online together. That choice is for the whole account. Every device of the account is always listed, online or offline, with when it was last seen. The device that created the identity is the primary device. Only it can revoke another device (the relay refuses that device, and the device removes the account from itself) or hand the role to another device. Any other device can detach itself and carry on with a new identity, as it was before it was linked. "Sync now" still sends the whole history to the devices that are online.' },
+    },
+    {
+      id: 'sticker-view', tab: 'chat', cat: 'chat',
+      fa: { t: 'دیدن بزرگ استیکر و گیف، و تصویر شاخص پک', b: 'روی هر استیکر یا گیف داخل گفتگو بزنید تا بزرگ و متحرک نمایش داده شود. همان‌جا ری‌اکشن‌ها (برای پیامی که دیگری فرستاده) و همهٔ کارهای منوی پیام هست: پاسخ، افزودن به استیکرها یا گیف‌های من، کپی، سنجاق، هدایت و حذف. برای بستن، بیرون را بزنید، استیکر را پایین بکشید یا Esc را بزنید. تصویر شاخص هر پک را در «مدیریت پک‌ها» با زدن روی تصویر آن پک عوض کنید؛ یا در پنل استیکر یک استیکر را انتخاب کنید و «شاخص پک» را بزنید. استیکرها و گیف‌های متحرک همیشه در حال پخش می‌مانند.' },
+      en: { t: 'Stickers and GIFs up close, and a pack\'s cover', b: 'Tap any sticker or GIF in a conversation to see it large and moving. Its reactions (on a message somebody else sent) and every action of the message menu are there with it: reply, add to my stickers or GIFs, copy, pin, forward, and delete. Tap outside, pull the sticker down, or press Esc to close it. Change a pack\'s cover in Manage packs by tapping the pack\'s picture, or pick one sticker in the sticker panel and press "Pack cover". Animated stickers and GIFs keep playing for as long as they are on screen.' },
+    },
+    {
+      id: 'gifs-keyboard', tab: 'chat', cat: 'chat',
+      fa: { t: 'گیف و استیکر از کیبورد گوشی', b: 'برنامه گیف و استیکر را از هر راهی که برسد می‌فرستد. محدودیت از خود سیستم است: روی اندروید، Chrome و WebView اندروید (که نسخهٔ نیتیو روی آن اجرا می‌شود) هنوز اجازه نمی‌دهند Gboard گیف یا استیکر را مستقیم در کادر متن یک صفحه بگذارد، و Gboard پیام «این برنامه از گیف پشتیبانی نمی‌کند» را نشان می‌دهد. روی آیفون و آیپد، استیکرها، Memoji و Genmoji از «کادر کیبورد» در پنل استیکر فرستاده می‌شوند.',
+        steps: [
+          'راهی که همیشه کار می‌کند: در برنامه یا سایتی که گیف در آن است، روی گیف نگه دارید و «کپی تصویر» را بزنید، بعد در کادر پیام پیست کنید؛ همان لحظه فرستاده می‌شود',
+          'گیف‌هایی که زیاد می‌فرستید را در قفسهٔ گیف نگه دارید: از منوی + گزینهٔ «گیف» و بعد «وارد کردن»، یا نشانک روی گیفی که در گفتگو آمده',
+          'نسخهٔ PWA در Chrome اندروید (آزمایشی): آدرس chrome://flags را باز کنید، «media insertion» را جستجو کنید، گزینهٔ Enable IME media insertion را روی Enabled بگذارید و Chrome را دوباره باز کنید. بعد از آن نوار گیف و استیکر Gboard در کادر پیام باز می‌شود. این پرچم آزمایشی است و ممکن است در همهٔ نسخه‌های Chrome کار نکند یا برداشته شود',
+          'نسخهٔ نیتیو اندروید: WebView اندروید فعلاً گیف کیبورد را نمی‌پذیرد؛ از دو راه اول استفاده کنید',
+        ] },
+      en: { t: 'GIFs and stickers from the phone keyboard', b: 'The app sends a GIF or a sticker however it arrives. The limit is the system’s: on Android, Chrome and the Android WebView (which the native app runs on) do not yet let Gboard put a GIF or a sticker straight into a web page’s text box, and Gboard says "This app doesn’t support GIFs". On iPhone and iPad, stickers, Memoji and Genmoji go through the keyboard box in the sticker panel.',
+        steps: [
+          'The way that always works: in the app or site the GIF is in, long-press it and choose "Copy image", then paste it into the message box; it is sent at once',
+          'Keep the GIFs you send often on the GIF shelf: + menu, GIF, then Import, or the bookmark on a GIF in a conversation',
+          'The PWA in Chrome on Android (experimental): open chrome://flags, search for "media insertion", set Enable IME media insertion to Enabled and relaunch Chrome. Gboard’s GIF and sticker bar then opens in the message box. The flag is experimental, and may not work in every Chrome version or may be removed',
+          'The native Android app: the Android WebView does not accept keyboard GIFs yet; use the first two ways',
+        ] },
+    },
+    {
+      id: 'voice-message-disguise', tab: 'chat', cat: 'security',
+      fa: { t: 'پیام صوتی با صدای تغییریافته', b: 'کنار دکمهٔ ارسال پیام صوتی، دکمهٔ جداگانه‌ای هست که همان ضبط را با صدای پوشانده می‌فرستد. اگر تبدیل به هر دلیلی شکست بخورد، هیچ چیزی فرستاده نمی‌شود — نه اینکه نسخهٔ اصلی برود.' },
+      en: { t: 'Voice messages with your voice disguised', b: 'Next to the send button for a voice message there is a separate one that sends the same recording with the speaker disguised. If the transform fails for any reason, nothing is sent at all - it does not quietly fall back to your real voice.' },
+    },
+    {
+      id: 'vault-tab', tab: 'vault', cat: 'files',
+      fa: { t: 'مدیریت فایل‌ها', b: 'هرچه برنامه نگه داشته یک‌جاست: پیوست پیام‌ها، پیام‌های صوتی، استیکرها و فایل‌های رمزگذاری‌شده. می‌توانید ببینید چقدر جا گرفته‌اند، جستجو کنید، ذخیره کنید روی دستگاه یا حذف کنید.' },
+      en: { t: 'The file manager', b: 'Everything the app has kept, in one place: message attachments, voice messages, stickers and encrypted files. You can see how much room they take, search them, save one to the device, or delete it.' },
+    },
+    {
+      id: 'vault-lock', tab: 'vault', cat: 'security',
+      fa: { t: 'قفل روی فهرست فایل‌ها', b: 'می‌توانید یک عبارت عبور روی این بخش بگذارید. صریح باشیم دربارهٔ اینکه چه کاری می‌کند: این فایل‌ها همین حالا با کلیدی که از رمز مستر می‌آید رمزند، و این عبارت رمزنگاری تازه‌ای اضافه نمی‌کند. فقط فهرست را پنهان می‌کند، برای وقتی که برنامه باز است و گوشی لحظه‌ای دست کس دیگری می‌افتد. با قفل شدن برنامه یا قفل چت، خودش هم بسته می‌شود.' },
+      en: { t: 'A lock on the file list', b: 'You can put a passphrase on this section. To be plain about what it does: these files are already encrypted under a key derived from your master password, and this passphrase adds no encryption. It hides the listing, for when the app is open and the phone is briefly in somebody else’s hand. It closes again whenever the app or the chat lock closes.' },
+    },
+    {
+      id: 'securitycenter-tab', tab: 'securitycenter', cat: 'security',
+      fa: { t: 'مرکز سلامت امنیت', b: 'یک‌جا می‌گوید وضعیت کلیدها، رمزها، پشتیبان، ۲FA و Passkey چطور است و چه چیزی جا مانده. چیزی را خودش عوض نمی‌کند؛ فهرستی است از کارهایی که خودتان باید انجام دهید.' },
+      en: { t: 'The security health centre', b: 'One place that reports on your keys, passwords, backup, 2FA and passkeys, and what is still missing. It changes nothing by itself; it is a list of things for you to do.' },
+    },
+    {
+      id: 'migration-tab', tab: 'migration', cat: 'security',
+      fa: { t: 'پشتیبان کامل و بردن به دستگاه دیگر', b: 'یک فایل که همه‌چیز را می‌برد: کلیدها، رمزها، یادداشت‌ها، تنظیمات، گفتگوها و مخاطبین، پک‌های استیکر و همهٔ فایل‌های ذخیره‌شده. با Argon2id و AES-256-GCM قفل می‌شود. رمز پشتیبان جداست از رمز مستر و هیچ‌جا نگه داشته نمی‌شود؛ گمش کنید، پشتیبان از دست رفته است.',
+        steps: ['در تب مهاجرت رمزی برای پشتیبان بگذارید', 'فایل را بسازید و جایی امن نگه دارید', 'روی دستگاه تازه همان فایل و همان رمز را بدهید'] },
+      en: { t: 'A full backup, and moving to a new device', b: 'One file that carries everything: keys, passwords, notes, settings, conversations and contacts, sticker packs and every stored file. It is locked with Argon2id and AES-256-GCM. The backup password is separate from your master password and is kept nowhere; lose it and the backup is gone.',
+        steps: ['Set a backup password in the Migration tab', 'Build the file and keep it somewhere safe', 'On the new device, give it that same file and password'] },
+    },
+    {
+      id: 'settings-tab', tab: 'settings', cat: 'start',
+      fa: { t: 'تنظیمات', b: 'زبان، پوسته، رفتار قفل، و اینکه کدام تب‌ها در نوار پایین گوشی باشند (حداکثر پنج تا). تنظیمات چت امن — از جمله پاک‌سازی خودکار متادیتا و پس‌زمینهٔ تصویر در تماس — داخل خود تب چت امن است، نه اینجا.' },
+      en: { t: 'Settings', b: 'Language, theme, how the lock behaves, and which tabs sit in the phone’s bottom bar (up to five). Secure Chat’s own settings - including automatic metadata cleaning and the call backdrop - live inside the chat tab, not here.' },
+    },
+    {
+      id: 'help-itself', tab: 'help', cat: 'start',
+      fa: { t: 'همین راهنما', b: 'هر چیزی که دربارهٔ برنامه نوشته شده همین‌جاست: با جستجو یا با دسته‌ها. هیچ صفحهٔ دیگری راهنمای جداگانه ندارد — اگر جواب سؤالی اینجا نیست، یعنی هنوز نوشته نشده و همین یک نقص است.' },
+      en: { t: 'This guide', b: 'Everything written about the app is here, by search or by category. No other screen carries its own separate help - if an answer is not here, it has not been written yet, and that is a gap worth reporting.' },
+    },
+    {
+      id: 'install-pwa', tab: 'about', cat: 'install',
+      fa: { t: 'نصب روی گوشی', b: 'در سافاری یا کروم، از منوی اشتراک‌گذاری «افزودن به صفحهٔ اصلی» را بزنید. روی آیفون، اعلان پس‌زمینه فقط وقتی کار می‌کند که برنامه از صفحهٔ اصلی نصب شده باشد.' },
+      en: { t: 'Installing on a phone', b: 'In Safari or Chrome, use the share menu and "Add to Home Screen". On iPhone, background notifications only work when the app was installed from the Home Screen.' },
+    },
+    {
+      id: 'install-desktop', tab: 'about', cat: 'install',
+      fa: { t: 'نسخهٔ دسکتاپ', b: 'نصب‌کننده‌های مک، ویندوز و لینوکس موجودند. در نسخهٔ نیتیو اعلان‌ها از خود سیستم‌عامل می‌آیند و تا وقتی برنامه در حال اجراست کار می‌کنند؛ بیدارکردن برنامهٔ کاملاً بسته فقط در نسخهٔ وب ممکن است.' },
+      en: { t: 'The desktop app', b: 'There are installers for macOS, Windows and Linux. In the native app notifications come from the operating system and work while the app is running; waking a fully closed app is a web-only trick.' },
+    },
+    /* These five screens shipped without an entry, which the help suite caught:
+       a tab nobody documented is a tab nobody finds a use for. */
+    {
+      id: 'locallink-tab', tab: 'locallink', cat: 'chat',
+      fa: { t: 'پیوند محلی — بدون هیچ سروری', b: 'دو دستگاه روی یک وای‌فای از راه دوربین به هم معرفی می‌شوند و بعد مستقیم و رمزشده با هم حرف می‌زنند. نه رله‌ای، نه اینترنتی، نه هیچ سروری. کلید عمومی هر طرف داخل همان کد QR سفر می‌کند، پس کلید از راه چشم شما می‌رسد نه از روی سیم — قوی‌ترین اعتماد در کل برنامه. عبارت امنیتی شش‌کلمه‌ای باید روی هر دو دستگاه یکسان باشد؛ اگر نبود، قطع کنید. اگر وصل نشد، بیشتر وای‌فای‌های مهمان اجازه نمی‌دهند دستگاه‌ها یکدیگر را ببینند؛ هات‌اسپات شخصی این محدودیت را ندارد.',
+        steps: ['روی یک دستگاه «شروع پیوند تازه» را بزنید', 'کد را به دستگاه دوم نشان بدهید و با «اسکن کد طرف مقابل» بخوانید', 'کد پاسخ را به دستگاه اول برگردانید', 'عبارت امنیتی را روی هر دو مقایسه کنید', 'حالا پیام و فایل مستقیم رد و بدل می‌شود'] },
+      en: { t: 'Local Link — with no server at all', b: 'Two devices on the same Wi-Fi introduce themselves through a camera, then talk directly and encrypted. No relay, no internet, no server of any kind. Each side\u2019s public key travels inside its own QR code, so the key reaches you through your eyes rather than over a wire \u2014 the strongest trust in the whole app. The six-word safety phrase must read the same on both devices; if it does not, disconnect. If it will not connect, most guest Wi-Fi stops devices seeing each other; a personal hotspot has no such restriction.',
+        steps: ['On one device press "Start a new link"', 'Show the code to the second device and read it with "Scan their code"', 'Take the reply code back to the first device', 'Compare the safety phrase on both', 'Messages and files now pass directly'] },
+    },
+  ];
+
+  window.PoorijaHelp = { CATEGORIES, ENTRIES };
+})();

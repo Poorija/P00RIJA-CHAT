@@ -1,0 +1,9 @@
+# P00RIJA Chat — the group-call SFU (roadmap 3.2): scripts/sfu.js and the one
+# module it needs. Node and ws only; it never holds a key.
+FROM node:26.12.1-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797
+WORKDIR /app
+RUN npm install --omit=dev ws@8.22.0 && npm audit --omit=dev --audit-level=high && rm -rf /root/.npm /tmp/*
+COPY scripts/sfu.js ./scripts/sfu.js
+COPY scripts/lib/sfu-rooms.js ./scripts/lib/sfu-rooms.js
+EXPOSE 11223
+CMD ["node", "scripts/sfu.js"]

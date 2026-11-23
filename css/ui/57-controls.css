@@ -1,0 +1,251 @@
+/* One set of controls for the whole app.
+
+   Three kinds of control had two looks each, one from the interface drawn for
+   this app and one from the older screens it was cut from: the buttons, the
+   switches and the sliders. This file is the single description of all three.
+   It names the old structures as well as the new ones, so a control looks the
+   same wherever it is: on a Settings page, in a sheet, on the Local tab, in a
+   dialog.
+
+   Button: 44pt tall, 12pt corners, 16pt semibold. Soft (the tint at 14%) is the
+           default; primary is the tint itself; danger is the red at 14%.
+   Switch: 51 by 31, a white knob that springs across, green when on.
+   Slider: the whole width of its row, a 6pt track that fills with the tint as far
+           as the knob, a 28pt white knob.                                       */
+
+/* ---- buttons ---------------------------------------------------------------- */
+
+html.msgr :is(.msgr-pill, .chat-soft-btn, .chat-primary-btn, .chat-danger-soft-btn, .chat-lock-btn, .chat-secondary-btn),
+html.msgr .msgr-legacy button:not(.msgr-row):not(.chat-send-btn):not(.chat-bg-swatch):not([class*="chat-bg"]):not(.msgr-seg button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  color: var(--tint);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.2px;
+  box-shadow: none;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.2s, transform 0.2s var(--spring);
+}
+html.msgr :is(.msgr-pill, .chat-soft-btn, .chat-primary-btn, .chat-danger-soft-btn, .chat-secondary-btn):active { transform: scale(0.97); background: color-mix(in srgb, var(--tint) 24%, transparent); }
+html.msgr :is(.chat-primary-btn, .msgr-pill.is-primary), html.msgr .msgr-legacy button[class*="bg-brand"] { background: var(--tint-fill); color: var(--on-tint, #fff); }
+html.msgr :is(.chat-danger-soft-btn, .msgr-pill.is-danger, .chat-soft-btn.danger) { background: color-mix(in srgb, var(--red) 10%, transparent); color: color-mix(in srgb, var(--red) 88%, var(--label)); }
+html.msgr :is(.chat-danger-soft-btn, .msgr-pill.is-danger, .chat-soft-btn.danger):active { background: color-mix(in srgb, var(--red) 26%, transparent); }
+html.msgr :is(.msgr-pill, .chat-soft-btn, .chat-primary-btn, .chat-danger-soft-btn)[disabled] { opacity: 0.45; pointer-events: none; }
+html.msgr :is(.msgr-pill, .chat-soft-btn, .chat-primary-btn, .chat-danger-soft-btn).hidden { display: none; }
+html.msgr :is(.msgr-pill, .chat-soft-btn) i { font-size: calc(15px * var(--fs, 1)); }
+
+/* a line of buttons: side by side, sharing the width, never one under the other */
+html.msgr .msgr-actions-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: default;
+}
+html.msgr .msgr-actions-row .msgr-pill { flex: 1 1 0; min-width: 0; padding: 0 8px; }
+html.msgr .msgr-actions-row .msgr-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html.msgr .msgr-actions-row:active, html.msgr .msgr-actions-row:hover { background: transparent; }
+html.msgr .msgr-pages .msgr-actions-row::before { content: none; }
+/* the controls of the old panes that stood in a column are in a row now */
+html.msgr .msgr-legacy .chat-tick-actions, html.msgr .msgr-legacy .chat-settings-action-grid, html.msgr .msgr-legacy .chat-ringtone-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+html.msgr .msgr-legacy .chat-tick-actions > :is(button, .chat-soft-btn) { flex: 1 1 140px; }
+html.msgr .msgr-legacy .chat-ringtone-row > label { flex: 1 0 100%; }
+html.msgr .msgr-legacy .chat-ringtone-row > select { flex: 1 0 100%; }
+html.msgr .msgr-legacy .chat-ringtone-row > button { flex: 1 1 0; min-width: 0; }
+
+/* ---- switches --------------------------------------------------------------- */
+
+html.msgr :where(span, div):has(> .toggle-checkbox + .toggle-label) {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 51px;
+  height: 31px;
+  vertical-align: middle;
+}
+html.msgr :where(span, div):has(> .toggle-checkbox + .toggle-label) > .toggle-label {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill-2);
+  transition: background-color 0.28s var(--ease);
+}
+html.msgr :where(span, div):has(> .toggle-checkbox + .toggle-label) > .toggle-checkbox {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  right: auto;
+  left: auto;
+  width: 27px;
+  height: 27px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.28);
+  appearance: none;
+  -webkit-appearance: none;
+  transition: transform 0.36s var(--spring);
+  cursor: pointer;
+}
+html.msgr :where(span, div):has(> .toggle-checkbox + .toggle-label) > .toggle-checkbox:checked { transform: translateX(20px); border: 0; }
+html[dir="rtl"].msgr :where(span, div):has(> .toggle-checkbox + .toggle-label) > .toggle-checkbox:checked { transform: translateX(-20px); }
+html.msgr :where(span, div):has(> .toggle-checkbox + .toggle-label) > .toggle-checkbox:checked + .toggle-label { background: var(--green); }
+
+/* ---- sliders ---------------------------------------------------------------- */
+
+html.msgr input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  --fill-pct: 50% !normal;
+  accent-color: var(--tint);
+}
+html.msgr input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--tint) var(--fill-pct), var(--fill-2) var(--fill-pct));
+}
+html.msgr input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -11px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 3px 8px rgba(0, 0, 0, 0.25);
+}
+html.msgr input[type="range"]::-moz-range-track { height: 6px; border-radius: 999px; background: var(--fill-2); }
+html.msgr input[type="range"]::-moz-range-progress { height: 6px; border-radius: 999px; background: var(--tint); }
+html.msgr input[type="range"]::-moz-range-thumb { width: 28px; height: 28px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 3px 8px rgba(0, 0, 0, 0.25); }
+/* right to left: the fill runs from the right */
+html[dir="rtl"].msgr input[type="range"]::-webkit-slider-runnable-track { background: linear-gradient(to left, var(--tint) var(--fill-pct), var(--fill-2) var(--fill-pct)); }
+
+/* a slider's row: the words and the value on one line, the slider under them at
+   the full width of the section */
+html.msgr .msgr-slider-row, html.msgr .msgr-legacy .chat-appearance-row:has(> input[type="range"]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "label out" "slider slider";
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 10px 0 4px;
+}
+html.msgr .msgr-legacy .chat-appearance-row:has(> input[type="range"]) > label { grid-area: label; margin: 0; color: var(--label); font-size: calc(16px * var(--fs, 1)); }
+html.msgr .msgr-legacy .chat-appearance-row:has(> input[type="range"]) > output { grid-area: out; min-width: 0; color: var(--label-2); font-size: calc(15px * var(--fs, 1)); font-variant-numeric: tabular-nums; text-align: end; }
+html.msgr .msgr-legacy .chat-appearance-row:has(> input[type="range"]) > input[type="range"] { grid-area: slider; width: 100%; }
+html.msgr .msgr-legacy label:has(> input[type="range"]) { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---- colour wells and the sections of the chat-appearance card ------------------ */
+
+html.msgr input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 48px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  box-shadow: 0 0 0 1.5px var(--sep);
+  cursor: pointer;
+}
+html.msgr input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+html.msgr input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 9px; }
+html.msgr input[type="color"]::-moz-color-swatch { border: 0; border-radius: 9px; }
+html.msgr .msgr-legacy .chat-tick-colors { display: flex; flex-direction: column; gap: 0; }
+html.msgr .msgr-legacy .chat-tick-color {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  margin: 0;
+  color: var(--label);
+  font-size: calc(16px * var(--fs, 1));
+}
+html.msgr .msgr-legacy .chat-tick-color + .chat-tick-color { border-top: 0.5px solid var(--sep); }
+html.msgr .msgr-legacy .chat-storage-head { display: none; }
+html.msgr .msgr-legacy .chat-appearance-sub {
+  margin: 20px 0 6px;
+  padding-top: 16px;
+  border-top: 0.5px solid var(--sep);
+  color: var(--label-2);
+  font-size: calc(13px * var(--fs, 1));
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+html.msgr .msgr-legacy .chat-appearance-sub:first-of-type, html.msgr .msgr-legacy .chat-appearance-row:first-child ~ .chat-appearance-sub:first-of-type { margin-top: 12px; }
+html.msgr .msgr-legacy .chat-appearance-row:not(:has(> input[type="range"])) { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 0; }
+html.msgr .msgr-legacy .chat-appearance-row > label { color: var(--label); font-size: calc(16px * var(--fs, 1)); }
+html.msgr .msgr-legacy .chat-storage-note { margin: 4px 0 8px; color: var(--label-2); font-size: calc(13px * var(--fs, 1)); line-height: 1.45; }
+html.msgr .msgr-legacy .chat-live-preview { margin-top: 12px; border-radius: 16px; overflow: hidden; }
+/* The rule that makes every direct child of a legacy block a white card (padding and the cell colour) also made the
+   live preview one — so the preview showed the wallpaper the person had just chosen as plain white, in the one place
+   built to show what a change does. The preview paints its own wallpaper and has no padding of its own. */
+html.msgr .msgr-legacy > div.chat-live-preview { padding: 0; border-radius: 18px; background: var(--ap-bg, var(--wall)); color: var(--label); }
+
+/* ---- checkboxes ---------------------------------------------------------------- */
+
+html.msgr input[type="checkbox"]:not(.toggle-checkbox):not([data-bind]) {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border: 2px solid var(--label-3);
+  border-radius: 50%;
+  background: transparent center / 14px no-repeat;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, transform 0.25s var(--spring);
+}
+html.msgr input[type="checkbox"]:not(.toggle-checkbox):not([data-bind]):checked {
+  border-color: var(--tint);
+  background-color: var(--tint);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2.5 7.5l3 3 6-7' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+html.msgr input[type="checkbox"]:not(.toggle-checkbox):not([data-bind]):active { transform: scale(0.9); }
+
+/* ---- cards of buttons, one under another, with room between ------------------------ */
+html.msgr .msgr-legacy-card > button + button, html.msgr .msgr-legacy .chat-storage-card > button + button, html.msgr .msgr-legacy .chat-storage-card > button { margin-top: 8px; }
+html.msgr .msgr-legacy .chat-storage-card > button { width: 100%; }
+
+/* the text-size row of Appearance: the words and the value on one line, the slider the width of the row under them */
+html.msgr .msgr-pages .msgr-slider-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label out" "slider slider"; align-items: center; row-gap: 6px; cursor: default; padding-block: 12px 10px; }
+html.msgr .msgr-slider-row > .msgr-row-label { grid-area: label; }
+html.msgr .msgr-slider-row > .msgr-row-value { grid-area: out; }
+html.msgr .msgr-slider-row > input[type="range"] { grid-area: slider; }

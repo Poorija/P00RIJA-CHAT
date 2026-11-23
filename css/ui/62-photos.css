@@ -1,0 +1,553 @@
+/* Photos: the picture in the thread, the viewer, the editor and the sheet a
+   choice of pictures opens (js/chat/64-photos.js).
+
+   The viewer, the editor and the sheet are dark whatever the theme is, as a
+   photo viewer is on every phone: the picture is the thing, and a white frame
+   around it changes how it looks. Their controls are white on black. None of
+   them sets transform, width or height on an element the script moves — those
+   are the script's, set inline. */
+
+/* ---- in the thread ---------------------------------------------------------- */
+
+html.msgr .chat-messages-panel .chat-message-bubble.chat-photo-bubble {
+  width: min(304px, 80%);
+  max-width: 304px;
+  min-width: 0;
+  padding: 3px;
+}
+html.msgr .chat-photo-bubble .chat-message-sender,
+html.msgr .chat-photo-bubble .chat-reply-preview,
+html.msgr .chat-photo-bubble .chat-forwarded-from { margin: 4px 8px 4px; }
+html.msgr .chat-photo {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--ar, 1.33);
+  max-height: 440px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--ap-radius, var(--r-bubble)) - 3px);
+  overflow: hidden;
+  background: var(--fill-2);
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+}
+html.msgr .chat-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+html.msgr .chat-photo:active img { opacity: 0.92; }
+html.msgr .chat-photo.is-loading { animation: photo-pulse 1.3s ease-in-out infinite !normal; cursor: default; }
+@keyframes photo-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { html.msgr .chat-photo.is-loading { animation: none !normal; } }
+html.msgr .chat-photo-caption {
+  padding: 6px 8px 2px;
+  font-size: calc(var(--ui-text, 16px) * var(--ap-zoom, 1));
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+html.msgr .chat-photo-bubble .chat-message-meta { padding: 0 8px 3px; }
+/* No caption: the time sits on the picture, in a dark pill, as in Telegram. */
+html.msgr .chat-photo-bubble.is-bare { position: relative; }
+html.msgr .chat-photo-bubble.is-bare > .chat-message-meta {
+  position: absolute;
+  inset-block-end: 9px;
+  inset-inline-end: 9px;
+  width: max-content;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+html.msgr .chat-photo-bubble.is-bare > .chat-message-meta * { color: inherit; }
+html.msgr .chat-photo-bubble .chat-reaction-summary { margin: 4px 6px 0; }
+
+/* A video in the thread: the video itself with its controls, its length in
+   the corner until it plays. */
+html.msgr .chat-photo.chat-video { cursor: pointer; background: #000; }
+html.msgr .chat-photo.chat-video video { display: block; width: 100%; height: 100%; object-fit: cover; background: #000; pointer-events: none; }
+html.msgr .chat-video-play {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 20px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+html.msgr .chat-video-play i { margin-inline-start: 3px; }
+/* The app's own full-screen player (the photo viewer's frame). */
+html.msgr .pv.pv-video .pv-stage { margin-block: 0; touch-action: auto; }
+html.msgr .pv.pv-video .pv-video-el { width: 100%; height: 100%; max-height: 100%; object-fit: contain; background: #000; }
+html.msgr .pv.pv-video { touch-action: auto; }
+html.msgr .chat-video-length {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-start: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: calc(12px * var(--fs, 1));
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+/* An album: the bubbles of one sending, as one grid, from its own side. Two
+   across; an odd first one takes the whole width. The time shows once, under
+   the last; reactions stay on each picture. */
+html.msgr .chat-messages-panel .chat-album {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  width: min(304px, 80%);
+  padding: 3px;
+  border-radius: var(--ap-radius, var(--r-bubble));
+  background: var(--bubble-in);
+}
+html.msgr .chat-messages-panel .chat-album.is-out { align-self: flex-end; margin-inline-start: auto; background: var(--bubble-out); }
+html.msgr .chat-messages-panel .chat-album.is-in { align-self: flex-start; margin-inline-end: auto; }
+html[dir="rtl"].msgr .chat-messages-panel .chat-album.is-out { margin-inline-start: 0; margin-inline-end: auto; }
+html[dir="rtl"].msgr .chat-messages-panel .chat-album.is-in { margin-inline-end: 0; margin-inline-start: auto; }
+html.msgr .chat-messages-panel .chat-album > .chat-message-bubble.chat-photo-bubble {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+}
+html.msgr .chat-messages-panel .chat-album[style*="--album-n"] > .chat-message-bubble:first-child:nth-last-child(odd) { grid-column: 1 / -1; }
+html.msgr .chat-album .chat-photo { aspect-ratio: 1; max-height: none; border-radius: 6px; }
+html.msgr .chat-album > .chat-message-bubble:first-child:nth-last-child(odd) .chat-photo { aspect-ratio: 1.6; }
+html.msgr .chat-album > .chat-message-bubble:not(:last-child) > .chat-message-meta { display: none; }
+/* A tile's toolbar is placed against the album, not the tile: from a narrow
+   tile it hung out of the thread, over the chat list. */
+html.msgr .chat-messages-panel .chat-album { position: relative; }
+html.msgr .chat-messages-panel .chat-album > .chat-message-bubble { position: static; }
+html.msgr .chat-messages-panel .chat-album.is-in .chat-message-toolbar { left: 0; right: auto; inset-inline: auto; transform: none; }
+html.msgr .chat-messages-panel .chat-album.is-out .chat-message-toolbar { right: 0; left: auto; inset-inline: auto; transform: none; }
+html.msgr .chat-album > .chat-message-bubble .chat-photo-caption { grid-column: 1 / -1; }
+
+/* ---- the viewer ------------------------------------------------------------- */
+
+html.msgr .pv {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  flex-direction: column;
+  background: rgb(0 0 0 / calc(0.95 * var(--pv-fade, 1)));
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  outline: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+html.msgr .pv.is-open { opacity: 1; }
+html.msgr .pv.is-closing { opacity: 0; }
+html.msgr .pv-top, html.msgr .pv-bottom {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  transition: opacity 180ms ease;
+}
+html.msgr .pv-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: max(env(safe-area-inset-top), 10px) 10px 14px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), transparent);
+}
+html.msgr .pv-bottom {
+  padding: 18px 12px max(env(safe-area-inset-bottom), 12px);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.66), transparent);
+}
+html.msgr .pv.is-bare .pv-top, html.msgr .pv.is-bare .pv-bottom { opacity: 0; pointer-events: none; }
+html.msgr .pv-title { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.25; }
+html.msgr .pv-title strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 600; }
+html.msgr .pv-title span { color: rgba(255, 255, 255, 0.72); font-size: 12.5px; }
+html.msgr .pv-spacer { flex: 0 0 44px; }
+html.msgr .pv-btn {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 18px;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+html.msgr .pv-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-block: -66px -90px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  touch-action: none;
+}
+html.msgr .pv-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  will-change: transform;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+html.msgr .pv-caption {
+  max-height: 22dvh;
+  overflow-y: auto;
+  margin: 0 4px 12px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  font-size: 15px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  touch-action: pan-y;
+}
+html.msgr .pv-bar { display: flex; justify-content: center; gap: 6px; }
+html.msgr .pv-act {
+  flex: 1 1 0;
+  max-width: 96px;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+html.msgr .pv-act i { font-size: 20px; }
+html.msgr .pv-act:active { background: rgba(255, 255, 255, 0.16); }
+html.msgr .pv-act.is-danger { color: #ff6b61; }
+
+/* ---- the editor -------------------------------------------------------------- */
+
+html.msgr .pe, html.msgr .pc {
+  position: fixed;
+  inset: 0;
+  z-index: 100001;
+  display: flex;
+  flex-direction: column;
+  background: #000000;
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+html.msgr .pe.is-open, html.msgr .pc.is-open { opacity: 1; }
+html.msgr .pe { z-index: 100002; }
+html.msgr .pe-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: max(env(safe-area-inset-top), 10px) 14px 10px;
+}
+html.msgr .pe-top strong { font-size: 16px; font-weight: 600; }
+html.msgr .pe-text {
+  min-width: 64px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  font-size: 16px;
+}
+html.msgr .pe-text.is-primary { color: var(--tint); font-weight: 700; text-align: end; }
+html.msgr .pe-text:disabled { opacity: 0.5; }
+html.msgr .pe-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+html.msgr .pe-frame { position: relative; touch-action: none; }
+html.msgr .pe-canvas { display: block; border-radius: 2px; }
+html.msgr .pe-crop {
+  position: absolute;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.58);
+  cursor: move;
+  touch-action: none;
+}
+html.msgr .pe.is-adjusting .pe-crop, html.msgr .pe.is-drawing .pe-crop { display: none; }
+html.msgr .pe.is-drawing .pe-frame { cursor: crosshair; }
+html.msgr .pe-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, transparent calc(33.33% - 0.5px), rgba(255,255,255,0.4) calc(33.33% - 0.5px) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px) calc(66.66% - 0.5px), rgba(255,255,255,0.4) calc(66.66% - 0.5px) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(33.33% - 0.5px), rgba(255,255,255,0.4) calc(33.33% - 0.5px) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px) calc(66.66% - 0.5px), rgba(255,255,255,0.4) calc(66.66% - 0.5px) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px));
+}
+/* The handles are drawn with physical sides (left, right, top, bottom) and the frame
+   runs left to right whatever the language is: the drag arithmetic in the script is
+   physical, and a handle laid out with logical sides was drawn on the opposite corner
+   in Persian, its brackets pointing outward from the picture. Each corner is an L
+   whose corner sits just outside the crop's own corner and whose arms run inward
+   along its edges. */
+html.msgr .pe-frame, html.msgr .pe-crop { direction: ltr; }
+html.msgr .pe-crop > i { position: absolute; width: 34px; height: 34px; touch-action: none; }
+html.msgr .pe-crop > i::after { content: ""; position: absolute; width: 22px; height: 22px; border: 0 solid #ffffff; }
+html.msgr .pe-crop > i[data-h="nw"] { left: -17px; top: -17px; }
+html.msgr .pe-crop > i[data-h="ne"] { right: -17px; top: -17px; }
+html.msgr .pe-crop > i[data-h="sw"] { left: -17px; bottom: -17px; }
+html.msgr .pe-crop > i[data-h="se"] { right: -17px; bottom: -17px; }
+html.msgr .pe-crop > i[data-h="nw"]::after { left: 14px; top: 14px; border-top-width: 4px; border-left-width: 4px; }
+html.msgr .pe-crop > i[data-h="ne"]::after { right: 14px; top: 14px; border-top-width: 4px; border-right-width: 4px; }
+html.msgr .pe-crop > i[data-h="sw"]::after { left: 14px; bottom: 14px; border-bottom-width: 4px; border-left-width: 4px; }
+html.msgr .pe-crop > i[data-h="se"]::after { right: 14px; bottom: 14px; border-bottom-width: 4px; border-right-width: 4px; }
+html.msgr .pe-crop > i[data-h="n"], html.msgr .pe-crop > i[data-h="s"] { left: 26px; right: 26px; width: auto; height: 28px; }
+html.msgr .pe-crop > i[data-h="n"] { top: -14px; }
+html.msgr .pe-crop > i[data-h="s"] { bottom: -14px; }
+html.msgr .pe-crop > i[data-h="e"], html.msgr .pe-crop > i[data-h="w"] { top: 26px; bottom: 26px; height: auto; width: 28px; }
+html.msgr .pe-crop > i[data-h="e"] { right: -14px; }
+html.msgr .pe-crop > i[data-h="w"] { left: -14px; }
+html.msgr .pe-panel { flex: 0 0 auto; padding: 8px 14px 6px; display: flex; flex-direction: column; gap: 10px; }
+html.msgr .pe-panel[hidden] { display: none; }
+html.msgr .pe-row { display: flex; justify-content: center; align-items: center; gap: 10px; }
+html.msgr .pe-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 18px;
+}
+html.msgr .pe-icon:active { background: rgba(255, 255, 255, 0.28); }
+html.msgr .pe-chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 4px; scrollbar-width: none; justify-content: safe center; }
+html.msgr .pe-chips::-webkit-scrollbar { display: none; }
+html.msgr .pe-chip {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+html.msgr .pe-chip.is-on { background: var(--tint-fill); color: #ffffff; }
+html.msgr .pe-slider { display: grid; grid-template-columns: 78px minmax(0, 1fr) 34px; align-items: center; gap: 10px; font-size: 13.5px; }
+html.msgr .pe-slider output { text-align: end; color: rgba(255, 255, 255, 0.7); font-variant-numeric: tabular-nums; }
+html.msgr .pe-slider input { width: 100%; accent-color: var(--tint-fill); }
+html.msgr .pe-tabs { flex: 0 0 auto; display: flex; justify-content: center; gap: 28px; padding: 6px 14px max(env(safe-area-inset-bottom), 10px); }
+html.msgr .pe-tab {
+  min-width: 78px;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.62);
+  font: inherit;
+  font-size: 12px;
+}
+html.msgr .pe-tab i { font-size: 19px; }
+html.msgr .pe-tab.is-on { color: var(--tint); }
+
+/* ---- the sheet the chosen pictures open ----------------------------------------- */
+
+html.msgr .pc-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: max(env(safe-area-inset-top), 10px) 10px 8px;
+}
+html.msgr .pc-btn {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 18px;
+}
+html.msgr .pc-title { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; padding-inline: 4px; }
+html.msgr .pc-title strong { font-size: 16px; font-weight: 600; }
+html.msgr .pc-title span { color: rgba(255, 255, 255, 0.66); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html.msgr .pc-mode { flex: 0 0 auto; display: inline-flex; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
+html.msgr .pc-mode button {
+  min-height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+html.msgr .pc-mode button.is-on { background: #ffffff; color: #000000; }
+html.msgr .pc-stage { flex: 1 1 auto; min-height: 0; display: grid; place-items: center; padding: 6px 12px; overflow: hidden; }
+html.msgr .pc-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; -webkit-user-drag: none; }
+html.msgr .pc-strip { flex: 0 0 auto; display: flex; gap: 8px; padding: 6px 14px; overflow-x: auto; scrollbar-width: none; justify-content: safe center; }
+html.msgr .pc-strip[hidden] { display: none; }
+html.msgr .pc-strip::-webkit-scrollbar { display: none; }
+html.msgr .pc-thumb {
+  flex: 0 0 auto;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #1c1c1e;
+  opacity: 0.7;
+}
+html.msgr .pc-thumb.is-on { border-color: var(--tint); opacity: 1; }
+html.msgr .pc-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+html.msgr .pc-foot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 12px calc(var(--app-keyboard-inset, 0px) + max(env(safe-area-inset-bottom), 12px));
+}
+html.msgr .pc-tools { display: flex; justify-content: center; gap: 10px; }
+html.msgr .pc-tool {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+}
+html.msgr .pc-tool[hidden] { display: none; }
+html.msgr .pc-note { margin: 0; text-align: center; color: rgba(255, 255, 255, 0.62); font-size: 12.5px; line-height: 1.35; }
+html.msgr .pc-send { display: flex; align-items: center; gap: 8px; }
+html.msgr .pc-caption {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+}
+html.msgr .pc-caption[hidden] { display: none; }
+html.msgr .pc-caption::placeholder { color: rgba(255, 255, 255, 0.5); }
+html.msgr .pc-go {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  margin-inline-start: auto;
+  border: 0;
+  border-radius: 50%;
+  background: var(--tint-fill);
+  color: #ffffff;
+  font-size: 18px;
+}
+html.msgr .pc-go:disabled { opacity: 0.5; }
+html.msgr .pc-go i { transform: translateX(-1px); }
+html[dir="rtl"].msgr .pc-go i { transform: scaleX(-1) translateX(-1px); }
+@media (min-width: 768px) {
+  html.msgr .pc-foot, html.msgr .pe-panel, html.msgr .pe-tabs { max-width: 560px; width: 100%; align-self: center; }
+}
+
+/* ---- a sticker or a GIF has no bubble ----------------------------------------
+   The picture is the message: no background, no border, no padding, no tail, and the
+   time sits on the picture in a dark pill, as on every other messenger. The bubble
+   rule of the thread (css/ui/30-thread.css) paints every bubble, and the older rule
+   that made a sticker transparent (css/styles.css) is below it in the cascade. */
+html.msgr .chat-messages-panel .chat-message-bubble.chat-sticker-bubble.chat-sticker-bubble,
+html.msgr .chat-messages-panel .chat-message-bubble.chat-sticker-bubble.chat-sticker-bubble.me,
+html.msgr .chat-messages-panel .chat-message-bubble.chat-sticker-bubble.chat-sticker-bubble.them {
+  position: relative;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  min-width: 0;
+}
+html.msgr .chat-sticker-bubble .chat-sticker-body { border-radius: 14px; overflow: hidden; }
+html.msgr .chat-sticker-bubble:not(.is-missing) > .chat-message-meta {
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-end: 6px;
+  width: max-content;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+html.msgr .chat-sticker-bubble:not(.is-missing) > .chat-message-meta * { color: inherit; }
+
+/* The colours of the pen. */
+html.msgr .pe-swatch {
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: var(--ink);
+}
+html.msgr .pe-swatch.is-on { border-color: #ffffff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.28); }
+html.msgr .pe-chip i { margin-inline-end: 4px; }
+
+/* A video among the thumbnails carries a play mark. */
+html.msgr .pc-thumb.is-video { position: relative; }
+html.msgr .pc-thumb.is-video > i { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 13px; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); pointer-events: none; }

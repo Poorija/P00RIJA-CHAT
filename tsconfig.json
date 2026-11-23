@@ -1,0 +1,28 @@
+{
+  // Roadmap 2.2: types, checked, without a compile step. The ES modules that
+  // carry the cryptography (js/crypto/) and the relay's own modules that hold
+  // state and keys (key log, state database, SFU rooms) are checked with
+  // TypeScript from their JSDoc; nothing is emitted, the files ship as they
+  // are. `npm run check:types` runs it, and the regression gate runs every
+  // check:* script.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["es2023", "dom", "dom.iterable", "webworker.importscripts"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": [
+    "js/crypto/*.js",
+    "scripts/lib/key-log.js",
+    "scripts/lib/state-db.js",
+    "scripts/lib/sfu-rooms.js",
+    "types/*.d.ts"
+  ]
+}

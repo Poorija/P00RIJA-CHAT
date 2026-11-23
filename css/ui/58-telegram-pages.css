@@ -1,0 +1,632 @@
+/* The four pages Settings reaches that are still the heap of cards of the app
+   this chat was cut from — Migration and backup, File manager, Help, About —
+   drawn as Telegram draws its settings: a small header above each group, the
+   group one rounded surface of rows that are told apart by a hairline, a
+   sentence under it in the muted tone, and what you press as a full-width
+   blue button, not a gradient pill inside a card inside a card.
+
+   They are the app's own nodes (the chat's code finds them by id), so this is
+   drawn by what they are called, not rebuilt. */
+
+/* ---- the page ------------------------------------------------------------------ */
+
+html.msgr #mainApp .tab-content:is(#content-migration, #content-help, #content-vault, #content-about) > .max-w-4xl {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 4px var(--gutter) 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+html.msgr #mainApp .tab-content:is(#content-migration, #content-help, #content-vault, #content-about) > .max-w-4xl > * { margin: 0; }
+
+/* A card of the old app is not a surface here: the groups inside it are. */
+html.msgr #mainApp .tab-content:is(#content-migration, #content-help, #content-vault, #content-about) .glass.rounded-2xl {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Titles are group headers: small, muted, above the surface they name. */
+html.msgr #mainApp .tab-content:is(#content-migration, #content-vault) .glass.rounded-2xl > h2 {
+  order: 0;
+  margin: 26px 16px 7px;
+  font-size: calc(13px * var(--fs, 1));
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  text-align: start;
+  text-transform: uppercase;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+  color: var(--label-2);
+}
+html.msgr #mainApp .tab-content:is(#content-migration, #content-vault) > .max-w-4xl > .glass.rounded-2xl:first-child > h2 { margin-top: 12px; }
+/* What the old card said under its title goes under the group, as its footer. */
+html.msgr #mainApp .tab-content:is(#content-migration, #content-vault) .glass.rounded-2xl > p {
+  order: 9;
+  margin: 8px 16px 0;
+  font-size: calc(13px * var(--fs, 1));
+  line-height: 1.45;
+  text-align: start;
+  color: var(--label-2);
+  opacity: 1;
+}
+html.msgr #mainApp .tab-content:is(#content-migration, #content-vault) .glass.rounded-2xl > :not(h2):not(p) { order: 1; }
+
+/* ---- migration and backup: groups of fields ------------------------------------ */
+
+html.msgr #mainApp .tab-content#content-migration .glass.rounded-2xl > .grid { display: flex; flex-direction: column; gap: 22px; }
+html.msgr #mainApp .tab-content#content-migration .space-y-3,
+html.msgr #mainApp .tab-content#content-migration .space-y-4 { display: flex; flex-direction: column; gap: 0; }
+html.msgr #mainApp .tab-content#content-migration .space-y-3 > *,
+html.msgr #mainApp .tab-content#content-migration .space-y-4 > * { margin: 0; }
+html.msgr #mainApp .tab-content#content-migration .space-y-3 {
+  border-radius: var(--r-card);
+  background: var(--cell);
+  overflow: hidden;
+}
+html.msgr #mainApp .tab-content#content-migration .space-y-3 > h3 {
+  margin: 0;
+  padding: 14px 16px 6px;
+  font-size: calc(13px * var(--fs, 1));
+  font-weight: 600;
+  color: var(--label-2);
+}
+html.msgr #mainApp .tab-content#content-migration .space-y-3 > p.vault-backup-status { margin: 0; padding: 0 16px 12px; font-size: calc(13px * var(--fs, 1)); color: var(--label-2); }
+html.msgr #mainApp .tab-content#content-migration .space-y-3 > p.vault-backup-status:empty { display: none; }
+
+/* A field is a row of the group: no box of its own. */
+html.msgr #mainApp .tab-content:is(#content-migration) :is(input[type="text"], input[type="password"], input[type="email"], input:not([type])) {
+  width: 100%;
+  height: 52px;
+  margin: 0;
+  padding: 0 16px;
+  border: 0;
+  border-top: 0.5px solid var(--sep);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--label);
+  font-size: calc(17px * var(--fs, 1));
+}
+html.msgr #mainApp .tab-content:is(#content-migration) :is(input[type="text"], input[type="password"], input:not([type]))::placeholder { color: var(--label-3); }
+html.msgr #mainApp .tab-content:is(#content-migration) :is(input[type="text"], input[type="password"], input:not([type])):focus { outline: none; background: color-mix(in srgb, var(--tint) 8%, transparent); }
+
+/* The password of an export or an import: its label is the group's header, the
+   field the row, the eye the end of the row. */
+html.msgr #mainApp .tab-content#content-migration .flex-1.w-full.relative {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  overflow: hidden;
+}
+html.msgr #mainApp .tab-content#content-migration .flex-1.w-full.relative > label { margin: 0; padding: 14px 16px 6px; font-size: calc(13px * var(--fs, 1)); font-weight: 600; color: var(--label-2); }
+html.msgr #mainApp .tab-content#content-migration .flex-1.w-full.relative > input { padding-inline-start: 16px; padding-inline-end: 52px; }
+html.msgr #mainApp .tab-content#content-migration .flex-1.w-full.relative > .absolute {
+  position: absolute;
+  inset: auto 6px 6px auto;
+  top: auto;
+  bottom: 4px;
+  left: auto;
+  right: 8px;
+  transform: none;
+}
+html.msgr[dir="rtl"] #mainApp .tab-content#content-migration .flex-1.w-full.relative > .absolute { right: auto; left: 8px; }
+html.msgr #mainApp .tab-content#content-migration .flex-1.w-full.relative > .absolute button { width: 44px; height: 44px; color: var(--label-2); background: transparent; border: 0; }
+html.msgr #mainApp .tab-content#content-migration .flex.flex-col.items-end { align-items: stretch; gap: 12px; }
+
+/* The file to restore from: a row that opens the chooser, not a native control. */
+html.msgr #mainApp .tab-content#content-migration input[type="file"] { display: none; }
+html.msgr #mainApp .tab-content#content-migration .msgr-filepick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 0;
+  border-top: 0.5px solid var(--sep);
+  border-radius: 0;
+  background: transparent;
+  color: var(--tint);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  text-align: start;
+}
+html.msgr #mainApp .tab-content#content-migration .msgr-filepick:active { background: var(--cell-press); }
+html.msgr #mainApp .tab-content#content-migration .msgr-filepick i { width: 22px; text-align: center; }
+html.msgr #mainApp .tab-content#content-migration .msgr-filepick .msgr-filename { margin-inline-start: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label-2); font-size: calc(15px * var(--fs, 1)); }
+
+/* The file to import: the dashed drop zone is a row too. */
+html.msgr #mainApp .tab-content#content-migration button.border-dashed {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  color: var(--tint);
+  font-size: calc(17px * var(--fs, 1));
+  text-align: start;
+}
+html.msgr #mainApp .tab-content#content-migration button.border-dashed:active { background: var(--cell-press); }
+html.msgr #mainApp .tab-content#content-migration button.border-dashed i { font-size: calc(20px * var(--fs, 1)); color: var(--tint); margin: 0; }
+html.msgr #mainApp .tab-content#content-migration button.border-dashed span { color: var(--tint); font-size: inherit; }
+
+/* ---- the buttons: Telegram's — one filled, full-width, 50 high, 14 round ------------ */
+
+html.msgr #mainApp .tab-content:is(#content-migration, #content-about, #content-vault) button:is([class*="bg-brand"], [class*="bg-emerald"], [class*="bg-gradient"], [class*="bg-blue"], [class*="bg-sky"], [class*="bg-indigo"]) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: calc(100% - 24px);
+  min-height: 50px;
+  margin: 12px 12px 12px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--tint-fill);
+  color: var(--on-tint, #fff);
+  font-size: calc(17px * var(--fs, 1));
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: none;
+  text-shadow: none;
+  transition: transform 0.14s var(--ease), filter 0.14s var(--ease), opacity 0.14s;
+}
+html.msgr #mainApp .tab-content:is(#content-migration, #content-about, #content-vault) button:is([class*="bg-brand"], [class*="bg-emerald"], [class*="bg-gradient"], [class*="bg-blue"], [class*="bg-sky"], [class*="bg-indigo"]):active { transform: scale(0.98); filter: brightness(0.92); }
+html.msgr #mainApp .tab-content:is(#content-migration, #content-about, #content-vault) button:is([class*="bg-brand"], [class*="bg-emerald"], [class*="bg-gradient"])[disabled] { opacity: 0.45; }
+html.msgr #mainApp .tab-content:is(#content-migration, #content-about, #content-vault) button:is([class*="bg-brand"], [class*="bg-emerald"], [class*="bg-gradient"]) i { margin: 0; font-size: calc(17px * var(--fs, 1)); }
+/* Restoring is the other thing the page does: the same button, in the tint. */
+html.msgr #mainApp .tab-content#content-migration #vaultRestoreBtn { background: color-mix(in srgb, var(--tint) 16%, transparent); color: var(--tint); }
+html.msgr #mainApp .tab-content#content-migration #vaultRestoreBtn:active { background: color-mix(in srgb, var(--tint) 26%, transparent); filter: none; }
+html.msgr #mainApp .tab-content#content-migration button.border-dashed.bg-brand-500 { background: var(--cell); color: var(--tint); }
+
+/* ---- help ---------------------------------------------------------------------------- */
+
+html.msgr #mainApp .tab-content#content-help .glass.rounded-2xl > h2 {
+  margin: 14px 0 4px;
+  font-size: calc(28px * var(--fs, 1));
+  line-height: 1.15;
+  font-weight: 700;
+  text-align: start;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+  color: var(--label);
+}
+html.msgr #mainApp .tab-content#content-help .glass.rounded-2xl > p { margin: 0 0 14px; font-size: calc(15px * var(--fs, 1)); line-height: 1.4; text-align: start; color: var(--label-2); }
+html.msgr #mainApp .tab-content#content-help .poorija-help { display: flex; flex-direction: column; gap: 0; }
+
+/* The search field of Telegram: a grey rounded field with the glass on its start. */
+html.msgr #mainApp .tab-content#content-help .poorija-help-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fill);
+}
+html.msgr #mainApp .tab-content#content-help .poorija-help-search > i { flex: none; color: var(--label-2); font-size: calc(15px * var(--fs, 1)); }
+html.msgr #mainApp .tab-content#content-help .poorija-help-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--label);
+  font-size: calc(17px * var(--fs, 1));
+}
+html.msgr #mainApp .tab-content#content-help .poorija-help-search input:focus { outline: none; }
+
+/* The topics: one row that scrolls sideways, the chosen one lit. */
+html.msgr #mainApp .tab-content#content-help .poorija-help-cats {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin: 12px calc(var(--gutter) * -1) 0;
+  padding: 0 var(--gutter) 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+html.msgr #mainApp .tab-content#content-help .poorija-help-cats::-webkit-scrollbar { display: none; }
+html.msgr #mainApp .tab-content#content-help .poorija-help-cat {
+  flex: none;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 17px;
+  background: var(--fill);
+  color: var(--label);
+  font-size: calc(15px * var(--fs, 1));
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: none;
+}
+html.msgr #mainApp .tab-content#content-help .poorija-help-cat.is-on { background: var(--tint-fill); color: var(--on-tint, #fff); }
+
+/* The answers: one surface of rows, each opening in place. */
+html.msgr #mainApp .tab-content#content-help .poorija-help-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 16px;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  overflow: hidden;
+}
+html.msgr #mainApp .tab-content#content-help .poorija-help-entry {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+html.msgr #mainApp .tab-content#content-help .poorija-help-entry + .poorija-help-entry { border-top: 0.5px solid var(--sep); }
+html.msgr #mainApp .tab-content#content-help .poorija-help-entry > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px 16px;
+  color: var(--label);
+  font-size: calc(17px * var(--fs, 1));
+  line-height: 1.3;
+  list-style: none;
+  cursor: pointer;
+}
+html.msgr #mainApp .tab-content#content-help .poorija-help-entry > summary::-webkit-details-marker { display: none; }
+html.msgr #mainApp .tab-content#content-help .poorija-help-entry > summary:active { background: var(--cell-press); }
+html.msgr #mainApp .tab-content#content-help .poorija-help-entry > summary > span:last-child,
+html.msgr #mainApp .tab-content#content-help .poorija-help-entry > summary small { margin-inline-start: auto; color: var(--label-2); font-size: calc(13px * var(--fs, 1)); font-weight: 400; }
+html.msgr #mainApp .tab-content#content-help .poorija-help-entry > summary::after {
+  content: "\f054";
+  font-family: "Font Awesome 6 Free", "Font Awesome 5 Free";
+  font-weight: 900;
+  flex: none;
+  font-size: 12px;
+  color: var(--label-3);
+  transition: transform 0.2s var(--ease);
+}
+html.msgr[dir="rtl"] #mainApp .tab-content#content-help .poorija-help-entry > summary::after { transform: scaleX(-1); }
+html.msgr #mainApp .tab-content#content-help .poorija-help-entry[open] > summary::after { transform: rotate(90deg); }
+html.msgr[dir="rtl"] #mainApp .tab-content#content-help .poorija-help-entry[open] > summary::after { transform: rotate(90deg); }
+html.msgr #mainApp .tab-content#content-help .poorija-help-body { padding: 0 16px 14px; color: var(--label-2); font-size: calc(15px * var(--fs, 1)); line-height: 1.55; }
+html.msgr #mainApp .tab-content#content-help .poorija-help-body :is(p, li) { color: inherit; }
+
+/* ---- the file manager's storage, as Telegram's Storage Usage ------------------------- */
+
+html.msgr #mainApp .tab-content#content-vault .chat-files-card {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+html.msgr #mainApp .tab-content#content-vault .chat-files-head { display: flex; align-items: center; justify-content: space-between; margin: 0 16px 8px; font-size: calc(13px * var(--fs, 1)); text-transform: uppercase; letter-spacing: 0.2px; color: var(--label-2); }
+html.msgr #mainApp .tab-content#content-vault .chat-files-head { justify-content: flex-end; margin: 0 4px 8px; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-head > span { display: none; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-head .chat-storage-refresh { width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--fill); color: var(--tint); }
+html.msgr #mainApp .tab-content#content-vault .chat-files-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 18px 0 0;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  overflow: hidden;
+}
+html.msgr #mainApp .tab-content#content-vault .chat-files-summary > svg { align-self: center; width: 168px; height: 168px; margin-bottom: 10px; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-legend { display: flex; flex-direction: column; gap: 0; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 0;
+  border-top: 0.5px solid var(--sep);
+  border-radius: 0;
+  background: transparent;
+  color: var(--label);
+  font-size: calc(17px * var(--fs, 1));
+  text-align: start;
+}
+html.msgr #mainApp .tab-content#content-vault .chat-files-legend-row:active { background: var(--cell-press); }
+html.msgr #mainApp .tab-content#content-vault .chat-files-legend-name { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-legend-size { color: var(--label-2); font-size: calc(15px * var(--fs, 1)); font-variant-numeric: tabular-nums; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-legend-share { min-width: 44px; text-align: end; color: var(--label-3); font-size: calc(15px * var(--fs, 1)); font-variant-numeric: tabular-nums; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-quota { margin: 12px 16px 0; color: var(--label-2); font-size: calc(13px * var(--fs, 1)); }
+html.msgr #mainApp .tab-content#content-vault .chat-files-quota-bar { height: 6px; margin-bottom: 8px; border-radius: 3px; background: var(--fill-2); overflow: hidden; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-controls { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-chips { display: flex; flex-wrap: nowrap; gap: 8px; margin: 0 calc(var(--gutter) * -1); padding: 0 var(--gutter); overflow-x: auto; scrollbar-width: none; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-chips::-webkit-scrollbar { display: none; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-chip {
+  flex: none;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 17px;
+  background: var(--fill);
+  color: var(--label);
+  font-size: calc(15px * var(--fs, 1));
+  font-weight: 500;
+  box-shadow: none;
+}
+html.msgr #mainApp .tab-content#content-vault .chat-files-chip.is-on { background: var(--tint-fill); color: var(--on-tint, #fff); }
+html.msgr #mainApp .tab-content#content-vault .chat-files-tools { display: flex; gap: 8px; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-tools input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--fill); color: var(--label); font-size: calc(17px * var(--fs, 1)); }
+html.msgr #mainApp .tab-content#content-vault .chat-files-tools .chat-soft-btn { flex: none; height: 40px; border-radius: 12px; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-list { margin-top: 12px; border-radius: var(--r-card); background: var(--cell); overflow: hidden; }
+html.msgr #mainApp .tab-content#content-vault .chat-files-empty { padding: 28px 16px; text-align: center; color: var(--label-2); font-size: calc(15px * var(--fs, 1)); }
+html.msgr #mainApp .tab-content#content-vault #vaultStatus { margin: 8px 16px 0; color: var(--label-2); font-size: calc(13px * var(--fs, 1)); opacity: 1; }
+
+/* ---- about ----------------------------------------------------------------------------- */
+
+html.msgr #mainApp .tab-content#content-about #aboutCard { align-items: stretch; text-align: center; }
+html.msgr #mainApp .tab-content#content-about #aboutLogoEgg { width: 96px; height: 96px; margin: 10px auto 12px; }
+html.msgr #mainApp .tab-content#content-about #aboutLogoEgg > .absolute { display: none; }
+html.msgr #mainApp .tab-content#content-about #aboutLogoEgg > div:last-child { border: 0; border-radius: 22px; background: transparent; overflow: hidden; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28); }
+html.msgr #mainApp .tab-content#content-about .about-name {
+  margin: 0 0 2px;
+  font-size: calc(26px * var(--fs, 1));
+  font-weight: 700;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+  color: var(--label);
+}
+html.msgr #mainApp .tab-content#content-about :is(.about-role, #aboutVersion) { margin: 0 0 2px; font-family: var(--ui-font); font-size: calc(15px * var(--fs, 1)); font-weight: 400; letter-spacing: 0; color: var(--label-2); }
+html.msgr #mainApp .tab-content#content-about #aboutCard > .flex-col {
+  gap: 0;
+  width: 100%;
+  max-width: none;
+  margin: 22px 0 0;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  overflow: hidden;
+}
+html.msgr #mainApp .tab-content#content-about #aboutCard > .flex-col > a {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  min-height: 60px;
+  padding: 8px 16px;
+  border-radius: 0;
+  background: transparent;
+  text-align: start;
+}
+html.msgr #mainApp .tab-content#content-about #aboutCard > .flex-col > a + a { border-top: 0.5px solid var(--sep); }
+html.msgr #mainApp .tab-content#content-about #aboutCard > .flex-col > a:active { background: var(--cell-press); }
+html.msgr #mainApp .tab-content#content-about #aboutCard > .flex-col > a > i { width: 28px; text-align: center; font-size: calc(22px * var(--fs, 1)); color: var(--tint); }
+html.msgr #mainApp .tab-content#content-about #aboutCard > .flex-col > a > div { text-align: start; min-width: 0; }
+html.msgr #mainApp .tab-content#content-about #aboutCard > .flex-col > a > div > :first-child { color: var(--label-2); font-size: calc(13px * var(--fs, 1)); }
+html.msgr #mainApp .tab-content#content-about #aboutCard > .flex-col > a > div > :last-child { color: var(--tint); font-size: calc(17px * var(--fs, 1)); font-weight: 400; overflow-wrap: anywhere; }
+
+html.msgr #mainApp .tab-content#content-about .about-donate { margin: 22px 0 0; padding: 14px 16px 16px; border: 0; border-radius: var(--r-card); background: var(--cell); box-shadow: none; text-align: start; }
+html.msgr #mainApp .tab-content#content-about .about-donate-head { justify-content: flex-start; gap: 8px; margin-bottom: 4px; }
+html.msgr #mainApp .tab-content#content-about .about-donate-head h3 { margin: 0; font-size: calc(17px * var(--fs, 1)); font-weight: 600; color: var(--label); }
+html.msgr #mainApp .tab-content#content-about .about-donate-hint { margin: 0 0 12px; font-size: calc(15px * var(--fs, 1)); line-height: 1.45; color: var(--label-2); }
+html.msgr #mainApp .tab-content#content-about .about-donate-address { width: 100%; border: 0; border-radius: 12px; background: var(--fill); }
+html.msgr #mainApp .tab-content#content-about .about-donate-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+html.msgr #mainApp .tab-content#content-about .about-donate-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; min-height: 50px; padding: 0 20px; border: 0; border-radius: 14px;
+  background: color-mix(in srgb, var(--tint) 16%, transparent); color: var(--tint);
+  font-size: calc(17px * var(--fs, 1)); font-weight: 600; box-shadow: none;
+}
+html.msgr #mainApp .tab-content#content-about .about-donate-btn.is-primary { background: var(--tint-fill); color: var(--on-tint, #fff); }
+html.msgr #mainApp .tab-content#content-about #aboutCard > .mt-12 { width: 100%; max-width: none; margin: 22px 0 0; padding: 14px 16px; border: 0; border-radius: var(--r-card); background: var(--cell); text-align: start; }
+
+/* ---- chat wallpapers: Telegram's grid of thumbnails, the chosen one ringed and ticked ---- */
+
+html.msgr .chat-bg-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 16px;
+}
+html.msgr .chat-bg-swatch {
+  position: relative;
+  height: 108px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background-color: var(--fill);
+  background-size: cover;
+  background-position: center;
+  color: #fff;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 0.5px var(--sep);
+  transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease);
+}
+/* The picture is the swatch's own (--sw, set where it is drawn): a rule that
+   resets a button's background never reaches it. */
+html.msgr #mainApp .tab-content .chat-bg-grid button.chat-bg-swatch { background-image: var(--sw, none); background-color: var(--fill); background-size: cover; background-position: center; }
+html.msgr .chat-bg-swatch:active { transform: scale(0.97); }
+html.msgr .chat-bg-swatch > span {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  padding: 18px 6px 7px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+  color: #fff;
+  font-size: calc(12px * var(--fs, 1));
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html.msgr .chat-bg-swatch.is-on { box-shadow: 0 0 0 3px var(--tint-fill), inset 0 0 0 0.5px var(--sep); }
+html.msgr .chat-bg-swatch.is-on::after {
+  content: "\f00c";
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--tint-fill);
+  color: #fff;
+  font-family: "Font Awesome 6 Free", "Font Awesome 5 Free";
+  font-weight: 900;
+  font-size: 11px;
+}
+
+/* ---- the sticker packs manager, a page of Settings' kind ---------------------------------- */
+
+html.msgr body .packman-card {
+  background: var(--bg);
+  color: var(--label);
+  border: 0;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+html.msgr body .packman-backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: none; }
+html.msgr body .packman-head {
+  position: relative;
+  justify-content: center;
+  min-height: calc(52px + var(--pwa-safe-top, env(safe-area-inset-top, 0px)));
+  padding: calc(6px + var(--pwa-safe-top, env(safe-area-inset-top, 0px))) 12px 6px;
+  border-bottom: 0.5px solid var(--sep);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
+html.msgr body .packman-head h3 { flex: none; font-size: calc(17px * var(--fs, 1)); font-weight: 600; color: var(--label); text-align: center; }
+html.msgr body .packman-back {
+  position: absolute;
+  inset-inline-start: 6px;
+  bottom: 4px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tint);
+}
+html.msgr body .packman-back i { font-size: calc(18px * var(--fs, 1)); }
+html.msgr body .packman-body { padding: 0 var(--gutter) 12px; }
+html.msgr body .packman-note { margin: 14px 16px 0; font-size: calc(13px * var(--fs, 1)); line-height: 1.45; opacity: 1; color: var(--label-2); order: 2; }
+html.msgr body .packman-body { display: flex; flex-direction: column; }
+html.msgr body .packman-list { order: 1; margin-top: 14px; gap: 0; border-radius: var(--r-card); background: var(--cell); overflow: hidden; }
+html.msgr body .packman-row { gap: 12px; min-height: 64px; padding: 8px 14px; border: 0; border-radius: 0; background: transparent; }
+html.msgr body .packman-row + .packman-row { border-top: 0.5px solid var(--sep); }
+html.msgr body .packman-row.on { background: color-mix(in srgb, var(--tint) 12%, transparent); }
+html.msgr body .packman-row input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--tint-fill); }
+html.msgr body .packman-thumb { width: 44px; height: 44px; border-radius: 10px; background: var(--fill); }
+html.msgr body .packman-name { font-size: calc(17px * var(--fs, 1)); font-weight: 500; color: var(--label); border: 0; }
+html.msgr body .packman-name:focus { outline: none; background: var(--fill); border-radius: 8px; }
+html.msgr body .packman-count { font-size: calc(13px * var(--fs, 1)); opacity: 1; color: var(--label-2); }
+html.msgr body :is(.packman-share, .packman-move button) {
+  width: 36px; height: 36px; border: 0; border-radius: 50%;
+  background: var(--fill); color: var(--tint);
+}
+html.msgr body .packman-move button { color: var(--label-2); }
+html.msgr body .packman-foot {
+  gap: 10px;
+  padding: 10px var(--gutter) calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 0.5px solid var(--sep);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
+html.msgr body .packman-bulk {
+  min-height: 50px; border: 0; border-radius: 14px;
+  background: var(--tint-fill); color: var(--on-tint, #fff);
+  font-size: calc(17px * var(--fs, 1)); font-weight: 600;
+}
+html.msgr body .packman-bulk.is-danger { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+html.msgr body .packman-bulk:disabled { opacity: 0.4; }
+html.msgr body .packman-list > :not(.packman-row) { padding: 22px 16px; text-align: center; color: var(--label-2); font-size: calc(15px * var(--fs, 1)); }
+html.msgr body .packman-foot { flex-wrap: wrap; }
+html.msgr body .packman-count { flex: 1 0 100%; text-align: center; align-self: auto; }
+html.msgr body .packman-bulk { flex: 1 1 0; white-space: nowrap; padding: 0 10px; font-size: calc(16px * var(--fs, 1)); }
+
+/* ---- Telegram's buttons: what a page asks you to press, not a row that opens something ------ */
+
+html.msgr .msgr-btns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 var(--gutter) 0;
+}
+html.msgr .msgr-group-head + .msgr-btns, html.msgr .msgr-btns:first-child { margin-top: 0; }
+html.msgr .msgr-btns + .msgr-group-head { margin-top: 26px; }
+html.msgr .tg-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 50px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tint) 16%, transparent);
+  color: var(--tint);
+  font-size: calc(16px * var(--fs, 1));
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  box-shadow: none;
+  transition: transform 0.14s var(--ease), background 0.14s var(--ease), filter 0.14s var(--ease);
+}
+html.msgr .tg-btn > span { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+html.msgr .tg-btn i { flex: none; font-size: calc(16px * var(--fs, 1)); }
+html.msgr .tg-btn:active { transform: scale(0.97); background: color-mix(in srgb, var(--tint) 28%, transparent); }
+html.msgr .tg-btn.is-primary { background: var(--tint-fill); color: var(--on-tint, #fff); }
+html.msgr .tg-btn.is-primary:active { background: var(--tint-fill); filter: brightness(0.9); }
+html.msgr .tg-btn.is-danger { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+html.msgr .tg-btn.is-danger:active { background: color-mix(in srgb, var(--red) 26%, transparent); }
+html.msgr .tg-btn.is-wide { grid-column: 1 / -1; }
+html.msgr .tg-btn[disabled] { opacity: 0.45; pointer-events: none; }
+
+/* ---- the chat list with nothing in it ------------------------------------------------------- */
+
+html.msgr .chat-list .chat-empty-state.msgr-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 340px;
+  margin: 18vh auto 0;
+  padding: 0 24px;
+  text-align: center;
+}
+html.msgr .msgr-empty > i { margin-bottom: 8px; font-size: 64px; line-height: 1; color: var(--tint); opacity: 0.9; }
+html.msgr .msgr-empty-title { color: var(--label); font-size: calc(21px * var(--fs, 1)); font-weight: 700; }
+html.msgr .msgr-empty-sub { color: var(--label-2); font-size: calc(15px * var(--fs, 1)); line-height: 1.45; }
+html.msgr .msgr-empty .tg-btn { width: auto; min-width: 220px; margin-top: 14px; }

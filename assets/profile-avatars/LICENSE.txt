@@ -1,0 +1,13 @@
+Preset avatar sources
+
+These files were generated locally as SVG through the DiceBear 10 HTTP API and are bundled for offline use. The application redraws the selected SVG into a raster JPEG before storing or sharing it.
+
+- aegis-v2.svg: Adventurer by Lisa Wischofsky. CC BY 4.0. Source: https://www.dicebear.com/styles/adventurer/ License: https://creativecommons.org/licenses/by/4.0/
+- cipher-v2.svg: Bottts by Pablo Stanley. Free for personal and commercial use. Source and terms: https://www.dicebear.com/styles/bottts/
+- nebula-v2.svg: Fun Emoji by DiceBear. CC0 1.0. Source: https://www.dicebear.com/styles/fun-emoji/
+- onyx-v2.svg: Lorelei by DiceBear. CC0 1.0. Source: https://www.dicebear.com/styles/lorelei/
+- saffron-v2.svg: Notionists by Zoish. CC0 1.0. Source: https://www.dicebear.com/styles/notionists/
+- teal-v2.svg: Open Peeps by Pablo Stanley. CC0 1.0. Source: https://www.dicebear.com/styles/open-peeps/
+
+CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+DiceBear source and license information: https://www.dicebear.com/licenses/

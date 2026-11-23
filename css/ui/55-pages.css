@@ -1,0 +1,617 @@
+/* The pages of Settings (js/messenger-settings.js): inset-grouped lists on the
+   grey ground, as in Telegram's and iOS's own Settings. A row is a coloured
+   tile, a label, what it is set to, and a chevron when it opens a page. */
+
+/* The old tab was a heap of cards; only the pages are shown. */
+html.msgr #content-settings > :not(#msgrPages):not(.shared-section-lock):not(#msgrParked) { display: none; }
+html.msgr #msgrParked { display: none; }
+
+/* The shared lock's card is the door of a locked section, and nothing else:
+   its controls are rows of Privacy and Security now. */
+html.msgr .tab-content:not(.shared-section-locked) > .shared-section-lock { display: none; }
+html.msgr .tab-content.shared-section-locked > .shared-section-lock {
+  max-width: 420px;
+  margin: 12vh auto 0;
+  padding: 24px 20px;
+  text-align: center;
+}
+
+html.msgr .msgr-pages {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 4px var(--gutter) 8px;
+}
+@media (min-width: 768px) { html.msgr .msgr-pages { padding-top: 24px; } }
+html.msgr .msgr-page[hidden] { display: none; }
+html.msgr .msgr-page.is-push { animation: msgr-push 0.42s var(--ease) both; }
+html.msgr .msgr-page.is-pop { animation: msgr-pop 0.42s var(--ease) both; }
+@keyframes msgr-push { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes msgr-pop { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+html[dir="rtl"].msgr .msgr-page.is-push { animation-name: msgr-push-rtl; }
+html[dir="rtl"].msgr .msgr-page.is-pop { animation-name: msgr-pop-rtl; }
+@keyframes msgr-push-rtl { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@keyframes msgr-pop-rtl { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  html.msgr .msgr-page.is-push, html.msgr .msgr-page.is-pop { animation: none; }
+}
+
+/* ---- groups ------------------------------------------------------------------ */
+
+html.msgr .msgr-pages .msgr-group-head {
+  margin: 26px 16px 7px;
+  font-size: calc(13px * var(--fs, 1));
+  line-height: 1.3;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: var(--label-2);
+}
+html.msgr .msgr-pages .msgr-group-foot { margin: 8px 16px 0; font-size: calc(13px * var(--fs, 1)); line-height: 1.4; color: var(--label-2); }
+html.msgr .msgr-pages .msgr-group {
+  margin-top: 22px;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  overflow: hidden;
+}
+html.msgr .msgr-pages .msgr-group-head + .msgr-group { margin-top: 0; }
+html.msgr .msgr-pages .msgr-page-body > .msgr-block:first-child > .msgr-group:first-child { margin-top: 12px; }
+
+/* ---- rows ------------------------------------------------------------------------ */
+
+html.msgr .msgr-pages .msgr-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  letter-spacing: -0.3px;
+  text-align: start;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+html.msgr .msgr-pages .msgr-row + .msgr-row::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 60px 0;
+  height: 0.5px;
+  background: var(--sep);
+}
+html.msgr .msgr-pages .msgr-row.no-tile + .msgr-row::before,
+html.msgr .msgr-pages .msgr-row + .msgr-row.no-tile::before { inset-inline-start: 16px; }
+html.msgr .msgr-pages .msgr-row::after { content: none; display: none; }
+html.msgr .msgr-pages .msgr-row:active { background: var(--cell-press); }
+@media (hover: hover) { html.msgr .msgr-pages .msgr-row:hover { background: var(--fill); } }
+html.msgr .msgr-pages .msgr-row > i:first-child:not(.msgr-row-chevron):not(.msgr-check) {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--tile, var(--tint-fill));
+  color: #fff;
+  font-size: calc(15px * var(--fs, 1));
+}
+html.msgr .msgr-pages .msgr-row-label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+html.msgr .msgr-pages .msgr-row-value { flex: 0 1 auto; max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label-2); font-size: calc(17px * var(--fs, 1)); }
+html.msgr .msgr-pages [data-size-out] { min-width: max-content; direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+html.msgr .msgr-pages .msgr-row-chevron { flex: 0 0 auto; width: auto; height: auto; background: transparent; font-size: calc(13px * var(--fs, 1)); color: var(--label-3); }
+html.msgr .msgr-pages .msgr-check { color: var(--tint); font-size: calc(17px * var(--fs, 1)); }
+html.msgr .msgr-pages .msgr-row.is-danger .msgr-row-label { color: var(--red); }
+html.msgr .msgr-pages .msgr-code { flex: 0 1 auto; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--ui-font-mono); font-size: calc(13px * var(--fs, 1)); color: var(--label-2); background: transparent; }
+
+/* The row of you at the top. */
+html.msgr .msgr-avatar {
+  flex: 0 0 var(--s, 64px);
+  width: var(--s, 64px);
+  height: var(--s, 64px);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #fff;
+  font-size: calc(var(--s, 64px) * 0.4);
+  font-weight: 600;
+  background: linear-gradient(160deg, #6dcaff, #1b86e8);
+}
+html.msgr .msgr-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ---- a switch, a field, a segmented control ------------------------------------ */
+
+html.msgr .msgr-pages .msgr-switch { position: relative; flex: 0 0 auto; width: 51px; height: 31px; }
+html.msgr .msgr-pages .msgr-switch input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+html.msgr .msgr-pages .msgr-switch i {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--fill-2);
+  transition: background-color 0.28s var(--ease);
+}
+html.msgr .msgr-pages .msgr-switch i::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.28);
+  transition: transform 0.36s var(--spring);
+}
+html.msgr .msgr-pages .msgr-switch input:checked + i { background: var(--green); }
+html.msgr .msgr-pages .msgr-switch input:checked + i::after { transform: translateX(20px); }
+html[dir="rtl"].msgr .msgr-pages .msgr-switch input:checked + i::after { transform: translateX(-20px); }
+html.msgr .msgr-pages .msgr-switch input:focus-visible + i { outline: 2px solid var(--tint); outline-offset: 2px; }
+
+html.msgr .msgr-pages .msgr-input-row { cursor: text; }
+html.msgr .msgr-pages .msgr-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  text-align: start;
+}
+html.msgr .msgr-pages .msgr-input::placeholder { color: var(--label-3); }
+
+/* ---- you, on one page --------------------------------------------------------------- */
+
+html.msgr .msgr-hero { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 18px 0 4px; }
+html.msgr .msgr-hero-avatar { position: relative; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+html.msgr .msgr-hero-edit {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--tint-fill);
+  color: #fff;
+  font-size: calc(13px * var(--fs, 1));
+  border: 3px solid var(--bg);
+  box-sizing: border-box;
+}
+html.msgr .msgr-hero-name { margin-top: 10px; font-size: calc(24px * var(--fs, 1)); font-weight: 700; letter-spacing: -0.3px; color: var(--label); }
+html.msgr .msgr-hero-sub { font-size: calc(15px * var(--fs, 1)); color: var(--label-2); }
+
+/* ---- what is moved in: cards written for the old app, made to sit in a list --------- */
+
+html.msgr .msgr-legacy { margin-top: 0; }
+html.msgr .msgr-legacy > .glass,
+html.msgr .msgr-legacy > .chat-storage-card,
+html.msgr .msgr-legacy > div:not(.msgr-group-head) {
+  margin: 0 0 12px;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  color: var(--label);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html.msgr .msgr-legacy > .msgr-group-head { margin-top: 22px; }
+html.msgr .msgr-legacy .space-y-4 > * + *, html.msgr .msgr-legacy .space-y-3 > * + * { margin-top: 14px; }
+html.msgr .msgr-legacy h3, html.msgr .msgr-legacy h4 { margin: 0 0 8px; font-size: calc(17px * var(--fs, 1)); font-weight: 600; color: var(--label); }
+html.msgr .msgr-legacy label, html.msgr .msgr-legacy .chat-toggle span:first-child { color: var(--label); }
+html.msgr .msgr-legacy label:not(.chat-toggle) { display: block; margin: 0 0 6px; font-size: calc(13px * var(--fs, 1)); color: var(--label-2); }
+html.msgr .msgr-legacy p, html.msgr .msgr-legacy .chat-settings-hint, html.msgr .msgr-legacy .chat-help-note, html.msgr .msgr-legacy small { font-size: calc(13px * var(--fs, 1)); line-height: 1.4; color: var(--label-2); }
+html.msgr .msgr-legacy .chat-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-size: calc(17px * var(--fs, 1)); }
+html.msgr .msgr-legacy input[type="text"], html.msgr .msgr-legacy input[type="url"], html.msgr .msgr-legacy input[type="password"], html.msgr .msgr-legacy input[type="number"], html.msgr .msgr-legacy input[type="search"], html.msgr .msgr-legacy select, html.msgr .msgr-legacy textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+  box-sizing: border-box;
+}
+html.msgr .msgr-legacy textarea { padding: 10px 14px; }
+/* A line of words and one select stood side by side, and the select took the
+   whole width: the words broke down to one a line. The words go above it. */
+html.msgr .msgr-legacy :is(.flex, [class*="justify-between"]):has(> select) { flex-direction: column; align-items: stretch; gap: 8px; }
+html.msgr .msgr-legacy :is(.flex, [class*="justify-between"]):has(> select) > :not(select) { width: 100%; }
+html.msgr .msgr-legacy .chat-soft-btn, html.msgr .msgr-legacy .chat-primary-btn, html.msgr .msgr-legacy button:not(.msgr-row):not(.msgr-seg button) {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  color: var(--tint);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+  font-weight: 600;
+  box-shadow: none;
+}
+html.msgr .msgr-legacy .chat-primary-btn, html.msgr .msgr-legacy button[class*="bg-brand"] { background: var(--tint-fill); color: #fff; }
+html.msgr .msgr-legacy .chat-danger-soft-btn { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+html.msgr .msgr-legacy .chat-settings-action-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+html.msgr .msgr-legacy [class*="bg-gray-50"], html.msgr .msgr-legacy [class*="bg-slate-800"], html.msgr .msgr-legacy [class*="bg-slate-900"], html.msgr .msgr-legacy [class*="bg-slate-200"] { background: var(--fill); border-radius: 12px; border-color: transparent; color: var(--label); }
+html.msgr .msgr-legacy [class*="text-gray-"], html.msgr .msgr-legacy [class*="text-slate-"] { color: var(--label-2); }
+
+/* The switches of the old panes, drawn as the system's. */
+html.msgr .chat-settings-switch {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 51px;
+  height: 31px;
+  vertical-align: middle;
+}
+html.msgr .chat-settings-switch .toggle-label {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill-2);
+  transition: background-color 0.28s var(--ease);
+}
+html.msgr .chat-settings-switch .toggle-checkbox {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  right: auto;
+  left: auto;
+  width: 27px;
+  height: 27px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.28);
+  appearance: none;
+  -webkit-appearance: none;
+  transition: transform 0.36s var(--spring);
+  cursor: pointer;
+}
+html.msgr .chat-settings-switch .toggle-checkbox:checked { transform: translateX(20px); border: 0; }
+html[dir="rtl"].msgr .chat-settings-switch .toggle-checkbox:checked { transform: translateX(-20px); }
+html.msgr .chat-settings-switch .toggle-checkbox:checked + .toggle-label { background: var(--green); }
+
+/* fields that sit in a row are the row's own, not a box in a box */
+html.msgr #mainApp .tab-content:not(#content-chat) .msgr-pages .msgr-input,
+html.msgr #mainApp .tab-content:not(#content-chat) .msgr-pages .msgr-input:focus {
+  min-height: 0;
+  padding: 10px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  outline: 0;
+}
+html.msgr .msgr-pages .msgr-copy .msgr-row-label { flex: 0 0 auto; white-space: nowrap; }
+html.msgr .msgr-pages .msgr-copy .msgr-code { flex: 1 1 auto; max-width: none; text-align: end; }
+
+/* panes the chat built as loose controls: one card, and a plain column inside it */
+html.msgr .msgr-legacy-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 16px;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  color: var(--label);
+}
+html.msgr .msgr-legacy-card[hidden] { display: none; }
+html.msgr .msgr-legacy-card > * { margin: 0; max-width: 100%; min-width: 0; }
+html.msgr .msgr-legacy .chat-toggle-grid { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+html.msgr .msgr-legacy .chat-toggle {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+html.msgr .msgr-legacy .chat-toggle > span:first-child { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+html.msgr .msgr-legacy .glass > h3.text-xl, html.msgr .msgr-legacy-card > h3 { display: none; }
+html.msgr .msgr-legacy .glass > * + * { margin-top: 12px; }
+html.msgr .msgr-legacy .chat-network-card, html.msgr .msgr-legacy .chat-relay-identity, html.msgr .msgr-legacy .chat-proxy-row, html.msgr .msgr-legacy .chat-diag-card {
+  padding: 12px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--fill);
+}
+html.msgr .msgr-legacy .chat-proxy-input { display: flex; flex-direction: column; gap: 8px; }
+/* The relay family and best-relay cards on Server and connection: the list
+   rows take the page's own fill and label colours instead of the old dark
+   pane's slate, so they read in every theme. The page names each card in its
+   group head, so the card's own title is not said twice. */
+html.msgr .msgr-legacy .chat-relay-family > .chat-relay-identity-title,
+html.msgr .msgr-legacy .chat-relay-choice > .chat-relay-identity-title { display: none; }
+html.msgr .msgr-legacy .chat-relay-family-list { gap: 6px; font-size: calc(14px * var(--fs, 1)); }
+html.msgr .msgr-legacy .chat-relay-family-list li { padding: 8px 10px; border-radius: 10px; background: var(--fill-2); color: var(--label); }
+html.msgr .msgr-legacy .chat-relay-family-list li.is-home { outline: 2px solid var(--tint); outline-offset: -2px; }
+html.msgr .msgr-legacy .chat-relay-family-list code { opacity: 1; color: var(--label-2); }
+html.msgr .msgr-legacy .chat-relay-family-home { color: var(--tint); }
+html.msgr .msgr-legacy .chat-relay-choice-modes { gap: 14px; font-size: calc(15px * var(--fs, 1)); color: var(--label); }
+html.msgr .msgr-legacy .chat-relay-identity-value { color: var(--label); }
+html.msgr .msgr-legacy pre, html.msgr .msgr-legacy code { overflow-wrap: anywhere; white-space: pre-wrap; font-size: calc(12px * var(--fs, 1)); }
+html.msgr .msgr-legacy .chat-ringtone-row { display: flex; flex-direction: column; gap: 8px; padding: 0; border: 0; background: transparent; }
+
+/* a switch with its words: words first, the switch at the end, in either direction */
+html.msgr .msgr-legacy .chat-toggle { direction: inherit; flex-direction: row; justify-content: space-between; text-align: start; font-size: calc(17px * var(--fs, 1)); letter-spacing: -0.3px; }
+html.msgr .msgr-legacy .chat-toggle > span:first-child { text-align: start; font-size: calc(17px * var(--fs, 1)); font-weight: 400; }
+
+/* a password with its two little buttons on the left of the field */
+html.msgr .msgr-legacy input.input-with-leading-icon, html.msgr .msgr-legacy .password-control input { padding-left: 76px; padding-right: 14px; }
+html.msgr .msgr-legacy .password-control-tools { gap: 2px; }
+html.msgr .msgr-legacy .password-control-tools button, html.msgr .msgr-legacy .input-with-leading-icon ~ * button {
+  min-height: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--label-2);
+  font-size: calc(15px * var(--fs, 1));
+}
+
+/* The device list is the chat's own, drawn for the dark theme: chips in pale
+   yellow, green and slate that disappear on a light page. */
+html.msgr:not(.dark) .msgr-legacy .chat-device-badge { color: var(--label-2); background: var(--fill); }
+html.msgr:not(.dark) .msgr-legacy .chat-device-badge.is-primary { color: #8a5a00; background: rgba(255, 159, 10, 0.18); }
+html.msgr:not(.dark) .msgr-legacy .chat-device-status { color: var(--label-2); }
+html.msgr:not(.dark) .msgr-legacy .chat-device-row.is-online .chat-device-status { color: #1f7a3a; }
+html.msgr:not(.dark) .msgr-legacy .chat-device-id { color: var(--label-2); }
+/* The id was dimmed with opacity: 0.8 on top of its colour (3.7-3.9:1), and the
+   plain badge kept the legacy slate in themes that are not the default dark. */
+html.msgr .msgr-legacy .chat-device-id { opacity: 1; color: var(--label-2); }
+html.msgr .msgr-legacy .chat-device-badge:not(.is-primary) { color: var(--label-2); background: var(--fill); }
+
+/* A password field carries two small buttons, the eye and the keyboard. They
+   were put on its left whatever the language, over the first letters, and
+   the blanket button rule above made each a tall pill. They sit at the end of
+   the field now, small, and the text keeps clear of them. */
+html.msgr .msgr-legacy .relative > .absolute:has(> button) { left: auto; right: auto; inset-inline-end: 10px; }
+html.msgr .msgr-legacy .relative > .absolute > button {
+  min-height: 0;
+  min-width: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--label-2);
+}
+html.msgr .msgr-legacy .input-with-leading-tools { padding-inline: 14px 84px; text-align: start; }
+
+/* Data and storage: what is kept, as the lines of a list, and what can be
+   cleared as plain actions under it, not three pills. */
+html.msgr .msgr-legacy .chat-storage-stats { display: flex; flex-direction: column; margin: 8px 0 4px; }
+html.msgr .msgr-legacy .chat-storage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 0;
+  border-bottom: 0.5px solid var(--sep);
+  font-size: calc(16px * var(--fs, 1));
+}
+html.msgr .msgr-legacy .chat-storage-row:last-child { border-bottom: 0; }
+html.msgr .msgr-legacy .chat-storage-label { color: var(--label); }
+html.msgr .msgr-legacy .chat-storage-value { color: var(--label-2); font-size: calc(15px * var(--fs, 1)); text-align: end; font-variant-numeric: tabular-nums; }
+html.msgr .msgr-legacy .chat-storage-actions { display: flex; flex-direction: column; gap: 0; margin: 4px 0; }
+html.msgr .msgr-legacy .chat-storage-actions > button {
+  justify-content: flex-start;
+  min-height: 46px;
+  padding: 0;
+  border-radius: 0;
+  border-bottom: 0.5px solid var(--sep);
+  background: transparent;
+  color: var(--tint);
+  text-align: start;
+  font-size: calc(16px * var(--fs, 1));
+}
+html.msgr .msgr-legacy .chat-storage-actions > button:last-child { border-bottom: 0; }
+html.msgr .msgr-legacy .chat-storage-actions > button.danger { color: var(--red); }
+
+/* ---- the world clocks page ----------------------------------------------------- */
+html.msgr .msgr-clock-row { cursor: default; }
+html.msgr .msgr-clock-row .msgr-row-label small { display: block; margin-top: 2px; color: var(--label-2); font-size: calc(12px * var(--fs, 1)); }
+html.msgr .msgr-clock-row .msgr-row-value { max-width: none; font-variant-numeric: tabular-nums; }
+html.msgr button.msgr-clock-row { cursor: pointer; }
+html.msgr .msgr-add-mark { color: var(--tint); font-size: calc(15px * var(--fs, 1)); }
+html.msgr .msgr-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 10px; background: var(--fill); color: var(--tint); font-size: calc(15px * var(--fs, 1)); }
+html.msgr .msgr-icon-btn.is-danger { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+
+/* ---- fields, fingerprints and counts as rows ----------------------------------- */
+html.msgr .msgr-pages .msgr-field-row { gap: 12px; cursor: text; }
+html.msgr .msgr-field-label { flex: 0 0 auto; max-width: 42%; color: var(--label); }
+html.msgr .msgr-pages .msgr-field-row .msgr-input { flex: 1 1 auto; min-width: 0; text-align: start; color: var(--label-2); font-size: calc(16px * var(--fs, 1)); }
+html.msgr .msgr-pages .msgr-field-row .msgr-input:focus { color: var(--label); }
+html.msgr .msgr-pages .msgr-print { flex-wrap: wrap; align-items: flex-start; gap: 4px 12px; cursor: default; }
+html.msgr .msgr-pages .msgr-print .msgr-code { flex: 1 0 100%; max-width: none; text-align: start; font-size: calc(13px * var(--fs, 1)); line-height: 1.5; color: var(--label-2); word-break: break-all; }
+html.msgr .msgr-pages .msgr-print.is-warning .msgr-code { color: var(--orange); }
+html.msgr .msgr-pages .msgr-print.is-warning .msgr-row-label { color: var(--orange); }
+html.msgr .msgr-pages .msgr-stat { cursor: default; min-height: 46px; }
+html.msgr .msgr-pages .msgr-stat:active, html.msgr .msgr-pages .msgr-print:active { background: transparent; }
+html.msgr .msgr-pages .msgr-stat .msgr-row-value { max-width: 62%; }
+
+/* ---- on/off settings the old panes drew as bare checkboxes are switches here ------------ */
+html.msgr .msgr-pages input[type="checkbox"]:not([data-bind]):not(.toggle-checkbox) {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 0 0 auto;
+  width: 51px;
+  height: 31px;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background-color: var(--fill-2);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 27 27'%3E%3Ccircle cx='13.5' cy='13.5' r='13' fill='white'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 27px 27px;
+  background-position: left 2px center;
+  transition: background-color 0.28s var(--ease), background-position 0.36s var(--spring);
+}
+html[dir="rtl"].msgr .msgr-pages input[type="checkbox"]:not([data-bind]):not(.toggle-checkbox) { background-position: right 2px center; }
+html.msgr .msgr-pages input[type="checkbox"]:not([data-bind]):not(.toggle-checkbox):checked { background-color: var(--green); background-position: right 2px center; }
+html[dir="rtl"].msgr .msgr-pages input[type="checkbox"]:not([data-bind]):not(.toggle-checkbox):checked { background-position: left 2px center; }
+
+/* ---- My devices ------------------------------------------------------------------------ */
+html.msgr .msgr-legacy-card:has(#chatDevicesCard) { padding: 0; background: transparent; box-shadow: none; border-radius: 0; }
+html.msgr #chatDevicesCard { padding: 0; background: transparent; border: 0; box-shadow: none; }
+html.msgr #chatDevicesCard .chat-device-heading { display: none; }
+html.msgr #chatDevicesCard .chat-account-devices { display: flex; flex-direction: column; gap: 0; }
+html.msgr #chatDevicesCard .chat-device-summary {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  color: var(--tint);
+  font-size: calc(14px * var(--fs, 1));
+  font-weight: 600;
+}
+html.msgr #chatDevicesCard .chat-device-note, html.msgr #chatDevicesCard .chat-device-role { margin: 0 0 8px; padding: 0 4px; color: var(--label-2); font-size: calc(13px * var(--fs, 1)); line-height: 1.5; }
+html.msgr #chatDevicesCard .chat-device-list { margin: 8px 0 18px; border-radius: 16px; background: var(--cell); overflow: hidden; }
+html.msgr #chatDevicesCard .chat-device-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+html.msgr #chatDevicesCard .chat-device-row + .chat-device-row { border-top: 0.5px solid var(--sep); }
+html.msgr #chatDevicesCard .chat-device-icon { flex: 0 0 30px; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; background: #ff9500; color: #fff; font-size: calc(15px * var(--fs, 1)); }
+html.msgr #chatDevicesCard .chat-device-name { color: var(--label); font-size: calc(17px * var(--fs, 1)); }
+html.msgr #chatDevicesCard .chat-device-meta { color: var(--label-2); font-size: calc(13px * var(--fs, 1)); }
+html.msgr #chatDevicesCard .chat-device-toggle {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--cell);
+  cursor: pointer;
+}
+html.msgr #chatDevicesCard .chat-device-toggle > span { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+html.msgr #chatDevicesCard .chat-device-toggle strong { color: var(--label); font-size: calc(17px * var(--fs, 1)); font-weight: 500; }
+html.msgr #chatDevicesCard .chat-device-toggle small { color: var(--label-2); font-size: calc(13px * var(--fs, 1)); line-height: 1.45; }
+html.msgr #chatDevicesCard .chat-device-buttons { display: flex; flex-direction: column; margin-top: 6px; border-radius: 16px; background: var(--cell); overflow: hidden; }
+html.msgr #chatDevicesCard .chat-device-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  font-weight: 400;
+  text-align: start;
+}
+html.msgr #chatDevicesCard .chat-device-action + .chat-device-action { border-top: 0.5px solid var(--sep); }
+html.msgr #chatDevicesCard .chat-device-action i { flex: 0 0 30px; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--tint-fill); color: #fff; font-size: calc(15px * var(--fs, 1)); }
+html.msgr #chatDevicesCard .chat-device-action:active { background: var(--cell-press); transform: none; }
+/* the report body is only a box while it is open */
+html.msgr .msgr-legacy-card:has(> #chatDiagBody[hidden]), html.msgr .msgr-legacy-card:empty { display: none; }
+html.msgr #chatDiagBody { margin: 0; padding: 12px 14px; border-radius: 16px; background: var(--cell); color: var(--label-2); font-size: calc(13px * var(--fs, 1)); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+
+/* ---- forms built from the app's own fields (roadmap 4.1) ------------------------- */
+html.msgr .msgr-pages .msgr-real-row { min-height: 48px; }
+html.msgr .msgr-pages .msgr-real-row .msgr-input { padding: 12px 0; }
+html.msgr .msgr-pages .msgr-real-row.is-select .msgr-input { appearance: none; -webkit-appearance: none; padding-inline-end: 18px; background: transparent; color: var(--label); cursor: pointer; }
+html.msgr .msgr-pages .msgr-real-row.is-select::after { content: "\f078"; font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: 11px; color: var(--label-3); margin-inline-start: -14px; pointer-events: none; }
+html.msgr .msgr-pages .msgr-field-tool { flex: 0 0 auto; display: grid; place-items: center; width: 34px; height: 34px; margin-inline-end: -6px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--tint); font-size: 15px; }
+html.msgr .msgr-pages .msgr-field-tool:active { background: var(--fill-2); }
+html.msgr .msgr-pages .msgr-real-actions { margin-top: 22px; }
+
+/* ---- the devices page as Settings rows (roadmap 4.1) ---------------------------
+   The list is drawn by the chat (58-device-roster.js) with its own handlers;
+   here it takes the look of the pages around it: the devices one inset group,
+   each a row with its icon on a tile; the two switches rows with the switch at
+   the end of the line; the two buttons rows that read as actions. */
+html.msgr .msgr-pages .chat-account-devices { display: block; padding: 0; background: transparent; border: 0; box-shadow: none; }
+html.msgr .msgr-pages .msgr-legacy-card:has(> .chat-account-devices),
+html.msgr .msgr-pages .msgr-legacy-card:has(.chat-account-devices) { padding: 0; background: transparent; box-shadow: none; border: 0; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-heading { display: none; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-summary { margin: 12px 16px 6px; color: var(--label-2); font-size: calc(13px * var(--fs, 1)); text-transform: none; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-note,
+html.msgr .msgr-pages .chat-account-devices .chat-device-role { margin: 0 16px 8px; color: var(--label-2); font-size: calc(13px * var(--fs, 1)); line-height: 1.4; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-list,
+html.msgr .msgr-pages .chat-account-devices .chat-device-buttons { display: block; margin-top: 18px; border-radius: var(--r-card); background: var(--cell); overflow: hidden; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-row {
+  display: flex; align-items: center; gap: 14px; min-height: 60px; margin: 0; padding: 8px 16px;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none; position: relative;
+}
+html.msgr .msgr-pages .chat-account-devices .chat-device-row + .chat-device-row::before,
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle + .chat-device-toggle::before,
+html.msgr .msgr-pages .chat-account-devices .chat-device-action + .chat-device-action::before {
+  content: ""; position: absolute; inset-block-start: 0; inset-inline: 60px 0; height: 0.5px; background: var(--sep);
+}
+html.msgr .msgr-pages .chat-account-devices .chat-device-icon {
+  flex: 0 0 30px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px;
+  background: #0a84ff; color: #fff; font-size: 15px;
+}
+html.msgr .msgr-pages .chat-account-devices .chat-device-name { color: var(--label); font-size: calc(16px * var(--fs, 1)); font-weight: 500; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-actions { margin-inline-start: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+/* The two switches: a row each, the words first and the switch at the end. */
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle {
+  display: flex; flex-direction: row-reverse; align-items: center; gap: 14px; margin: 18px 0 0; padding: 12px 16px;
+  border: 0; border-radius: var(--r-card); background: var(--cell); box-shadow: none; position: relative; cursor: pointer;
+}
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle:has(+ .chat-device-toggle) { margin-bottom: 0; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle + .chat-device-toggle { margin-top: 0; border-start-start-radius: 0; border-start-end-radius: 0; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle:has(+ .chat-device-toggle) { border-end-start-radius: 0; border-end-end-radius: 0; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle + .chat-device-toggle::before { inset-inline: 16px 0; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle > span { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle strong { color: var(--label); font-size: calc(16px * var(--fs, 1)); font-weight: 400; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle small { color: var(--label-2); font-size: calc(13px * var(--fs, 1)); line-height: 1.35; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: 0 0 51px; width: 51px; height: 31px; margin: 0; border-radius: 999px;
+  background: var(--fill-2); position: relative; cursor: pointer; transition: background-color 0.28s var(--ease);
+}
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle input[type="checkbox"]::after {
+  content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; width: 27px; height: 27px; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); transition: transform 0.36s var(--spring);
+}
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle input[type="checkbox"]:checked { background: var(--green); }
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle input[type="checkbox"]:checked::after { transform: translateX(20px); }
+html[dir="rtl"].msgr .msgr-pages .chat-account-devices .chat-device-toggle input[type="checkbox"]:checked::after { transform: translateX(-20px); }
+html.msgr .msgr-pages .chat-account-devices .chat-device-toggle input[type="checkbox"]:disabled { opacity: 0.5; }
+/* Sync now and Add a device: rows in one group, in the tint, as actions are. */
+html.msgr .msgr-pages .chat-account-devices .chat-device-buttons > .chat-device-action {
+  display: flex; align-items: center; gap: 14px; width: 100%; min-height: 50px; margin: 0; padding: 8px 16px;
+  border: 0; border-radius: 0; background: transparent; color: var(--tint); font-size: calc(16px * var(--fs, 1)); text-align: start; position: relative;
+}
+html.msgr .msgr-pages .chat-account-devices .chat-device-buttons > .chat-device-action i { width: 30px; text-align: center; }
+html.msgr .msgr-pages .chat-account-devices .chat-device-buttons > .chat-device-action:active { background: var(--cell-press); }

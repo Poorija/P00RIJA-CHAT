@@ -1,0 +1,179 @@
+/*
+ * P00RIJA Chat — end-to-end encrypted messenger.
+ * Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+ *
+ * Licensed under the GNU Affero General Public License, version 3 only.
+ * See LICENSE for the full text.
+ */
+
+/* The messenger's shell, over the frame the chat came in.
+
+   Everything here is under `html.msgr`, which js/messenger.js sets, and loads
+   after css/styles.css. It does two things and no more: hides the frame's own
+   navigation, and lays out the three pieces that replace it — the top bar,
+   the rows in Settings, and the bar at the bottom on a wide screen.
+
+   The bar on a phone is NOT restyled here. css/styles.css pins it to the
+   bottom through the safe areas and the browser's own toolbar, in rules that
+   each exist because a phone got it wrong; this file only decides what the
+   bar holds, through the script, and when it is out of the way. */
+
+/* ---- the frame's own navigation, out of sight ---------------------------
+
+   The selectors are long on purpose. css/styles.css settles its own arguments
+   by specificity (`html body #mainApp #content-chat …` with !important), so a
+   plain `.chat-nav-bar { display: none }` loses to the rule that lays the bar
+   out. These are written to win that argument once, here, rather than by
+   editing the rules they answer. */
+
+html.msgr body #appSidebar:is(#appSidebar),
+html.msgr body .sidebar-overlay:is(.sidebar-overlay),
+html.msgr body #appHeader:is(#appHeader) > .max-w-full,
+html.msgr body #mainApp:is(#mainApp) #content-chat:is(#content-chat) .chat-nav-bar:is(.chat-nav-bar):is(.chat-nav-bar),
+html.msgr body #mainApp:is(#mainApp) #mobileTabBarSettingsCard,
+html.msgr body #mainApp:is(#mainApp) #content-chat:is(#content-chat) .chat-shell:not(.msgr-profile-open) .chat-profile-card:is(.chat-profile-card):is(.chat-profile-card) {
+  display: none !important;
+}
+
+/* The profile is a screen of its own, reached from Settings: the card alone,
+   in the place the list of conversations has. */
+html.msgr body #mainApp:is(#mainApp) #content-chat:is(#content-chat) .chat-shell.msgr-profile-open .chat-rail > :not(.chat-profile-card) {
+  display: none !important;
+}
+
+/* ---- the top bar -------------------------------------------------------- */
+
+html.msgr .msgr-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 3.25rem;
+  padding-inline: 0.875rem;
+}
+html.msgr .msgr-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+html.msgr .msgr-top-space {
+  flex: 1 1 auto;
+}
+html.msgr .msgr-status {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+html.msgr .msgr-status.online {
+  background: #22c55e;
+}
+html.msgr .msgr-top-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  color: inherit;
+  background: transparent;
+  font-size: 1.05rem;
+}
+html.msgr .msgr-top-btn.hidden {
+  display: none;
+}
+html.msgr .msgr-top-btn:hover {
+  background: rgba(148, 163, 184, 0.16);
+}
+html.msgr .msgr-top-btn.is-accent {
+  color: #0ea5e9;
+}
+html.msgr .msgr-top-btn:focus-visible,
+html.msgr .msgr-row:focus-visible {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 2px;
+}
+
+/* ---- the rows in Settings ----------------------------------------------- */
+
+html.msgr .msgr-settings-list {
+  overflow: hidden;
+  padding: 0;
+}
+html.msgr .msgr-row {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0.75rem 1rem;
+  text-align: start;
+  color: inherit;
+  background: transparent;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  font-size: 0.975rem;
+}
+html.msgr .msgr-row:last-child {
+  border-bottom: 0;
+}
+html.msgr .msgr-row:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+html.msgr .msgr-row > i:first-child {
+  flex: 0 0 1.5rem;
+  text-align: center;
+  color: #0ea5e9;
+}
+html.msgr .msgr-row > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+html.msgr .msgr-row-chevron {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  opacity: 0.45;
+}
+html.msgr .msgr-row.is-danger,
+html.msgr .msgr-row.is-danger > i:first-child {
+  color: #ef4444;
+}
+
+/* ---- the bar on a wide screen -------------------------------------------
+
+   css/styles.css already knows how to show the bar from 1024px up: the
+   `tabbar-wide-on` class, which was an option in Settings while the sidebar
+   was the navigation there. The sidebar is gone, so js/messenger.js turns
+   that class on for good, and the bar and the clearance under the page come
+   from the rules that were already tested. Only its colours are set here,
+   since the phone's are under classes a wide screen does not have. */
+
+@media (min-width: 1024px) {
+  html.msgr.tabbar-wide-on body .mobile-tab-bar:is(.mobile-tab-bar) {
+    background: rgba(15, 23, 42, 0.96);
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+  }
+  html.msgr.tabbar-wide-on[data-tone="light"] body .mobile-tab-bar:is(.mobile-tab-bar) {
+    background: rgba(248, 250, 252, 0.97);
+  }
+  html.msgr.tabbar-wide-on body .mobile-tab-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    font-size: 0.72rem;
+  }
+}
+
+/* A conversation open on a phone keeps the bar, and loses it while the
+   composer has the focus: that is css/styles.css's own rule
+   (chat-composer-focused), which also moves the composer and the messages
+   into the room the bar leaves. Hiding the bar for the whole conversation
+   was tried here and taken out — it left that room empty under the composer,
+   because the rules that fill it are keyed on the focus, not on the bar. */

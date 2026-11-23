@@ -1,0 +1,26 @@
+# P00RIJA Standalone Relay
+# This Dockerfile only includes the signaling server — the same program the
+# full stack runs (scripts/server.js), started through standalone-relay/server.js.
+# Node 26.12.1, the newest release. Pinned to the exact version rather than
+# node:26-alpine: a build reuses whatever image the machine already holds, so a
+# floating tag kept running a months-old patch release without saying so, and
+# on the relay in Iran a pull can stall for good. Moving up is this one line.
+FROM node:26.12.1-alpine
+WORKDIR /app
+COPY standalone-relay/package.json .
+RUN npm install --production
+# Named the same as in the deployed image, so the server looks in one place.
+COPY standalone-relay/package.json ./app-version.json
+COPY standalone-relay/server.js .
+COPY scripts/server.js ./scripts/server.js
+# The relay's parts (roadmap 2.3): scripts/server.js joins scripts/server/ in
+# the order scripts/server/ORDER gives and runs them as itself.
+COPY scripts/server-main.js ./scripts/server-main.js
+COPY scripts/server ./scripts/server
+# The whole directory, not one file. Every module the relay requires lives
+# here, and naming them one at a time is how a new one reaches one image and
+# not the other — which is the drift tools/check-relay-parity.cjs exists for.
+COPY scripts/lib ./scripts/lib
+COPY vendor ./vendor
+EXPOSE 11220 11221
+CMD ["node", "--expose-gc", "server.js"]

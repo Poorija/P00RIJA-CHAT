@@ -1,0 +1,39 @@
+# The central panel as a web app (docs/CONTROL-PANEL.md). Nothing from npm:
+# the panel is Node's own modules and this project's files. ssh is for the
+# tunnels to each server's dashboard; su-exec lets the start script drop
+# root once the SSH keys are in place.
+#
+#   docker compose -f config/control-panel.compose.yaml run --rm -it control-panel setup-login
+#   docker compose -f config/control-panel.compose.yaml up -d --build
+FROM node:26.12.1-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797
+# docker-cli and buildx build server update packages with the host's Docker
+# when its socket is given (panel.sh --builds yes); unzip opens a .zip of a tree.
+RUN apk add --no-cache openssh-client su-exec docker-cli docker-cli-buildx unzip bash tar gzip git coreutils
+WORKDIR /app
+COPY scripts/lib/relay-identity.js scripts/lib/relay-directory.js scripts/lib/operator-signature.js scripts/lib/update-package.js scripts/lib/relay-updates.js ./scripts/lib/
+COPY tools/relay-directory.mjs tools/admin-key.mjs tools/control-panel.mjs tools/control-panel.html tools/control-panel.js ./tools/
+COPY tools/panel ./tools/panel
+# The installer and compose file the panel sends to a new server, and the
+# version it shows.
+COPY scripts/docker-install.sh ./scripts/docker-install.sh
+COPY scripts/lib/server-prereqs.sh ./scripts/lib/server-prereqs.sh
+COPY docker/compose.yaml ./docker/compose.yaml
+COPY package.json ./package.json
+# The logo and the fonts the page is set in.
+COPY assets/icon-app.svg ./assets/icon-app.svg
+COPY fonts/Vazirmatn/Vazirmatn-VariableFont_wght.ttf ./fonts/Vazirmatn/Vazirmatn-VariableFont_wght.ttf
+COPY fonts/Inter-Regular.ttf ./fonts/Inter-Regular.ttf
+COPY vendor/fontawesome/css/all.min.css ./vendor/fontawesome/css/all.min.css
+COPY vendor/fontawesome/webfonts ./vendor/fontawesome/webfonts
+# deploy.conf and the operator's files in /config (read-only unless the
+# operator key is there to change the family list), what the panel writes
+# (its login, the operator it trusts, the graph layout, the audit log) in
+# /state, and the SSH keys in /ssh-src.
+ENV POORIJA_CONFIG_DIR=/config \
+    POORIJA_PANEL_STATE_DIR=/state \
+    POORIJA_PANEL_HOST=0.0.0.0 \
+    POORIJA_PANEL_PORT=8686
+RUN mkdir -p /config /state && chown node:node /state && chmod 755 /app/tools/panel/entrypoint.sh
+EXPOSE 8686
+ENTRYPOINT ["/app/tools/panel/entrypoint.sh"]
+CMD ["serve"]

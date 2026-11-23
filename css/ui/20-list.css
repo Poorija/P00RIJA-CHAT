@@ -1,0 +1,422 @@
+/* The list of conversations: Telegram's rows, WhatsApp's head, iOS's glass.
+
+   A row is an avatar and two lines. The first line is the name and the time;
+   the second is what was last said and what is waiting (the pin, the unread
+   count). Everything a row used to carry as a row of buttons — pin, mute,
+   archive, lock, block, export — is in the menu that opens on a long press
+   or a right click (js/messenger.js, openRowMenu), as it is in both apps. */
+
+html.msgr { --plain: #ffffff; }
+html.msgr.dark { --plain: #0f172a; }
+
+/* ---- the rail ------------------------------------------------------------- */
+
+html.msgr body #mainApp #content-chat .chat-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  background: var(--plain);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+  color: var(--label);
+}
+@media (min-width: 768px) {
+  html.msgr body #mainApp #content-chat .chat-rail { border-inline-end: 0.5px solid var(--sep); }
+}
+/* What the old head held, and the folds that belonged to the connection pane. */
+html.msgr[data-msgr="chats"] .chat-rail > .chat-list-heading,
+html.msgr[data-msgr="groups"] .chat-rail > .chat-list-heading,
+html.msgr[data-msgr="calls"] .chat-rail > .chat-list-heading,
+html.msgr[data-msgr="chats"] .chat-rail > details,
+html.msgr[data-msgr="groups"] .chat-rail > details,
+html.msgr[data-msgr="calls"] .chat-rail > details {
+  display: none;
+}
+html.msgr:not([data-msgr="chats"]):not([data-msgr="groups"]):not([data-msgr="calls"]) .chat-rail > .ui-head { display: none; }
+
+/* ---- the head ------------------------------------------------------------- */
+
+html.msgr .ui-head {
+  flex: 0 0 auto;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) var(--gutter) 6px;
+  background: var(--plain);
+}
+html.msgr .ui-head-bar { display: flex; align-items: center; gap: 8px; min-height: 48px; }
+html.msgr .ui-head-title {
+  margin: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: calc(32px * var(--fs, 1));
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: 0.35px;
+  color: var(--label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.msgr .ui-head-status {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--gray);
+  margin-top: 6px;
+}
+html.msgr .ui-head-status.online, html.msgr .ui-head-status.is-online { background: var(--green); }
+html.msgr .ui-head-actions { margin-inline-start: auto; display: flex; gap: 8px; }
+html.msgr .ui-circle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--tint);
+  font-size: calc(17px * var(--fs, 1));
+  cursor: pointer;
+  transition: transform 0.25s var(--spring), background-color 0.2s;
+}
+html.msgr .ui-circle-btn.is-tint { background: var(--tint-fill); color: var(--on-tint); }
+html.msgr .ui-circle-btn.hidden { display: none; }
+html.msgr .ui-circle-btn:active { transform: scale(0.9); }
+html.msgr .ui-circle-btn:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+
+html.msgr .ui-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 38px;
+  margin-top: 6px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--label-2);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  text-align: start;
+  cursor: text;
+}
+html.msgr .ui-search i { font-size: calc(14px * var(--fs, 1)); color: var(--label-3); }
+
+/* ---- the pull-down menu ---------------------------------------------------- */
+
+html.msgr .ui-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 240px;
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  border-radius: 18px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(190%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(190%);
+  box-shadow: inset 0 1px 0.5px var(--glass-hi), 0 0 0 0.5px var(--glass-edge), 0 18px 48px rgba(0, 0, 0, 0.22);
+  color: var(--label);
+  animation: ui-menu-in 0.32s var(--spring);
+}
+@keyframes ui-menu-in { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: scale(1); } }
+html.msgr .ui-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  text-align: start;
+  cursor: pointer;
+}
+html.msgr .ui-menu-item i { width: 20px; text-align: center; font-size: calc(16px * var(--fs, 1)); color: var(--label-2); }
+html.msgr .ui-menu-item:hover, html.msgr .ui-menu-item:focus-visible { background: var(--fill); outline: 0; }
+html.msgr .ui-menu-item.is-danger, html.msgr .ui-menu-item.is-danger i { color: var(--red); }
+html.msgr .ui-menu-sep { height: 0.5px; margin: 4px 8px; background: var(--sep); }
+
+/* ---- chips: All · Unread · Favourites ... --------------------------------- */
+
+html.msgr .chat-list-filters {
+  display: flex;
+  gap: 8px;
+  padding: 4px var(--gutter) 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--plain);
+  position: static;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+html.msgr .chat-list-filters::-webkit-scrollbar { display: none; }
+html.msgr .chat-list-filter {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--label-2);
+  font: inherit;
+  font-size: calc(15px * var(--fs, 1));
+  font-weight: 500;
+  white-space: nowrap;
+}
+/* The count in a chip is the chip's own colour at full strength: at 75% opacity on the tinted chip it was 2.8:1. */
+html.msgr .chat-list-filter > span { color: inherit; opacity: 1; font-variant-numeric: tabular-nums; font-weight: 500; }
+html.msgr .chat-list-filter.is-on { background: color-mix(in srgb, var(--tint) 16%, transparent); color: var(--tint); font-weight: 600; }
+
+/* ---- the list itself --------------------------------------------------------- */
+
+html.msgr body #mainApp #content-chat #chatPeerList.chat-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: block;
+  padding: 0 0 var(--bar-clear);
+  gap: 0;
+  background: var(--plain);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (min-width: 768px) {
+  html.msgr body #mainApp #content-chat #chatPeerList.chat-list { padding-bottom: 12px; }
+}
+
+html.msgr body #mainApp #content-chat .chat-peer-card.ui-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 72px;
+  margin: 0;
+  padding: 10px var(--gutter);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--label);
+  text-align: start;
+  transform: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 0.35s;
+}
+html.msgr .chat-peer-card.ui-row:active { background: var(--cell-press); transition: none; }
+@media (hover: hover) {
+  html.msgr .chat-peer-card.ui-row:hover { background: var(--fill); }
+}
+html.msgr .chat-peer-card.ui-row.active { background: color-mix(in srgb, var(--tint) 14%, transparent); }
+html.msgr .chat-peer-card.ui-row.active:hover { background: color-mix(in srgb, var(--tint) 18%, transparent); }
+html.msgr .chat-peer-card.ui-row.is-blocked { opacity: 0.55; }
+html.msgr .chat-peer-card.ui-row:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; }
+/* The hairline starts under the text, not under the picture. */
+html.msgr .chat-peer-card.ui-row::after {
+  content: "";
+  position: absolute;
+  inset-inline: calc(var(--gutter) + 52px + 12px) 0;
+  inset-block-end: 0;
+  height: 0.5px;
+  background: var(--sep);
+}
+
+html.msgr .ui-row .chat-avatar.chat-peer-avatar {
+  position: relative;
+  flex: 0 0 52px;
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  color: #fff;
+  font-size: calc(20px * var(--fs, 1));
+  font-weight: 600;
+  background: linear-gradient(160deg, var(--hue-a, #5ac8fa), var(--hue-b, #0a84ff));
+}
+html.msgr .ui-row .chat-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+html.msgr .ui-hue-0 { --hue-a: #ff9a76; --hue-b: #ff5e7a; }
+html.msgr .ui-hue-1 { --hue-a: #ffc971; --hue-b: #ff9a3d; }
+html.msgr .ui-hue-2 { --hue-a: #9c9bff; --hue-b: #6a5cf0; }
+html.msgr .ui-hue-3 { --hue-a: #8fe08c; --hue-b: #35b968; }
+html.msgr .ui-hue-4 { --hue-a: #5de6d2; --hue-b: #19a9a4; }
+html.msgr .ui-hue-5 { --hue-a: #6dcaff; --hue-b: #1b86e8; }
+html.msgr .ui-hue-6 { --hue-a: #e9a2f2; --hue-b: #c25bd9; }
+/* A dot for who is here now, on the picture. */
+html.msgr .ui-row .chat-peer-avatar.online::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: -1px;
+  inset-block-end: -1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--green);
+  border: 2.5px solid var(--plain);
+  box-sizing: border-box;
+  box-shadow: none;
+}
+html.msgr .ui-row .chat-peer-presence-dot,
+html.msgr .ui-row .chat-peer-status-badge { display: none; }
+
+html.msgr .ui-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+html.msgr .ui-row-top, html.msgr .ui-row-bottom { display: flex; align-items: center; gap: 6px; min-width: 0; }
+html.msgr .ui-row-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(var(--ui-text, 16px) + 1px);
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--label);
+}
+html.msgr .ui-row .chat-verified-badge { flex: 0 0 auto; color: var(--tint); font-size: calc(13px * var(--fs, 1)); }
+html.msgr .ui-row-muted, html.msgr .ui-row-blocked { flex: 0 0 auto; color: var(--label-3); font-size: calc(12px * var(--fs, 1)); }
+html.msgr .ui-row-time {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-size: calc(14px * var(--fs, 1));
+  color: var(--label-2);
+  font-variant-numeric: tabular-nums;
+}
+html.msgr .ui-row.has-unread:not(.is-muted) .ui-row-time { color: var(--tint); }
+html.msgr .ui-row-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(var(--ui-text, 16px) - 1px);
+  line-height: 1.3;
+  color: var(--label-2);
+}
+html.msgr .ui-row-flags { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+html.msgr .ui-row-pin { color: var(--label-3); font-size: calc(13px * var(--fs, 1)); transform: rotate(45deg); }
+html.msgr .ui-row .chat-unread-badge {
+  position: static;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 11px;
+  /* the pressed tint (#0369a1): white on it is 5.9:1, on the fill 4.1:1 and, over a selected row, 2.8:1 */
+  background: var(--tint-press);
+  color: var(--on-tint);
+  font-size: calc(13px * var(--fs, 1));
+  font-weight: 600;
+  line-height: 22px;
+  text-align: center;
+  box-sizing: border-box;
+  box-shadow: none;
+}
+html.msgr .ui-row.is-muted .chat-unread-badge { background: #8e8e93; color: #fff; }
+html.msgr .ui-row .chat-draft-tag { color: var(--red); font-weight: 500; }
+html.msgr .ui-row-tick { margin-inline-end: 3px; }
+html.msgr .ui-row .chat-locked-preview { color: var(--label-2); }
+
+/* The buttons the row used to show. Still in it — the menu presses them —
+   and out of sight. */
+html.msgr .chat-peer-card .chat-pin-actions { display: none; }
+/* The ⋯ at the row's end: a conversation has a menu, and this says so. */
+html.msgr .chat-peer-card .ui-row-more {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 40px;
+  margin-inline-end: calc(-1 * var(--gutter) / 2);
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--label-2);
+  font-size: calc(16px * var(--fs, 1));
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+html.msgr .chat-peer-card .ui-row-more:active { background: var(--fill-2); }
+html.msgr .chat-peer-card .ui-row-more:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; }
+/* A row being swiped, and what letting go will do, painted behind it. */
+html.msgr body #mainApp #content-chat .chat-peer-card.ui-row { touch-action: pan-y; }
+html.msgr body #mainApp #content-chat .chat-peer-card.ui-row.is-swiping { z-index: 1; background: var(--bg); }
+html.msgr .chat-peer-card .ui-row-swipe {
+  position: absolute;
+  inset-block: 0;
+  width: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: var(--gray);
+  color: #fff;
+  font-size: calc(12px * var(--fs, 1));
+  font-weight: 600;
+  pointer-events: none;
+  transition: background-color 0.15s;
+}
+html.msgr .chat-peer-card .ui-row-swipe i { font-size: calc(19px * var(--fs, 1)); }
+html.msgr .chat-peer-card .ui-row-swipe[data-side="end"] { inset-inline-start: 100%; }
+html.msgr .chat-peer-card .ui-row-swipe[data-side="start"] { inset-inline-end: 100%; }
+html.msgr .chat-peer-card.swipe-ready .ui-row-swipe[data-side="end"] { background: #6b5bd6; }
+html.msgr .chat-peer-card.swipe-ready .ui-row-swipe[data-side="start"] { background: #2563eb; }
+#chatPeerList { overflow-x: hidden; }
+
+/* A list with nothing in it. */
+html.msgr .chat-list .chat-empty-state {
+  margin: 48px 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--label-2);
+  font-size: calc(15px * var(--fs, 1));
+  text-align: center;
+  box-shadow: none;
+}
+
+/* ---- calls: rows of the same kind ------------------------------------------ */
+
+html.msgr .chat-call-accordion { border: 0; background: transparent; margin: 0; }
+html.msgr .chat-call-summary.chat-peer-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px var(--gutter);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--label);
+  list-style: none;
+}
+html.msgr .chat-call-summary .truncate, html.msgr .chat-call-summary .font-semibold { color: var(--label); font-size: calc(17px * var(--fs, 1)); font-weight: 600; }
+html.msgr .chat-call-summary.missed .font-semibold { color: var(--red); }
+html.msgr .chat-call-summary .text-xs { font-size: calc(14px * var(--fs, 1)); color: var(--label-2); }
+html.msgr .chat-call-summary .text-rose-300 { color: var(--red); }
+html.msgr .chat-call-summary-meta { margin-inline-start: auto; display: flex; align-items: center; gap: 8px; color: var(--label-2); }
+html.msgr .chat-call-accordion-body { padding-inline-start: var(--gutter); background: transparent; }
+html.msgr .chat-call-log-row { border-color: var(--sep); color: var(--label); }

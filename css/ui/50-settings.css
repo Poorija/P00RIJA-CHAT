@@ -1,0 +1,501 @@
+/* Settings, and every screen behind it: inset-grouped lists on the grey
+   ground, a tile for each icon, the person at the top. */
+
+html.msgr #mainApp .tab-content { color: var(--label); }
+html.msgr:not([data-msgr="chats"]):not([data-msgr="groups"]):not([data-msgr="calls"]) #mainApp { background: var(--bg); }
+
+/* The cards of the screens behind Settings: plain grouped surfaces, no glass. */
+html.msgr #mainApp .tab-content:not(#content-chat) .glass {
+  background: var(--cell);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 0;
+  border-radius: var(--r-card);
+  box-shadow: none;
+  color: var(--label);
+}
+html.msgr #mainApp .tab-content:not(#content-chat) .glass .text-white,
+html.msgr #mainApp .tab-content:not(#content-chat) .glass h1,
+html.msgr #mainApp .tab-content:not(#content-chat) .glass h2,
+html.msgr #mainApp .tab-content:not(#content-chat) .glass h3 { color: var(--label); }
+html.msgr #mainApp .tab-content:not(#content-chat) .glass p,
+html.msgr #mainApp .tab-content:not(#content-chat) .glass .text-slate-400,
+html.msgr #mainApp .tab-content:not(#content-chat) .glass .text-slate-500 { color: var(--label-2); }
+
+/* ---- the rows ------------------------------------------------------------- */
+
+html.msgr .msgr-settings-list.glass {
+  margin: 16px var(--gutter);
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--r-card);
+  background: var(--cell);
+}
+
+html.msgr .msgr-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  font-size: calc(17px * var(--fs, 1));
+  letter-spacing: -0.3px;
+  text-align: start;
+  position: relative;
+  cursor: pointer;
+}
+html.msgr .msgr-row:active { background: var(--cell-press); }
+html.msgr .msgr-row:hover { background: var(--fill); }
+html.msgr .msgr-row::after {
+  content: "";
+  position: absolute;
+  inset-inline: 60px 0;
+  inset-block-end: 0;
+  height: 0.5px;
+  background: var(--sep);
+}
+html.msgr .msgr-row:last-child::after { display: none; }
+html.msgr .msgr-row > i:first-child {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--tile, var(--tint));
+  color: #fff;
+  font-size: calc(15px * var(--fs, 1));
+}
+html.msgr .msgr-row[data-msgr-row="profile"] { --tile: #0a84ff; }
+html.msgr .msgr-row[data-msgr-row="connection"] { --tile: #8e8e93; }
+html.msgr .msgr-row[data-msgr-row="vault"] { --tile: #ff9500; }
+html.msgr .msgr-row[data-msgr-row="securitycenter"] { --tile: #34c759; }
+html.msgr .msgr-row[data-msgr-row="migration"] { --tile: #af52de; }
+html.msgr .msgr-row[data-msgr-row="language"] { --tile: #0a84ff; }
+html.msgr .msgr-row[data-msgr-row="theme"] { --tile: #5e5ce6; }
+html.msgr .msgr-row[data-msgr-row="help"] { --tile: #32ade6; }
+html.msgr .msgr-row[data-msgr-row="about"] { --tile: #8e8e93; }
+html.msgr .msgr-row[data-msgr-row="lock"] { --tile: #ff3b30; }
+html.msgr .msgr-row.is-danger, html.msgr .msgr-row.is-danger > span { color: var(--red); }
+html.msgr .msgr-row.is-danger > i:first-child { color: #fff; }
+html.msgr .msgr-row-chevron { flex: 0 0 auto; font-size: calc(13px * var(--fs, 1)); color: var(--label-3); background: transparent; width: auto; height: auto; }
+html.msgr .msgr-row > .msgr-row-chevron:first-child { display: none; }
+html.msgr[dir="rtl"] .msgr-row-chevron, html[dir="rtl"].msgr .msgr-row-chevron { transform: scaleX(1); }
+
+/* ---- the screens behind it: buttons and fields at the system's weight ----- */
+
+html.msgr #mainApp .tab-content:not(#content-chat) .chat-soft-btn,
+html.msgr #mainApp .tab-content:not(#content-chat) .chat-primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  color: var(--tint);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+  font-weight: 600;
+  box-shadow: none;
+}
+html.msgr #mainApp .tab-content:not(#content-chat) .chat-primary-btn { background: var(--tint-fill); color: var(--on-tint); }
+html.msgr #mainApp .tab-content:not(#content-chat) .chat-danger-soft-btn { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); border: 0; border-radius: 12px; min-height: 44px; font-weight: 600; }
+html.msgr #mainApp .tab-content:not(#content-chat) input[type="text"],
+html.msgr #mainApp .tab-content:not(#content-chat) input[type="search"],
+html.msgr #mainApp .tab-content:not(#content-chat) input[type="password"],
+html.msgr #mainApp .tab-content:not(#content-chat) input[type="url"],
+html.msgr #mainApp .tab-content:not(#content-chat) input[type="number"],
+html.msgr #mainApp .tab-content:not(#content-chat) textarea,
+html.msgr #mainApp .tab-content:not(#content-chat) select {
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+  padding: 0 14px;
+}
+html.msgr #mainApp .tab-content:not(#content-chat) textarea { padding: 10px 14px; }
+html.msgr #mainApp .tab-content:not(#content-chat) input:focus, html.msgr #mainApp .tab-content:not(#content-chat) textarea:focus, html.msgr #mainApp .tab-content:not(#content-chat) select:focus {
+  outline: 2px solid color-mix(in srgb, var(--tint) 55%, transparent);
+  outline-offset: 0;
+}
+
+/* ---- the frame's bar, and what is left of the old settings ------------------ */
+
+html.msgr #appHeader.glass {
+  border-radius: 0;
+  border: 0;
+  border-bottom: 0.5px solid var(--sep);
+  box-shadow: none;
+}
+html.msgr .shared-section-lock {
+  margin: 16px var(--gutter) 0;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  color: var(--label);
+  box-shadow: none;
+}
+html.msgr .shared-section-lock h3 { margin: 0 0 6px; font-size: calc(17px * var(--fs, 1)); font-weight: 600; color: var(--label); }
+html.msgr .shared-section-lock p { margin: 0 0 12px; font-size: calc(14px * var(--fs, 1)); line-height: 1.4; color: var(--label-2); }
+html.msgr .shared-lock-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+html.msgr .shared-lock-actions button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  color: var(--tint);
+  font: inherit;
+  font-size: calc(15px * var(--fs, 1));
+  font-weight: 600;
+}
+html.msgr .shared-lock-input-row input { width: 100%; }
+/* The bar is fixed now; choosing and ordering its tabs is gone with the choice. */
+html.msgr #mobileTabBarSettingsCard,
+html.msgr #mainApp .tab-content:not(#content-chat) .glass:has(#tabOrderList) { display: none; }
+html.msgr #content-settings > .max-w-4xl { padding: 0 var(--gutter); max-width: 720px; }
+html.msgr .msgr-settings-list.glass { margin-inline: 0; }
+html.msgr #mainApp #content-settings .glass.p-6 { margin-top: 16px; padding: 16px; }
+
+/* One clearance, on the scroller: the page's own utility padding (pb-20), the
+   safe-area padding of the empty wrapper above it and a second reservation on the
+   tab used to add up to 360px of nothing below the last row. */
+html.msgr .dashboard-main-content > .max-w-7xl { padding-block: 0; min-height: 0; }
+html.msgr #mainApp .tab-content:not(#content-chat) { padding-bottom: 0; }
+@media (max-width: 767px) {
+  html.msgr:not([data-msgr="chats"]):not([data-msgr="groups"]):not([data-msgr="calls"]) .dashboard-main-content { padding-top: 0; padding-bottom: var(--bar-clear); }
+}
+
+/* ---- the profile screen and the connection pane, which live in the rail ------- */
+
+html.msgr body #mainApp #content-chat .chat-shell.msgr-profile-open .chat-rail > :not(.chat-profile-card),
+html.msgr body #mainApp #content-chat .chat-shell.msgr-profile-open .chat-rail > #chatPeerList.chat-list { display: none; }
+html.msgr body #mainApp #content-chat .chat-shell.chat-view-connection > .chat-rail {
+  display: block;
+  overflow-y: auto;
+  padding: 12px var(--gutter) var(--bar-clear);
+  background: var(--bg);
+}
+html.msgr body #mainApp #content-chat .chat-shell.chat-view-connection .chat-rail > #chatPeerList.chat-list,
+html.msgr body #mainApp #content-chat .chat-shell.chat-view-connection .chat-rail > .ui-head,
+html.msgr body #mainApp #content-chat .chat-shell.chat-view-connection .chat-rail > .chat-list-heading { display: none; }
+html.msgr .chat-shell.chat-view-connection .chat-rail details,
+html.msgr .chat-shell.chat-view-connection .chat-rail .chat-collapse {
+  margin: 0 0 12px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  color: var(--label);
+  overflow: hidden;
+}
+html.msgr .chat-shell.chat-view-connection .chat-rail summary,
+html.msgr .chat-shell.chat-view-connection .chat-collapse-head {
+  min-height: 52px;
+  padding: 0 16px;
+  color: var(--label);
+  font-size: calc(17px * var(--fs, 1));
+  font-weight: 500;
+  background: transparent;
+  border: 0;
+}
+html.msgr .chat-shell.chat-view-connection .chat-rail label { color: var(--label-2); font-size: calc(13px * var(--fs, 1)); }
+html.msgr .chat-shell.chat-view-connection .chat-rail input[type="text"],
+html.msgr .chat-shell.chat-view-connection .chat-rail input[type="url"],
+html.msgr .chat-shell.chat-view-connection .chat-rail input[type="password"],
+html.msgr .chat-shell.chat-view-connection .chat-rail input[type="number"],
+html.msgr .chat-shell.chat-view-connection .chat-rail select,
+html.msgr .chat-shell.chat-view-connection .chat-rail textarea {
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: calc(16px * var(--fs, 1));
+}
+html.msgr .chat-profile-card {
+  margin: 12px var(--gutter);
+  padding: 16px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: var(--cell);
+  color: var(--label);
+  box-shadow: none;
+}
+html.msgr .chat-profile-summary-name { color: var(--label); }
+html.msgr .chat-profile-summary-status, html.msgr .chat-clock-dates { color: var(--label-2); }
+html.msgr .chat-profile-input { background: var(--fill); border: 0; border-radius: 12px; color: var(--label); min-height: 44px; }
+html.msgr .chat-quick-btn { background: var(--fill); border: 0; color: var(--tint); }
+html.msgr .chat-profile-clocks { background: var(--fill); border: 0; border-radius: 14px; }
+html.msgr .chat-mood-chip { background: var(--fill); border: 0; color: var(--label-2); }
+
+/* ---- the older screens behind Settings (Tailwind classes, written for a dark ground) -- */
+
+html.msgr #mainApp .tab-content:not(#content-chat) .gradient-text { background: none; -webkit-text-fill-color: currentColor; color: var(--label); }
+html.msgr #mainApp .tab-content:not(#content-chat) .glass .glass,
+html.msgr #mainApp .tab-content:not(#content-chat) [class*="bg-gray-50"],
+html.msgr #mainApp .tab-content:not(#content-chat) [class*="bg-slate-800"],
+html.msgr #mainApp .tab-content:not(#content-chat) [class*="bg-slate-900"],
+html.msgr #mainApp .tab-content:not(#content-chat) [class*="bg-slate-100"] {
+  background: var(--fill);
+  border-color: transparent;
+  border-radius: 14px;
+  color: var(--label);
+}
+html.msgr #mainApp .tab-content:not(#content-chat) [class*="text-gray-"], html.msgr #mainApp .tab-content:not(#content-chat) [class*="text-slate-"] { color: var(--label-2); }
+html.msgr #mainApp .tab-content:not(#content-chat) [class*="text-brand"] { color: var(--tint); }
+html.msgr #mainApp .tab-content:not(#content-chat) button[class*="bg-brand"] { background: var(--tint-fill); color: var(--on-tint); border-radius: 14px; }
+html.msgr #mainApp .tab-content:not(#content-chat) button[class*="bg-brand"] :is(span, i) { color: inherit; }
+html.msgr #mainApp .tab-content:not(#content-chat) .glass button[class*="bg-brand"] { color: var(--on-tint); }
+html.msgr .poorija-help-tag, html.msgr .about-donate-hint, html.msgr .about-donate-btn { color: var(--tint); opacity: 1; }
+html.msgr .poorija-help-tag, html.msgr .about-donate-hint { color: var(--label-2); }
+html.msgr #mainApp .tab-content:not(#content-chat) button[class*="bg-emerald"] { background: color-mix(in srgb, var(--tint) 14%, transparent); color: var(--tint); border-radius: 12px; }
+html.msgr #mainApp .tab-content:not(#content-chat) button[class*="bg-amber"] { background: color-mix(in srgb, var(--tint) 14%, transparent); color: var(--tint); border-radius: 12px; }
+html.msgr #mainApp .tab-content:not(#content-chat) button[class*="bg-red"] { background: #dc2626; color: #fff; border-radius: 14px; }
+/* White on a red that white can be read on, in every theme. The fill was the theme's --red, which is the red for TEXT: the dark
+   theme's is a light red (white on it is 2.6:1), and the rule above that gives anything marked .text-white in a glass card the
+   theme's ink turned the label dark on the light themes (1.1:1 in Solarized). Higher than both, and the label's own spans follow. */
+html.msgr #mainApp .tab-content:not(#content-chat) .glass button[class*="bg-red"] { background: #dc2626; color: #fff; }
+html.msgr #mainApp .tab-content:not(#content-chat) .glass button[class*="bg-red"] :is(span, i) { color: inherit; }
+/* The labels of the QR options ("Palette", "Error tolerance") were the ink at 70 % opacity: 2.8:1 on Solarized's cream. The theme's secondary ink at full strength is the dimmer shade they meant. */
+html.msgr .chat-qr-field span { opacity: 1; color: var(--label-2); }
+html.msgr #mainApp .tab-content:not(#content-chat) hr { border-color: var(--sep); }
+
+/* ---- the card at the top of Settings ---------------------------------------
+   One card, three tiers, each lined up with the one above it. The top tier is
+   three modules of one height, the picture's: the clocks on the left, the
+   picture in the middle, the pixel companion on the right — the same two sides
+   in both languages, so the clocks are always left of the picture. Then the name
+   with the status beside it (the person's own words, in a chip) and whether the
+   relay answers; then the doors as Telegram's profile actions, a glyph over a
+   word. */
+html.msgr .msgr-hero-card {
+  /* One corner for every tile of the card — the clocks, the doors, the companion's id tile — squarer than the card around them, as Telegram's cells are. */
+  --hc-tile-radius: 9px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 0;
+  padding: 20px 16px 16px;
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 70% at 50% 0%, color-mix(in srgb, var(--tint) 16%, transparent), transparent 70%),
+    var(--cell);
+  box-shadow: inset 0 0 0 0.5px var(--sep);
+  color: var(--label);
+}
+/* The picture first, centred, as in Telegram's own profile; the name and what
+   the person wrote under it, then whether the relay answers. Nothing is cut:
+   a long name takes the line it needs and the status wraps under it rather
+   than being shortened to three dots. */
+html.msgr .msgr-hc-id { width: 100%; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+html.msgr .msgr-hc-quick { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+html.msgr .msgr-hc-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  height: 58px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--hc-tile-radius);
+  background: var(--fill);
+  color: var(--tint);
+  font-size: calc(18px * var(--fs, 1));
+  transition: transform 0.14s var(--ease), background 0.14s var(--ease);
+}
+html.msgr .msgr-hc-btn > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label-2); font-size: calc(11.5px * var(--fs, 1)); font-weight: 500; line-height: 1.1; }
+html.msgr .msgr-hc-btn.is-lock { color: var(--green); }
+html.msgr .msgr-hc-btn:active { background: var(--fill-2); transform: scale(0.96); }
+html.msgr .msgr-hc-avatar { flex: 0 0 auto; padding: 0; border: 0; background: transparent; border-radius: 50%; }
+html.msgr .msgr-hc-avatar { --s: 88px; }
+html.msgr .msgr-hc-avatar .msgr-avatar { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tint) 35%, transparent), 0 10px 24px rgba(2, 6, 23, 0.3); }
+/* The name and, in front of it on the same line, the status the person wrote. */
+html.msgr .msgr-hc-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; width: 100%; min-width: 0; }
+html.msgr .msgr-hc-top .msgr-hc-name { flex: 0 1 auto; min-width: 0; }
+html.msgr .msgr-hc-top .msgr-hc-mood { flex: 0 1 auto; min-width: 0; }
+html.msgr .msgr-hc-name {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  font-size: calc(21px * var(--fs, 1));
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+html.msgr .msgr-hc-mood {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 3px 11px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tint) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 35%, transparent);
+  color: var(--tint);
+  font: inherit;
+  font-size: calc(12px * var(--fs, 1));
+  font-weight: 600;
+}
+html.msgr .msgr-hc-mood span { white-space: normal; overflow-wrap: anywhere; line-height: 1.2; }
+html.msgr .msgr-hc-status { display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--label-2); font-size: calc(13px * var(--fs, 1)); }
+html.msgr .msgr-hc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex: 0 0 auto; }
+html.msgr .msgr-hc-status[data-tone="online"] .msgr-hc-dot { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 28%, transparent); }
+html.msgr .msgr-hc-status[data-tone="connecting"] .msgr-hc-dot { background: var(--orange); }
+/* The clock column: a tile as tall as the picture, your own time on top and the
+   cities you keep under it, one under the other, each row the same height and a
+   hairline between. The tile is a fixed 88px like the picture — not scaled with
+   the text size, or three rows would no longer fit under it. */
+html.msgr .msgr-hc-clocks { width: 100%; max-width: 132px; height: 88px; justify-self: center; }
+html.msgr[dir="rtl"] .msgr-hc-clocks { direction: rtl; }
+html.msgr .msgr-hc-clocks .chat-profile-clocks {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 88px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--hc-tile-radius);
+  background: var(--fill);
+  color: var(--label);
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.14s var(--ease), transform 0.14s var(--ease);
+}
+html.msgr .msgr-hc-clocks .chat-profile-clocks:active { background: var(--fill-2); transform: scale(0.97); }
+/* The cities sit directly in the column, so every row shares its height. */
+html.msgr .msgr-hc-clocks .chat-clock-boxes { display: contents; }
+html.msgr .msgr-hc-clocks .chat-clock-line,
+html.msgr .msgr-hc-clocks .chat-clock-box {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0 7px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  gap: 1px;
+  text-align: center;
+}
+html.msgr .msgr-hc-clocks .chat-clock-box { border-top: 1px solid var(--sep); }
+/* The time is centred like the name above it; the day letter hangs in front of it, outside the centring. */
+html.msgr .msgr-hc-clocks .chat-clock-box { align-items: center; }
+html.msgr .msgr-hc-clocks .chat-clock-box-name { max-width: 100%; }
+html.msgr .msgr-hc-clocks .chat-clock-box-time { position: relative; }
+html.msgr .msgr-hc-clocks .chat-clock-box-date {
+  position: absolute;
+  inset-inline-end: 100%;
+  top: 50%;
+  margin-inline-end: 4px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--orange) 22%, transparent);
+}
+html.msgr .msgr-hc-clocks .chat-clock-dates,
+html.msgr .msgr-hc-clocks .chat-clock-box-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--label-2);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+html.msgr .msgr-hc-clocks .chat-clock-dates { font-size: 9.5px; letter-spacing: -0.1px; }
+html.msgr .msgr-hc-clocks .chat-clock-time,
+html.msgr .msgr-hc-clocks .chat-clock-box-time {
+  display: block;
+  /* visible: the day letter hangs outside the time's own box; the tile clips what truly runs out. */
+  overflow: visible;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+html.msgr .msgr-hc-clocks .chat-clock-time { color: var(--tint); }
+html.msgr .msgr-hc-clocks .chat-clock-box-time { color: var(--label); }
+html.msgr .msgr-hc-clocks .chat-clock-box-date { color: var(--orange); font-size: 9px; font-weight: 700; line-height: 1; white-space: nowrap; }
+/* Persian letters are drawn smaller than Latin ones at the same size. */
+html.msgr[dir="rtl"] .msgr-hc-clocks .chat-clock-box-date { font-size: 11px; min-width: 14px; height: 14px; }
+/* Fewer rows, more room: two rows and one row get the time a size larger. */
+html.msgr .msgr-hc-clocks .chat-profile-clocks[data-rows="2"] .chat-clock-time,
+html.msgr .msgr-hc-clocks .chat-profile-clocks[data-rows="2"] .chat-clock-box-time { font-size: 18px; }
+html.msgr .msgr-hc-clocks .chat-profile-clocks[data-rows="1"] .chat-clock-time { font-size: 22px; }
+html.msgr .msgr-hc-clocks .chat-profile-clocks[data-rows="1"] .chat-clock-dates { font-size: 11px; }
+/* The narrowest phones give the column less than 90px: the times step down so none is cut. */
+@media (max-width: 345px) {
+  html.msgr .msgr-hc-clocks .chat-clock-line, html.msgr .msgr-hc-clocks .chat-clock-box { padding: 0 5px; }
+  html.msgr .msgr-hc-clocks .chat-clock-time, html.msgr .msgr-hc-clocks .chat-clock-box-time { font-size: 13px; }
+  html.msgr .msgr-hc-clocks .chat-clock-box-date { min-width: 11px; height: 11px; margin-inline-end: 2px; font-size: 8.5px; }
+  /* 14px, not 16: a city on another day hangs its letter beside the time, outside the centring, and at 16px the letter
+     was 2px beyond a 70px tile (found when the gate ran at a time of day when Tokyo is tomorrow) */
+  html.msgr .msgr-hc-clocks .chat-profile-clocks[data-rows="2"] .chat-clock-time, html.msgr .msgr-hc-clocks .chat-profile-clocks[data-rows="2"] .chat-clock-box-time { font-size: 14px; }
+  html.msgr .msgr-hc-clocks .chat-profile-clocks[data-rows="1"] .chat-clock-time { font-size: 18px; }
+}
+/* The companion's own rules live under the chat's frame; here is the same, for the card.
+   Each <g> is one drawing and the timeline shows one at a time (steps), so it is
+   sprite animation; the keyframes are the chat's. */
+/* A companion in the corner of the card, not a column of it: it takes no room from the name. */
+/* direction:ltr — the sides are physical: clocks left, picture, companion right, in Persian too. */
+html.msgr .msgr-hc-row { width: 100%; display: grid; direction: ltr; grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1fr); align-items: center; gap: 8px; }
+html.msgr .msgr-hc-pet { width: 88px; height: 88px; justify-self: center; display: grid; place-items: center; }
+/* On the narrowest phones the side columns are narrower than the companion: it grows toward the card's edge, not into the picture. */
+@media (max-width: 345px) { html.msgr .msgr-hc-pet { justify-self: start; } }
+html.msgr .msgr-hc-pet .chat-pet { display: block; width: 88px; height: 88px; margin: 0 auto; padding: 0; border: 0; background: none; cursor: pointer; line-height: 0; }
+html.msgr .msgr-hc-pet .chat-pet svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+/* !normal: an animation cannot override an !important declaration, and the layer makes the rest important. */
+html.msgr .msgr-hc-pet .chat-pet .pet-frame { opacity: 0 !normal; }
+html.msgr .msgr-hc-pet .chat-pet[data-frames="2"] .pet-frame:nth-of-type(1) { animation: petTwoA 0.9s steps(1, end) infinite; }
+html.msgr .msgr-hc-pet .chat-pet[data-frames="2"] .pet-frame:nth-of-type(2) { animation: petTwoB 0.9s steps(1, end) infinite; }
+html.msgr .msgr-hc-pet .chat-pet[data-frames="3"] .pet-frame:nth-of-type(1) { animation: petThreeA 1.35s steps(1, end) infinite; }
+html.msgr .msgr-hc-pet .chat-pet[data-frames="3"] .pet-frame:nth-of-type(2) { animation: petThreeB 1.35s steps(1, end) infinite; }
+html.msgr .msgr-hc-pet .chat-pet[data-frames="3"] .pet-frame:nth-of-type(3) { animation: petThreeC 1.35s steps(1, end) infinite; }
+html.msgr .msgr-hc-pet .chat-pet.is-identity { display: grid; place-items: center; width: 88px; height: 88px; min-height: 0; padding: 6px; border-radius: var(--hc-tile-radius); background: var(--fill); color: var(--label-2); font-size: calc(11px * var(--fs, 1)); line-height: 1.2; }
+html.msgr .msgr-hc-pet .chat-pet-id { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  html.msgr .msgr-hc-pet .chat-pet .pet-frame { animation: none !important; }
+  html.msgr .msgr-hc-pet .chat-pet .pet-frame:nth-of-type(1) { opacity: 1 !normal; }
+}
+

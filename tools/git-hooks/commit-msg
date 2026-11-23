@@ -1,0 +1,18 @@
+#!/bin/sh
+# P00RIJA Chat — end-to-end encrypted messenger.
+# Copyright (C) 2026 Poorija <p00rija@tutamail.com>
+#
+# Licensed under the GNU Affero General Public License, version 3 only.
+# See LICENSE for the full text. Section 13 matters here: run a modified
+# version as a network service and its users are entitled to your source.
+#
+# A commit message in this repository carries no co-author trailer and no trace
+# of any tool that helped write the change. Turn it on in a clone with:
+#   git config core.hooksPath tools/git-hooks
+msg="$1"
+if grep -qiE '^[[:space:]]*(co-authored-by|signed-off-by|generated-by)[[:space:]]*:|generated with \[?claude|noreply@anthropic\.com' "$msg"; then
+  echo "commit refused: the message has a co-author or tool trailer. Remove it." >&2
+  grep -niE '^[[:space:]]*(co-authored-by|signed-off-by|generated-by)[[:space:]]*:|generated with \[?claude|noreply@anthropic\.com' "$msg" | sed 's/^/  line /' >&2
+  exit 1
+fi
+exit 0
