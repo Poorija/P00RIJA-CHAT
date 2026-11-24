@@ -10,6 +10,7 @@
 #
 #   bash scripts/build-android.sh              # signed release APK + AAB
 #   bash scripts/build-android.sh debug        # debug APK, installable immediately
+#   bash scripts/build-android.sh arm64        # an arm64-only APK (smaller; every current phone)
 #
 # No Google account and no Play Console are needed for either: Android installs
 # an APK signed with your own key. The $25 Play Console fee only applies to
@@ -44,13 +45,17 @@ if [ ! -d src-tauri/gen/android ]; then
 fi
 
 KEYSTORE_PROPS="${P00RIJA_ANDROID_KEYSTORE_PROPERTIES:-$HOME/.p00rija-android-signing/keystore.properties}"
-if [ "$MODE" = "release" ] && [ ! -f "$KEYSTORE_PROPS" ]; then
+if [ "$MODE" != "debug" ] && [ ! -f "$KEYSTORE_PROPS" ]; then
     warn "No signing keystore at $KEYSTORE_PROPS — the APK will come out unsigned"
     warn "and Android will refuse to install it. Create one with:"
     echo "    bash scripts/android-keystore.sh"
 fi
 
-if [ "$MODE" = "debug" ]; then
+if [ "$MODE" = "arm64" ]; then
+    log "Building the arm64-only release APK"
+    npx tauri android build --apk --target aarch64 || exit 1
+    OUT="src-tauri/gen/android/app/build/outputs/apk/arm64/release"
+elif [ "$MODE" = "debug" ]; then
     log "Building the debug APK"
     npx tauri android build --debug --apk || exit 1
     OUT="src-tauri/gen/android/app/build/outputs/apk/universal/debug"

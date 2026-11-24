@@ -7,11 +7,11 @@
 **End-to-end encrypted chat, voice & video calls and groups — through a server you run yourself.**<br>
 **چت رمزنگاری‌شدهٔ سرتاسری، تماس صوتی و تصویری و گروه — از راه سروری که خودتان اجرا می‌کنید.**
 
-![version](https://img.shields.io/badge/version-2.16.6-0a84ff?style=for-the-badge) ![license](https://img.shields.io/badge/license-AGPL--3.0-34c759?style=for-the-badge) ![post-quantum](https://img.shields.io/badge/key%20exchange-ECDH%20%2B%20ML--KEM--768-af52de?style=for-the-badge) ![platforms](https://img.shields.io/badge/PWA%20·%20macOS%20·%20Windows%20·%20Linux%20·%20Android-ff9500?style=for-the-badge)
+![version](https://img.shields.io/badge/version-2.16.7-0a84ff?style=for-the-badge) ![license](https://img.shields.io/badge/license-AGPL--3.0-34c759?style=for-the-badge) ![post-quantum](https://img.shields.io/badge/key%20exchange-ECDH%20%2B%20ML--KEM--768-af52de?style=for-the-badge) ![platforms](https://img.shields.io/badge/PWA%20·%20macOS%20·%20Windows%20·%20Linux%20·%20Android-ff9500?style=for-the-badge)
 
 [**English**](#-english) · [**فارسی**](#-فارسی) · [Install](#install-the-server) · [Native apps](#native-apps) · [Release notes](RELEASE-NOTES.md) · [Support](#support-the-project--حمایت-از-پروژه)
 
-Version 2.16.6 · build chat-v31 · AGPL-3.0-only
+Version 2.16.7 · build chat-v32 · AGPL-3.0-only
 
 <img src="docs/screenshots/chats-light.png" alt="Chats" width="19%"> <img src="docs/screenshots/thread-light.png" alt="A conversation" width="19%"> <img src="docs/screenshots/thread-dark.png" alt="A conversation, dark" width="19%"> <img src="docs/screenshots/calls-dark.png" alt="Calls" width="19%"> <img src="docs/screenshots/settings-dark.png" alt="Settings" width="19%">
 
@@ -145,7 +145,7 @@ password is kept (`.env`, mode 600).
 | `--password TEXT` | the dashboard password, 12+ characters (generated otherwise) |
 | `--peers "<id>@<origin>,…"` | relays this one carries for ([docs/RELAY-NETWORK.md](docs/RELAY-NETWORK.md)) |
 | `--dir DIR` | install folder (`/opt/p00rija-chat` as root) |
-| `--version v2.16.6` · `--branch NAME` | a release or a branch instead of `main` |
+| `--version v2.16.7` · `--branch NAME` | a release or a branch instead of `main` |
 | `--lang fa\|en` · `--no-start` · `--yes` | language · configure only · never ask |
 
 Other ways to install: the Docker images ([docker/README.dockerhub.md](docker/README.dockerhub.md),
@@ -207,7 +207,9 @@ exchange a card and compare the emoji safety number over a call. Full guide:
 ## Native apps
 
 Desktop (macOS, Windows, Linux) and Android apps, built with Tauri 2 from this
-repository. They are not signed for distribution; iOS uses the web app for now.
+repository. They are not signed for distribution. For iOS the build produces the
+Xcode project, zipped with the steps to sign it with your own Apple identity; nothing
+is signed or built for you.
 
 ```bash
 bash build-native.sh                  # a menu
@@ -215,12 +217,18 @@ bash build-native.sh mac universal    # .app and .dmg (on a Mac)
 bash build-native.sh windows          # NSIS installer, in Docker, from any host
 bash build-native.sh linux            # .deb .rpm .AppImage, in Docker
 bash build-native.sh android          # APK + AAB (needs the Android SDK/NDK)
+bash build-native.sh ios              # the Xcode project to sign yourself (on a Mac)
 bash build-native.sh all              # everything this machine can (45–90 min)
 bash build-native.sh check            # what this machine is missing
 ```
 
 Results land in `Export/` with `SHA256SUMS.txt`; `Export/GitHub/` is exactly what to
-attach to a GitHub release (`scripts/github-release-files.sh`). The older wizard:
+attach to a GitHub release (`scripts/github-release-files.sh`): the files, `SHA256SUMS.txt`
+and a `RELEASE-NOTES.md` with a which-file-for-which-machine table and every release since
+1.0.0. The apps check GitHub for a newer release themselves (Settings → About me; the
+check can be switched off) and download the file for their own architecture —
+universal, Apple silicon or Intel, x64 or ARM64, .deb, .rpm, AppImage — verified
+against `SHA256SUMS.txt`. The older wizard:
 `bash scripts/native-build-wizard.sh`.
 
 ## Develop, test, release
@@ -343,7 +351,7 @@ sudo bash install.sh
 | `--password TEXT` | رمز داشبورد، حداقل ۱۲ نویسه (وگرنه ساخته می‌شود) |
 | `--peers "<id>@<origin>,…"` | رله‌هایی که این یکی برایشان پیام می‌رساند ([docs/RELAY-NETWORK.md](docs/RELAY-NETWORK.md)) |
 | `--dir DIR` | پوشهٔ نصب (برای root: `/opt/p00rija-chat`) |
-| `--version v2.16.6` · `--branch NAME` | یک انتشار یا شاخه به‌جای `main` |
+| `--version v2.16.7` · `--branch NAME` | یک انتشار یا شاخه به‌جای `main` |
 | `--lang fa\|en` · `--no-start` · `--yes` | زبان · فقط تنظیم، بدون راه‌اندازی · هیچ‌چیز نپرس |
 
 راه‌های دیگر: ایمیج‌های Docker ([docker/README.dockerhub.md](docker/README.dockerhub.md)، `scripts/docker-install.sh`)، یا دستی ([INSTALL-LINUX-SERVER.md](INSTALL-LINUX-SERVER.md)).
@@ -397,7 +405,7 @@ curl -fsSL https://raw.githubusercontent.com/Poorija/P00RIJA-CHAT/main/install.s
 
 ## برنامه‌های بومی
 
-برنامهٔ دسکتاپ (macOS، Windows، Linux) و Android، با Tauri 2 از همین مخزن ساخته می‌شود. برای توزیع امضا نشده‌اند؛ iOS فعلاً با وب‌اپ است.
+برنامهٔ دسکتاپ (macOS، Windows، Linux) و Android، با Tauri 2 از همین مخزن ساخته می‌شود. برای توزیع امضا نشده‌اند. برای iOS پروژهٔ Xcode (zip) با راهنمای امضا با هویت Apple خودتان ساخته می‌شود؛ چیزی برایتان بیلد یا امضا نمی‌شود.
 
 ```bash
 bash build-native.sh                  # منو
@@ -405,11 +413,12 @@ bash build-native.sh mac universal    # .app و .dmg (روی Mac)
 bash build-native.sh windows          # نصب‌کنندهٔ NSIS، در Docker، از هر میزبانی
 bash build-native.sh linux            # .deb .rpm .AppImage، در Docker
 bash build-native.sh android          # APK و AAB (به Android SDK/NDK نیاز دارد)
+bash build-native.sh ios              # پروژهٔ Xcode برای امضای خودتان (روی Mac)
 bash build-native.sh all              # هرچه این ماشین بتواند (۴۵ تا ۹۰ دقیقه)
 bash build-native.sh check            # چه چیزی کم است
 ```
 
-خروجی در `Export/` با `SHA256SUMS.txt` است؛ `Export/GitHub/` دقیقاً همان است که به انتشار GitHub پیوست می‌شود (`scripts/github-release-files.sh`).
+خروجی در `Export/` با `SHA256SUMS.txt` است؛ `Export/GitHub/` دقیقاً همان است که به انتشار GitHub پیوست می‌شود (`scripts/github-release-files.sh`): فایل‌ها، `SHA256SUMS.txt` و `RELEASE-NOTES.md` با جدول «کدام فایل برای کدام دستگاه» و تاریخچهٔ همهٔ انتشارها از 1.0.0. برنامه خودش از GitHub نسخهٔ تازه را می‌پرسد (تنظیمات ← دربارهٔ من؛ قابل خاموش‌شدن) و فایل معماری خودش را (universal، Apple silicon یا Intel، x64 یا ARM64، deb، rpm، AppImage) دانلود و با `SHA256SUMS.txt` می‌سنجد.
 
 ## توسعه و آزمون
 

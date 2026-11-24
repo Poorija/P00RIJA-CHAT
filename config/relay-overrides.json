@@ -1,6 +1,6 @@
 {
   "name": "poorija-chat-signal",
-  "version": "2.16.6",
+  "version": "2.16.7",
   "private": true,
   "description": "The relay image's package.json. Its dependencies, pinned to exact versions, are the ONLY thing that decides what the relay runs; config/relay-lock.json fixes everything beneath them, and the image installs both with npm ci (roadmap 5.2: the same commit gives the same image). Change a version here, then run node tools/check-relay-pins.cjs --update-lock.",
   "dependencies": {

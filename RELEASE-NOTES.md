@@ -1,3 +1,34 @@
+# P00RIJA Chat 2.16.7
+
+Version 2.16.7 · build chat-v32
+
+The native apps, and the scripts that build them and put them on GitHub. The
+protocol and the servers are unchanged.
+
+**New**
+
+- **The native release is one door.** `bash build-native.sh all` builds macOS
+  (universal, Apple silicon, Intel), Windows (x64, ARM64), Linux (x86-64 and ARM64:
+  .deb, .rpm, AppImage, pacman package, portable archive) and Android (universal and
+  arm64 APK, AAB), one after another, with Docker for what the host cannot build
+  natively, and collects every file in `Export/GitHub/` with `SHA256SUMS.txt` and a
+  `RELEASE-NOTES.md` that holds a table of which file is for which machine and the
+  history of every release from 1.0.0. A platform the host cannot build is skipped and
+  named, never silently left out; the release is refused if a file it lists is missing.
+- **iOS: the project, not a build.** `bash build-native.sh ios` generates the Xcode
+  project and zips it with the web payload and a `README-SIGNING.txt`; iOS installs
+  only what is signed with your own Apple identity, so nothing is signed here.
+
+**Fixed**
+
+- **The updater takes the right file for the machine.** An Android phone is offered
+  the APK for its own chip, else the universal one; an Intel Mac the Intel build when
+  the release has one; a universal Mac install stays on the universal file and an Apple
+  silicon install on its own; the app bundle and the iOS project are never offered as
+  an update.
+
+Tests: `updatepick` covers the new files (18 checks).
+
 # P00RIJA Chat 2.16.6
 
 Version 2.16.6 · build chat-v31

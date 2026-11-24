@@ -65,10 +65,10 @@ const found = {
      it has to differ from the last one or the upload is refused -- a rejection
      at the end of a release, for a field nothing in the build would have
      mentioned. */
-  ...(exists('src-tauri/gen/apple/p00rija-cryptography_iOS/Info.plist') ? {
+  ...(exists('src-tauri/gen/apple/p00rija-chat_iOS/Info.plist') ? {
     'src-tauri/gen/apple/.../Info.plist CFBundleVersion':
       (/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/
-        .exec(read('src-tauri/gen/apple/p00rija-cryptography_iOS/Info.plist')) || [])[1],
+        .exec(read('src-tauri/gen/apple/p00rija-chat_iOS/Info.plist')) || [])[1],
   } : {}),
   ...(exists('src-tauri/gen/android/app/tauri.properties') ? {
     'src-tauri/gen/android/app/tauri.properties': (/tauri\.android\.versionName=([0-9][0-9A-Za-z.\-]*)/

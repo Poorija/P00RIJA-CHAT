@@ -2,7 +2,7 @@
 
 For the next person, or the next AI agent, to pick this up without asking.
 
-Package version: **2.16.6** (build chat-v31).
+Package version: **2.16.7** (build chat-v32).
 
 ## What this is
 

@@ -1,0 +1,470 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		115B9FB06CBC1D9CD0E0B0E8 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 31DE24707A27F220FDAD0232 /* QuartzCore.framework */; };
+		2CB25B885B08D044EC8210E7 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F09B4B45BDC93930D33FDB5D /* Security.framework */; };
+		68130E3F6C4C3F251FC34E48 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FBF6543C580F342F3613481B /* MetalKit.framework */; };
+		6EB61EC138DAB8E0253E6126 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = C91B2212A82C0C38C0A9C2DB /* LaunchScreen.storyboard */; };
+		737E732C80E9D78F3850647F /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E718357E186E5A2185FEBAE /* Metal.framework */; };
+		80C9001C5763EFFDE38981D6 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A75B48E089A3F894AF02E12E /* WebKit.framework */; };
+		8BDDFBAE7235CA26E8494972 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = C0DC29509BE20302610C2EEB /* main.mm */; };
+		929B752E68FD363209311992 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A9521C26D4478B7F0352E90D /* libapp.a */; };
+		9533EB1EFFEC47D3CB747761 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE21E84245FAA180DF6A7338 /* CoreGraphics.framework */; };
+		A5AC0E441F561263F81B7D73 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 5CA58C294297BD1EA36F00AE /* assets */; };
+		CD0B140A9C789553B22778C8 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8FAE32A69EE8659D66E53BC1 /* UIKit.framework */; };
+		CE4205B5488AD373B07A5DCB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A50F8A6F20F37C6853153433 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		11F426DC31D0F3F36197C2E4 /* mobile_secure_store.rs */ = {isa = PBXFileReference; path = mobile_secure_store.rs; sourceTree = "<group>"; };
+		2250A3103DBCD28E13CA4EC5 /* update_download.rs */ = {isa = PBXFileReference; path = update_download.rs; sourceTree = "<group>"; };
+		31DE24707A27F220FDAD0232 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		455F810C62932B6EE753633B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		4E718357E186E5A2185FEBAE /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		5383EED5C1FF4435A67B1F54 /* mobile_screen_guard.rs */ = {isa = PBXFileReference; path = mobile_screen_guard.rs; sourceTree = "<group>"; };
+		58A93537216884FE9227B3A3 /* p00rija-chat_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "p00rija-chat_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5CA58C294297BD1EA36F00AE /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		65DEA7E3910C05B388CAB02E /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
+		671C6EF2D23E25B3F78B1F6B /* p00rija-chat_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "p00rija-chat_iOS.entitlements"; sourceTree = "<group>"; };
+		8FAE32A69EE8659D66E53BC1 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		A50F8A6F20F37C6853153433 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A75B48E089A3F894AF02E12E /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		A9521C26D4478B7F0352E90D /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		AD9EA4B74F0E3335E2942E4A /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		B9484594E40019017F2F553B /* mobile_unifiedpush.rs */ = {isa = PBXFileReference; path = mobile_unifiedpush.rs; sourceTree = "<group>"; };
+		C0DC29509BE20302610C2EEB /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		C91B2212A82C0C38C0A9C2DB /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		CE21E84245FAA180DF6A7338 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		F09B4B45BDC93930D33FDB5D /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		F39755138CEE3A2EDF8F2703 /* link_preview.rs */ = {isa = PBXFileReference; path = link_preview.rs; sourceTree = "<group>"; };
+		F736AC74BE863BC722703450 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
+		FBF6543C580F342F3613481B /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1B0DE450890400B989CECFBF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				929B752E68FD363209311992 /* libapp.a in Frameworks */,
+				9533EB1EFFEC47D3CB747761 /* CoreGraphics.framework in Frameworks */,
+				737E732C80E9D78F3850647F /* Metal.framework in Frameworks */,
+				68130E3F6C4C3F251FC34E48 /* MetalKit.framework in Frameworks */,
+				115B9FB06CBC1D9CD0E0B0E8 /* QuartzCore.framework in Frameworks */,
+				2CB25B885B08D044EC8210E7 /* Security.framework in Frameworks */,
+				CD0B140A9C789553B22778C8 /* UIKit.framework in Frameworks */,
+				80C9001C5763EFFDE38981D6 /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0355091134E8C58B26A2FE9A /* bindings */ = {
+			isa = PBXGroup;
+			children = (
+				AD9EA4B74F0E3335E2942E4A /* bindings.h */,
+			);
+			path = bindings;
+			sourceTree = "<group>";
+		};
+		388A422C4A34D5032333D434 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				DFADB061E580BD56815F22E2 /* p00rija-chat */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		8F11A904AB7D90664554C062 = {
+			isa = PBXGroup;
+			children = (
+				5CA58C294297BD1EA36F00AE /* assets */,
+				A50F8A6F20F37C6853153433 /* Assets.xcassets */,
+				C91B2212A82C0C38C0A9C2DB /* LaunchScreen.storyboard */,
+				FB4D4CE5963C5AC217BEC3DC /* Externals */,
+				F69DCF35A6BF8EC76E2E47E8 /* p00rija-chat_iOS */,
+				388A422C4A34D5032333D434 /* Sources */,
+				F8FF95E255AD0A3F9BF893A9 /* src */,
+				F42A45AEF400E8F86AD276D9 /* Frameworks */,
+				F759C82C34D6E7427CD35195 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DFADB061E580BD56815F22E2 /* p00rija-chat */ = {
+			isa = PBXGroup;
+			children = (
+				C0DC29509BE20302610C2EEB /* main.mm */,
+				0355091134E8C58B26A2FE9A /* bindings */,
+			);
+			path = "p00rija-chat";
+			sourceTree = "<group>";
+		};
+		F42A45AEF400E8F86AD276D9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				CE21E84245FAA180DF6A7338 /* CoreGraphics.framework */,
+				A9521C26D4478B7F0352E90D /* libapp.a */,
+				4E718357E186E5A2185FEBAE /* Metal.framework */,
+				FBF6543C580F342F3613481B /* MetalKit.framework */,
+				31DE24707A27F220FDAD0232 /* QuartzCore.framework */,
+				F09B4B45BDC93930D33FDB5D /* Security.framework */,
+				8FAE32A69EE8659D66E53BC1 /* UIKit.framework */,
+				A75B48E089A3F894AF02E12E /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		F69DCF35A6BF8EC76E2E47E8 /* p00rija-chat_iOS */ = {
+			isa = PBXGroup;
+			children = (
+				455F810C62932B6EE753633B /* Info.plist */,
+				671C6EF2D23E25B3F78B1F6B /* p00rija-chat_iOS.entitlements */,
+			);
+			path = "p00rija-chat_iOS";
+			sourceTree = "<group>";
+		};
+		F759C82C34D6E7427CD35195 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				58A93537216884FE9227B3A3 /* p00rija-chat_iOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		F8FF95E255AD0A3F9BF893A9 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				65DEA7E3910C05B388CAB02E /* lib.rs */,
+				F39755138CEE3A2EDF8F2703 /* link_preview.rs */,
+				F736AC74BE863BC722703450 /* main.rs */,
+				5383EED5C1FF4435A67B1F54 /* mobile_screen_guard.rs */,
+				11F426DC31D0F3F36197C2E4 /* mobile_secure_store.rs */,
+				B9484594E40019017F2F553B /* mobile_unifiedpush.rs */,
+				2250A3103DBCD28E13CA4EC5 /* update_download.rs */,
+			);
+			name = src;
+			path = ../../src;
+			sourceTree = "<group>";
+		};
+		FB4D4CE5963C5AC217BEC3DC /* Externals */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Externals;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		EB7D5D9996E3B4696E717E5A /* p00rija-chat_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 33D1110CA7A2BF17CF36BF84 /* Build configuration list for PBXNativeTarget "p00rija-chat_iOS" */;
+			buildPhases = (
+				980955F5931434B37D194217 /* Build Rust Code */,
+				410576F637C830C63C017221 /* Sources */,
+				86782A87499AEE85928A811B /* Resources */,
+				1B0DE450890400B989CECFBF /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "p00rija-chat_iOS";
+			packageProductDependencies = (
+			);
+			productName = "p00rija-chat_iOS";
+			productReference = 58A93537216884FE9227B3A3 /* p00rija-chat_iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C036DB562E26AE74C4971E8F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 9BE24650A2CA6769945A69F0 /* Build configuration list for PBXProject "p00rija-chat" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 8F11A904AB7D90664554C062;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F759C82C34D6E7427CD35195 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				EB7D5D9996E3B4696E717E5A /* p00rija-chat_iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		86782A87499AEE85928A811B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CE4205B5488AD373B07A5DCB /* Assets.xcassets in Resources */,
+				6EB61EC138DAB8E0253E6126 /* LaunchScreen.storyboard in Resources */,
+				A5AC0E441F561263F81B7D73 /* assets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		980955F5931434B37D194217 /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "npm run -- tauri ios xcode-script -v --platform \"${PLATFORM_DISPLAY_NAME:?}\" --sdk-root \"${SDKROOT:?}\" --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration \"${CONFIGURATION:?}\" ${FORCE_COLOR} ${ARCHS:?}\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		410576F637C830C63C017221 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8BDDFBAE7235CA26E8494972 /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		6A193FDE5CF25B168BFAB742 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = debug;
+		};
+		B1BDBD553437F1154D631193 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "p00rija-chat_iOS/p00rija-chat_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "p00rija-chat_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.p00rija.chat;
+				PRODUCT_NAME = "P00RIJA Chat";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = debug;
+		};
+		C8FEB9998E2F8CD02E06B38C /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "p00rija-chat_iOS/p00rija-chat_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "p00rija-chat_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.p00rija.chat;
+				PRODUCT_NAME = "P00RIJA Chat";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = release;
+		};
+		FE00E10DB9AC741C3EAF66AC /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		33D1110CA7A2BF17CF36BF84 /* Build configuration list for PBXNativeTarget "p00rija-chat_iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B1BDBD553437F1154D631193 /* debug */,
+				C8FEB9998E2F8CD02E06B38C /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		9BE24650A2CA6769945A69F0 /* Build configuration list for PBXProject "p00rija-chat" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6A193FDE5CF25B168BFAB742 /* debug */,
+				FE00E10DB9AC741C3EAF66AC /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = C036DB562E26AE74C4971E8F /* Project object */;
+}

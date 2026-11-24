@@ -60,9 +60,13 @@ fi
 KINDS=(
     "macOS (Apple silicon)|macOS|*_${VERSION}_aarch64.dmg"
     "macOS (universal)|macOS|*_${VERSION}_universal.dmg"
+    "macOS (Intel)|macOS|*_${VERSION}_x64.dmg"
     "Windows (x64)|Windows|*_${VERSION}_x64-setup.exe"
     "Windows (ARM)|Windows|*_${VERSION}_arm64-setup.exe"
-    "Android|Android|*-${VERSION}-universal.apk"
+    "Android (universal)|Android|*-${VERSION}-universal.apk"
+    "Android (arm64)|Android|*-${VERSION}-arm64.apk"
+    "Android bundle|Android|*-${VERSION}.aab"
+    "iOS (project to sign)|iOS|*-${VERSION}-iOS-project.zip"
     "Debian (x86-64)|Linux/Debian|*_${VERSION}_amd64.deb"
     "Debian (ARM)|Linux/Debian|*_${VERSION}_arm64.deb"
     "Red Hat (x86-64)|Linux/RedHat|*-${VERSION}-1.x86_64.rpm"
@@ -136,4 +140,7 @@ if [ "${#missing[@]}" -gt 0 ]; then
     for item in "${missing[@]}"; do printf "${DIM}  %s${NC}\n" "$item"; done
     [ "$ALLOW_MISSING" -eq 1 ] || exit 2
 fi
-printf "${DIM}Upload everything in %s/ to the release, SHA256SUMS.txt included.${NC}\n" "$OUT"
+# The notes of the release: which file for which machine, how to check it, and
+# everything every release changed from the first (scripts/github-release-notes.mjs).
+node "$ROOT/scripts/github-release-notes.mjs" "$OUT" || printf "${WARN}The release notes could not be written.${NC}\n"
+printf "${DIM}Upload everything in %s/ to the release, SHA256SUMS.txt and RELEASE-NOTES.md included (paste the notes as the release text).${NC}\n" "$OUT"

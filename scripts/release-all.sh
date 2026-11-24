@@ -180,10 +180,20 @@ echo
 # 2. Desktop.
 # ---------------------------------------------------------------------------
 say "Desktop"
-have "src-tauri/target/universal-apple-darwin/release/bundle/dmg/*$VERSION*.dmg" "macos-universal" \
+# macOS builds need a Mac; Windows and Linux are built in Docker, so they build
+# on any host that has it. A host that cannot build a kind says so and goes on.
+if [ "$(uname -s)" != "Darwin" ]; then
+    warn "macOS packages need a Mac: skipped on $(uname -s)"
+    SKIP_MAC=1
+else
+    SKIP_MAC=0
+fi
+[ "${SKIP_MAC:-0}" -eq 1 ] || have "src-tauri/target/universal-apple-darwin/release/bundle/dmg/*$VERSION*.dmg" "macos-universal" \
     || step "macos-universal" bash scripts/build-macos.sh universal
-have "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*$VERSION*.dmg" "macos-arm64" \
+[ "${SKIP_MAC:-0}" -eq 1 ] || have "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*$VERSION*.dmg" "macos-arm64" \
     || step "macos-arm64" bash scripts/build-macos.sh arm64
+[ "${SKIP_MAC:-0}" -eq 1 ] || have "src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*$VERSION*.dmg" "macos-x86_64" \
+    || step "macos-x86_64" bash scripts/build-macos.sh x86_64
 have "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*$VERSION*.exe" "windows-x64" \
     || step "windows-x64" bash scripts/build-windows-docker.sh x86_64
 have "src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*$VERSION*.exe" "windows-arm64" \
@@ -202,12 +212,15 @@ echo
 if [ "$SKIP_MOBILE" -eq 0 ]; then
     say "Mobile"
     step "android" bash scripts/build-android.sh
+    # The universal APK and the bundle are in; the arm64-only one is built after,
+    # because both come out of the same Gradle slot and the export names each by
+    # what is inside it.
+    bash scripts/export-artifacts.sh >/dev/null 2>&1 || true
+    step "android-arm64" bash scripts/build-android.sh arm64
 
-    # `tauri ios build` renames its output into place and fails with
-    # "Directory not empty (os error 66)" if the previous .app is still there,
-    # which then silently ships the OLD build because the zip step finds it.
-    rm -rf "src-tauri/gen/apple/build/arm64-sim/P00RIJA Chat.app"
-    step "ios-simulator" bash -c 'source scripts/mobile-env.sh >/dev/null && npx tauri ios build --target aarch64-sim'
+    # iOS is not built: the project is packaged for the person to sign with their own
+    # Apple identity (scripts/package-ios-project.sh).
+    step "ios-project" bash scripts/package-ios-project.sh
     echo
 else
     warn "mobile skipped (--skip-mobile)"

@@ -80,7 +80,8 @@ printf "${INFO}Collecting build %s into %s/${NC}\n\n" "$VERSION" "$EXPORT"
 T=src-tauri/target
 
 take "macOS"            "$T/universal-apple-darwin/release/bundle/dmg/P00RIJA Chat_${VERSION}_universal.dmg" \
-                        "$T/aarch64-apple-darwin/release/bundle/dmg/P00RIJA Chat_${VERSION}_aarch64.dmg"
+                        "$T/aarch64-apple-darwin/release/bundle/dmg/P00RIJA Chat_${VERSION}_aarch64.dmg" \
+                        "$T/x86_64-apple-darwin/release/bundle/dmg/P00RIJA Chat_${VERSION}_x64.dmg"
 
 take "Windows"          "$T/x86_64-pc-windows-msvc/release/bundle/nsis/P00RIJA Chat_${VERSION}_x64-setup.exe" \
                         "$T/aarch64-pc-windows-msvc/release/bundle/nsis/P00RIJA Chat_${VERSION}_arm64-setup.exe"
@@ -132,18 +133,19 @@ if [ -f "$EXPORT/Android/app-universal-release.apk" ]; then
     fi
 fi
 
-# The simulator build is the only iOS artifact that exists without a signing
-# identity, and it is a directory, so it goes in as an archive.
-IOS_APP="src-tauri/gen/apple/build/arm64-sim/P00RIJA Chat.app"
-if [ -d "$IOS_APP" ]; then
-    mkdir -p "$EXPORT/iOS"
-    ( cd "$(dirname "$IOS_APP")" && zip -qry "$ROOT/$EXPORT/iOS/P00RIJA-Chat-${VERSION}-iOS-Simulator.app.zip" "$(basename "$IOS_APP")" )
-    printf "  %-7s %-22s %s\n" \
-        "$(du -h "$EXPORT/iOS/P00RIJA-Chat-${VERSION}-iOS-Simulator.app.zip" | cut -f1)" \
-        "iOS" "P00RIJA-Chat-${VERSION}-iOS-Simulator.app.zip"
+# The arm64-only APK is its own build slot (build-android.sh arm64).
+ARM_APK="src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk"
+if [ -f "$ARM_APK" ]; then
+    mkdir -p "$EXPORT/Android"
+    cp -f "$ARM_APK" "$EXPORT/Android/P00RIJA-Chat-${VERSION}-arm64.apk"
+    printf "  %-7s %-22s %s\n" "$(du -h "$ARM_APK" | cut -f1)" "Android" "P00RIJA-Chat-${VERSION}-arm64.apk"
     copied=$((copied + 1))
-else
-    missing+=("iOS/simulator build")
+fi
+
+# iOS is not built here: the project to sign (scripts/package-ios-project.sh)
+# writes Export/iOS/ itself.
+if ! ls "$EXPORT/iOS/P00RIJA-Chat-${VERSION}-iOS-project.zip" >/dev/null 2>&1; then
+    missing+=("iOS/project (run scripts/package-ios-project.sh)")
 fi
 
 # Rename the Android outputs to something a person can identify on a phone.

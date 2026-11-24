@@ -35,6 +35,8 @@ const NAMES = [
   'P00RIJA.Cryptography_2.98.85_aarch64.dmg', 'P00RIJA.Cryptography_2.98.85_amd64.AppImage', 'P00RIJA.Cryptography_2.98.85_amd64.deb',
   'P00RIJA.Cryptography_2.98.85_arm64-setup.exe', 'P00RIJA.Cryptography_2.98.85_arm64.deb', 'P00RIJA.Cryptography_2.98.85_universal.dmg',
   'P00RIJA.Cryptography_2.98.85_x64-setup.exe', 'SHA256SUMS.txt',
+  'P00RIJA.Cryptography_2.98.85_x64.dmg', 'P00RIJA-Cryptography-2.98.85-arm64.apk', 'P00RIJA-Cryptography-2.98.85.aab',
+  'P00RIJA-Chat-2.98.85-iOS-project.zip',
 ];
 const ASSETS = NAMES.map((name) => ({ name, browser_download_url: `https://github.com/x/y/releases/download/2.98.85/${name}` }));
 const UA = {
@@ -53,7 +55,7 @@ const pick = (ua, info) => load(ua).pickAsset(ASSETS, info)?.name || null;
 
 check('an Apple Silicon install gets the Apple Silicon build, not the universal one', pick(UA.mac, { os: 'macos', arch: 'aarch64', bundle: 'app', universal: false }) === 'P00RIJA.Cryptography_2.98.85_aarch64.dmg', pick(UA.mac, { os: 'macos', arch: 'aarch64', bundle: 'app', universal: false }));
 check('a universal install gets the universal build', pick(UA.mac, { os: 'macos', arch: 'aarch64', bundle: 'app', universal: true }) === 'P00RIJA.Cryptography_2.98.85_universal.dmg');
-check('an Intel Mac, with no Intel build of its own, gets the universal one', pick(UA.mac, { os: 'macos', arch: 'x86_64', bundle: 'app', universal: false }) === 'P00RIJA.Cryptography_2.98.85_universal.dmg');
+check('an Intel Mac, with no Intel build in the release, gets the universal one', load(UA.mac).pickAsset(ASSETS.filter((asset) => !/_x64\.dmg$/.test(asset.name)), { os: 'macos', arch: 'x86_64', bundle: 'app', universal: false })?.name === 'P00RIJA.Cryptography_2.98.85_universal.dmg');
 check('Windows on Intel gets the x64 installer', pick(UA.win, { os: 'windows', arch: 'x86_64', bundle: 'nsis' }) === 'P00RIJA.Cryptography_2.98.85_x64-setup.exe');
 check('Windows on ARM gets the arm64 installer, though its webview says x64', pick(UA.win, { os: 'windows', arch: 'aarch64', bundle: 'nsis' }) === 'P00RIJA.Cryptography_2.98.85_arm64-setup.exe');
 check('a .deb install on Intel gets the amd64 .deb', pick(UA.linux, { os: 'linux', arch: 'x86_64', bundle: 'deb' }) === 'P00RIJA.Cryptography_2.98.85_amd64.deb');
@@ -64,7 +66,10 @@ check('an AppImage gets the AppImage', pick(UA.linux, { os: 'linux', arch: 'x86_
   && pick(UA.linux, { os: 'linux', arch: 'aarch64', bundle: 'appimage' }) === 'P00RIJA.Cryptography_2.98.85_aarch64.AppImage');
 check('an Arch Linux install gets the pacman package', pick(UA.linux, { os: 'linux', arch: 'x86_64', bundle: null, distro: 'arch' }) === 'p00rija-cryptography-2.98.85-x86_64.pkg.tar.zst');
 check('any other Linux install, the tarball', pick(UA.linux, { os: 'linux', arch: 'aarch64', bundle: null, distro: 'gentoo' }) === 'p00rija-cryptography-2.98.85-linux-aarch64.tar.gz');
-check('Android gets the APK', pick(UA.android, { os: 'android', arch: 'aarch64' }) === 'P00RIJA-Cryptography-2.98.85-universal.apk');
+check('an arm64 phone gets the arm64 APK, smaller than the universal one', pick(UA.android, { os: 'android', arch: 'aarch64' }) === 'P00RIJA-Cryptography-2.98.85-arm64.apk', pick(UA.android, { os: 'android', arch: 'aarch64' }));
+check('a phone of another architecture gets the universal APK', pick(UA.android, { os: 'android', arch: 'x86_64' }) === 'P00RIJA-Cryptography-2.98.85-universal.apk');
+check('the app bundle and the iOS project are never offered as an update', !['android', 'ios'].some((os) => /\.aab$|iOS-project/.test(pick(UA.android, { os, arch: 'aarch64' }) || '')));
+check('an Intel Mac install gets the Intel build now that there is one', pick(UA.mac, { os: 'macos', arch: 'x86_64', bundle: 'app', universal: false }) === 'P00RIJA.Cryptography_2.98.85_x64.dmg', pick(UA.mac, { os: 'macos', arch: 'x86_64', bundle: 'app', universal: false }));
 check('without the shell’s word a Mac falls back to the universal build', pick(UA.mac, null) === 'P00RIJA.Cryptography_2.98.85_universal.dmg');
 check('and a release without this machine’s file offers none', load(UA.mac).pickAsset(ASSETS.filter((asset) => !/dmg$/.test(asset.name)), { os: 'macos', arch: 'aarch64', bundle: 'app' }) === null);
 check('the checksums file is found for the download to be checked against', load(UA.mac).sumsAsset?.(ASSETS)?.name === 'SHA256SUMS.txt');

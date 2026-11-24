@@ -13,8 +13,9 @@
 #   bash build-native.sh mac [arm64|x86_64|universal]
 #   bash build-native.sh windows [x86_64|arm64]     # from macOS / Linux, in Docker
 #   bash build-native.sh linux [x86_64|arm64]       # .deb .rpm .AppImage, in Docker
-#   bash build-native.sh android [release|debug]    # APK + AAB
-#   bash build-native.sh all                        # every platform this host can
+#   bash build-native.sh android [release|arm64|debug]   # universal APK + AAB; arm64 = a smaller APK
+#   bash build-native.sh ios                        # the Xcode project to sign yourself (a Mac; not a build)
+#   bash build-native.sh all                        # every platform this host can, then the GitHub folder
 #   bash build-native.sh check                      # what this machine is missing
 #
 # What it uses, so there is nothing new to learn or to break:
@@ -22,10 +23,18 @@
 #   Windows  scripts/build-windows-docker.sh   NSIS installer, from any host with Docker
 #   Linux    scripts/build-native-docker.sh    .deb / .rpm / .AppImage, from any host with Docker
 #   Android  scripts/build-android.sh    needs the Android SDK + NDK; signed with your own key
+#   iOS      scripts/package-ios-project.sh   the Xcode project, zipped, with signing steps; iOS
+#            installs only what carries your own Apple identity, so nothing is built or signed
 #   all      scripts/release-all.sh      sequential, logged, verified (45-90 minutes)
 #
+# `all` runs one platform after another, not at once: they share one web payload
+# (dist/tauri) and Docker, and a parallel run would race on both. What the host
+# cannot build natively it builds in Docker (Windows, Linux); macOS and iOS need a
+# Mac, and on any other host they are skipped and said so.
+#
 # Everything lands in Export/ (scripts/export-artifacts.sh), with SHA256SUMS.txt,
-# and Export/GitHub/ holds exactly the files to attach to a GitHub release
+# and Export/GitHub/ holds exactly the files to attach to a GitHub release, with
+# SHA256SUMS.txt and a full RELEASE-NOTES.md from the first release to this one
 # (scripts/github-release-files.sh).
 #
 # Native builds are not the same as the web app: the web app needs none of this,
@@ -84,6 +93,8 @@ build() {
             esac ;;
         android)
             run bash scripts/build-android.sh "${arg:-release}" ;;
+        ios)
+            run bash scripts/package-ios-project.sh ;;
         all)
             run bash scripts/release-all.sh "${@:2}" ;;
         *) usage; exit 2 ;;
@@ -97,15 +108,15 @@ build() {
     return $code
 }
 
-usage() { sed -n '12,29p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '12,40p' "$0" | sed 's/^# \{0,1\}//'; }
 
 menu() {
-    printf '\n  1) macOS          (.app, .dmg)\n  2) Windows        (NSIS installer, via Docker)\n  3) Linux          (.deb .rpm .AppImage, via Docker)\n  4) Android        (APK + AAB)\n  5) Everything this machine can\n  6) Check what is missing\n  q) Quit\n\n'
+    printf '\n  1) macOS          (.app, .dmg)\n  2) Windows        (NSIS installer, via Docker)\n  3) Linux          (.deb .rpm .AppImage, via Docker)\n  4) Android        (APK + AAB)\n  5) iOS            (Xcode project to sign yourself)\n  6) Everything this machine can\n  7) Check what is missing\n  q) Quit\n\n'
     printf "${INFO}? Which?${NC} "
     read -r pick
     case "$pick" in
         1) build mac ;; 2) build windows ;; 3) build linux ;; 4) build android ;;
-        5) build all ;; 6) check ;; *) exit 0 ;;
+        5) build ios ;; 6) build all ;; 7) check ;; *) exit 0 ;;
     esac
 }
 

@@ -137,7 +137,9 @@
     const words = m.arch === 'aarch64' ? '(?:aarch64|arm64)' : '(?:x86_64|amd64|x64)';
     switch (m.os) {
       case 'android':
-        return find(/\.apk$/i);
+        // The build for this phone's own chip when the release has one, else the
+        // universal APK, which runs on all of them.
+        return find(new RegExp(`[._-]${words}\\.apk$`, 'i')) || find(/universal\.apk$/i) || find(/\.apk$/i);
       case 'macos':
         // A universal install, or a machine that could not say, keeps to the
         // universal build; otherwise the build for its own chip.
