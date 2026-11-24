@@ -114,4 +114,21 @@ function pushSendOptions(kind) {
   return { urgency: 'high', TTL: PUSH_TTL_SECONDS.chat };
 }
 
-module.exports = { pushKindFor, pushBodyFor, pushTagFor, normalizePushLang, pushSendOptions };
+/* The hint a sender may add to an envelope for a recipient who asked for more
+ * on their notifications: the sender's name and the kind of thing, each already
+ * encrypted under a key only the recipient and the recipient's contacts hold
+ * (js/chat/69-notice-hints.js). The relay cannot open it and does not try: all
+ * that is decided here is that it is the right shape and small, so a push is
+ * never made larger or stranger by what a sender put on the outside. */
+const HINT_PART = /^[A-Za-z0-9+/=_-]+$/;
+function sanitizeNoticeHint(value) {
+  if (!value || typeof value !== 'object') return null;
+  const part = (item) => (item && typeof item.iv === 'string' && typeof item.c === 'string'
+    && item.iv.length >= 8 && item.iv.length <= 32 && item.c.length >= 16 && item.c.length <= 1400
+    && HINT_PART.test(item.iv) && HINT_PART.test(item.c) ? { iv: item.iv, c: item.c } : null);
+  const n = part(value.n);
+  const p = part(value.p);
+  return n || p ? { ...(n ? { n } : {}), ...(p ? { p } : {}) } : null;
+}
+
+module.exports = { pushKindFor, pushBodyFor, pushTagFor, normalizePushLang, pushSendOptions, sanitizeNoticeHint };

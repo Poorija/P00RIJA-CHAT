@@ -7,7 +7,7 @@
  * version as a network service and its users are entitled to your source.
  */
 
-const CACHE_NAME = 'poorija-chat-v2.16.7-chat-v32';
+const CACHE_NAME = 'poorija-chat-v2.17.1-chat-v35';
 
 // Live endpoints proxied by nginx: never cached, always straight to the network.
 const NETWORK_ONLY_PREFIXES = [
@@ -144,6 +144,7 @@ const LAZY_ASSETS = [
   './js/chat/66-key-transparency.js',
   './js/chat/67-path-race.js',
   './js/chat/68-sfu-call.js',
+  './js/chat/69-notice-hints.js',
   './js/chat/sfu-worklet.js',
   './vendor/noise-suppressor/rnnoise-worklet.js',
   './vendor/noise-suppressor/rnnoise.wasm',
@@ -449,6 +450,94 @@ function unreadCountLine(count, lang) {
  * instead of stacking identical rows, and renotify makes the device alert
  * again for each one, so every message is still announced. The running total
  * is read back off the row about to be replaced and carried on the new one. */
+/* What the person asked a notification to say (js/chat/69-notice-hints.js).
+ *
+ * Two switches, off until turned on. For each that is on, the page keeps a key in
+ * IndexedDB — the one thing here a worker can read that the locked vault cannot
+ * give — and hands the same key to the person's contacts. A contact's push then
+ * carries, beside the fixed line, the sender's name and the kind of thing
+ * (and the start of a text), each encrypted under that key. The relay and the
+ * push service saw bytes; the worker opens them and builds the line below.
+ * Without the keys, or when anything fails to open, the fixed line is what is
+ * shown: a notification that cannot say more says what it always said. */
+function readNoticeKeys() {
+  return new Promise((resolve) => {
+    try {
+      const factory = self.indexedDB || (typeof indexedDB !== 'undefined' ? indexedDB : null);
+      if (!factory) { resolve(null); return; }
+      const open = factory.open('poorija-notice', 1);
+      open.onupgradeneeded = () => { try { open.result.createObjectStore('kv'); } catch (error) { /* exists */ } };
+      open.onerror = () => resolve(null);
+      open.onsuccess = () => {
+        try {
+          const db = open.result;
+          const get = db.transaction('kv', 'readonly').objectStore('kv').get('keys');
+          get.onsuccess = () => { try { db.close(); } catch (error) { /* closed */ } resolve(get.result || null); };
+          get.onerror = () => { try { db.close(); } catch (error) { /* closed */ } resolve(null); };
+        } catch (error) { resolve(null); }
+      };
+    } catch (error) { resolve(null); }
+  });
+}
+function noticeFromBase64(text) {
+  const raw = atob(String(text || '').replace(/-/g, '+').replace(/_/g, '/'));
+  const out = new Uint8Array(raw.length);
+  for (let at = 0; at < raw.length; at += 1) out[at] = raw.charCodeAt(at);
+  return out;
+}
+async function openNoticePart(part, key) {
+  if (!part || !key) return null;
+  try {
+    const plain = await self.crypto.subtle.decrypt({ name: 'AES-GCM', iv: noticeFromBase64(part.iv) }, key, noticeFromBase64(part.c));
+    return JSON.parse(new TextDecoder().decode(plain));
+  } catch (error) {
+    return null;
+  }
+}
+const NOTICE_KIND_WORDS = {
+  fa: { text: 'پیام جدید', sticker: 'استیکر', gif: 'گیف', photo: 'عکس', video: 'ویدیو', voice: 'پیام صوتی', audio: 'فایل صوتی', file: 'فایل', location: 'موقعیت مکانی' },
+  en: { text: 'New message', sticker: 'Sticker', gif: 'GIF', photo: 'Photo', video: 'Video', voice: 'Voice message', audio: 'Audio', file: 'File', location: 'Location' },
+};
+/* The title and body for a push that carries a hint, or null to keep the fixed
+   line. Only what the person switched on is read, even if more arrived.
+
+   Each contact has keys of their own, and a hint says nothing of whose it is, so
+   every pair is tried: the pair that opens the name is the pair whose other half
+   opens the line. A hint carries its own time and is not believed a day and a
+   half later, or from the future. */
+const NOTICE_FRESH_MS = 36 * 60 * 60 * 1000;
+function noticeIsFresh(part) {
+  const at = Number(part?.at || 0);
+  return at > 0 && at <= Date.now() + 10 * 60 * 1000 && Date.now() - at <= NOTICE_FRESH_MS;
+}
+async function noticeFromHint(hint, lang) {
+  if (!hint || typeof hint !== 'object') return null;
+  const record = await readNoticeKeys();
+  if (!record || !record.show || !Array.isArray(record.list)) return null;
+  let name = '';
+  let what = null;
+  for (const pair of record.list) {
+    /* Both halves must open under the SAME contact's keys. The name shown is the
+       one this device saved for that contact, never the one the hint carries. */
+    const nameBox = record.show.s && hint.n ? await openNoticePart(hint.n, pair?.s) : null;
+    const whatBox = record.show.p && hint.p ? await openNoticePart(hint.p, pair?.p) : null;
+    const nameOk = !(record.show.s && hint.n) || (nameBox && noticeIsFresh(nameBox));
+    const whatOk = !(record.show.p && hint.p) || (whatBox && noticeIsFresh(whatBox));
+    if (!nameOk || !whatOk || (!nameBox && !whatBox)) continue;
+    if (nameBox) name = String(pair.name || '').trim().slice(0, 60);
+    if (whatBox) what = whatBox;
+    break;
+  }
+  if (!name && !what) return null;
+  const fa = String(lang || '').toLowerCase().startsWith('fa');
+  const words = NOTICE_KIND_WORDS[fa ? 'fa' : 'en'];
+  const kind = what && words[what.k] ? what.k : 'text';
+  const line = what ? ((kind === 'text' && String(what.t || '').trim()) ? String(what.t).trim().slice(0, 140) : words[kind]) : '';
+  if (name && line) return { title: name, body: line };
+  if (name) return { title: '', body: fa ? `پیام تازه از ${name}` : `New message from ${name}` };
+  return { title: '', body: line };
+}
+
 async function showPushNotice(payload) {
   const tag = payload.tag || 'poorija-chat';
   const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -471,8 +560,11 @@ async function showPushNotice(payload) {
   const running = showing.reduce((highest, item) => Math.max(highest, Number(item.data?.count) || 1), 0);
   const count = running + 1;
   showing.forEach((item) => item.close());
-  const body = [payload.body || '', unreadCountLine(count, payload.lang)].filter(Boolean).join(' ');
-  await self.registration.showNotification(payload.title || 'P00RIJA Chat', {
+  /* Said more, if the person asked for it and the keys are here. */
+  let said = null;
+  try { said = payload.hint ? await noticeFromHint(payload.hint, payload.lang) : null; } catch (error) { said = null; }
+  const body = [(said ? said.body : payload.body) || '', unreadCountLine(count, payload.lang)].filter(Boolean).join(' ');
+  await self.registration.showNotification((said && said.title) || payload.title || 'P00RIJA Chat', {
     body,
     tag,
     renotify: true,

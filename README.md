@@ -7,11 +7,11 @@
 **End-to-end encrypted chat, voice & video calls and groups — through a server you run yourself.**<br>
 **چت رمزنگاری‌شدهٔ سرتاسری، تماس صوتی و تصویری و گروه — از راه سروری که خودتان اجرا می‌کنید.**
 
-![version](https://img.shields.io/badge/version-2.16.7-0a84ff?style=for-the-badge) ![license](https://img.shields.io/badge/license-AGPL--3.0-34c759?style=for-the-badge) ![post-quantum](https://img.shields.io/badge/key%20exchange-ECDH%20%2B%20ML--KEM--768-af52de?style=for-the-badge) ![platforms](https://img.shields.io/badge/PWA%20·%20macOS%20·%20Windows%20·%20Linux%20·%20Android-ff9500?style=for-the-badge)
+![version](https://img.shields.io/badge/version-2.17.1-0a84ff?style=for-the-badge) ![license](https://img.shields.io/badge/license-AGPL--3.0-34c759?style=for-the-badge) ![post-quantum](https://img.shields.io/badge/key%20exchange-ECDH%20%2B%20ML--KEM--768-af52de?style=for-the-badge) ![platforms](https://img.shields.io/badge/PWA%20·%20macOS%20·%20Windows%20·%20Linux%20·%20Android-ff9500?style=for-the-badge)
 
 [**English**](#-english) · [**فارسی**](#-فارسی) · [Install](#install-the-server) · [Native apps](#native-apps) · [Release notes](RELEASE-NOTES.md) · [Support](#support-the-project--حمایت-از-پروژه)
 
-Version 2.16.7 · build chat-v32 · AGPL-3.0-only
+Version 2.17.1 · build chat-v35 · AGPL-3.0-only
 
 <img src="docs/screenshots/chats-light.png" alt="Chats" width="19%"> <img src="docs/screenshots/thread-light.png" alt="A conversation" width="19%"> <img src="docs/screenshots/thread-dark.png" alt="A conversation, dark" width="19%"> <img src="docs/screenshots/calls-dark.png" alt="Calls" width="19%"> <img src="docs/screenshots/settings-dark.png" alt="Settings" width="19%">
 
@@ -49,6 +49,7 @@ repository as well.
 | 👥 **Groups** | Roles and permissions, mentions, invitations, group calls through an SFU. A group put on you by a stranger waits under *Requests* until you say yes. |
 | 📡 **Local** | Chat and calls with people on the same Wi-Fi, with no server at all. |
 | 🔔 **Toasts** | A burst of messages is *one* notice per conversation that counts as it grows (“3 stickers, 1 message”); different people stay separate. |
+| 🔕 **What a notification says** | By default only “an encrypted message arrived”. Two switches in Settings → Notifications and sounds, both off: the **sender’s name** and the **message or the kind of media**. They work even with the app closed: the name and text are encrypted under keys only your devices and your contacts hold, so the relay and Google/Apple never read them. |
 | ⚙️ **Settings** | Telegram / iOS-style pages. Status lines are live; each page opens at its top and remembers where you were when you come back. |
 | ◀️ **Back / forward** | The system back gesture and button (Android, browser, iOS edge swipe) walk back through the app’s screens — a conversation, a Settings page, the list — instead of leaving the app; forward goes the other way. A call in full screen is minimised, never hung up. |
 | 🎨 **Interface** | The tabs and list of Telegram and WhatsApp, drawn with the glass and motion of iOS 26. Light and dark, **Persian (RTL) and English**, phone and desktop. |
@@ -145,7 +146,7 @@ password is kept (`.env`, mode 600).
 | `--password TEXT` | the dashboard password, 12+ characters (generated otherwise) |
 | `--peers "<id>@<origin>,…"` | relays this one carries for ([docs/RELAY-NETWORK.md](docs/RELAY-NETWORK.md)) |
 | `--dir DIR` | install folder (`/opt/p00rija-chat` as root) |
-| `--version v2.16.7` · `--branch NAME` | a release or a branch instead of `main` |
+| `--version v2.17.1` · `--branch NAME` | a release or a branch instead of `main` |
 | `--lang fa\|en` · `--no-start` · `--yes` | language · configure only · never ask |
 
 Other ways to install: the Docker images ([docker/README.dockerhub.md](docker/README.dockerhub.md),
@@ -286,6 +287,7 @@ node tests/regression.mjs --only calls,settings         # some
 | 👥 **گروه** | نقش و دسترسی، منشن، دعوت، تماس گروهی با SFU. گروهی که غریبه‌ای شما را در آن بگذارد تا نپذیرید زیر «درخواست‌ها» می‌ماند. |
 | 📡 **محلی** | چت و تماس با کسانی که روی همان Wi‑Fi هستند، بدون هیچ سرور. |
 | 🔔 **اعلان درون‌برنامه** | هجوم پیام‌ها برای هر گفتگو **یک** اعلان است که با رسیدن پیام‌های تازه می‌شمارد («۳ استیکر و ۱ پیام»)؛ افراد مختلف جدا می‌مانند. |
+| 🔕 **محتوای اعلان** | پیش‌فرض فقط «پیام رمزنگاری‌شده‌ای رسید». دو سوییچ در تنظیمات ← اعلان‌ها و صداها، هر دو خاموش: **نام فرستنده** و **متن پیام یا نوع رسانه**. حتی با برنامهٔ بسته کار می‌کنند: نام و متن با کلیدی رمز می‌شوند که فقط دستگاه‌های شما و مخاطبان‌تان دارند؛ رله و گوگل/اپل آن را نمی‌خوانند. |
 | ⚙️ **تنظیمات** | صفحه‌ها به سبک تلگرام/iOS. وضعیت‌ها زنده‌اند؛ هر صفحه از بالا باز می‌شود و موقع برگشت به همان جایی می‌رود که بودید. |
 | ◀️ **عقب / جلو** | ژست و دکمهٔ برگشت سیستم (Android، مرورگر، لبه‌کشی iOS) به‌جای خروج از برنامه، یک صفحه به عقب می‌رود — گفتگو، صفحهٔ تنظیمات، فهرست — و جلو برعکس. تماسِ تمام‌صفحه کوچک می‌شود و هرگز قطع نمی‌شود. |
 | 🎨 **ظاهر** | تب‌ها و فهرست تلگرام و واتس‌اپ، با شیشه و حرکت iOS 26. روشن و تیره، **فارسی (راست‌به‌چپ) و انگلیسی**، موبایل و دسکتاپ. |
@@ -351,7 +353,7 @@ sudo bash install.sh
 | `--password TEXT` | رمز داشبورد، حداقل ۱۲ نویسه (وگرنه ساخته می‌شود) |
 | `--peers "<id>@<origin>,…"` | رله‌هایی که این یکی برایشان پیام می‌رساند ([docs/RELAY-NETWORK.md](docs/RELAY-NETWORK.md)) |
 | `--dir DIR` | پوشهٔ نصب (برای root: `/opt/p00rija-chat`) |
-| `--version v2.16.7` · `--branch NAME` | یک انتشار یا شاخه به‌جای `main` |
+| `--version v2.17.1` · `--branch NAME` | یک انتشار یا شاخه به‌جای `main` |
 | `--lang fa\|en` · `--no-start` · `--yes` | زبان · فقط تنظیم، بدون راه‌اندازی · هیچ‌چیز نپرس |
 
 راه‌های دیگر: ایمیج‌های Docker ([docker/README.dockerhub.md](docker/README.dockerhub.md)، `scripts/docker-install.sh`)، یا دستی ([INSTALL-LINUX-SERVER.md](INSTALL-LINUX-SERVER.md)).

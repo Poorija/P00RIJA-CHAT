@@ -210,7 +210,7 @@ totalRelays++;
            itself lives in scripts/lib/push-wording.js so it can be read and
            tested without starting a server. */
         const kind = pushKindFor(payloadType, message.payload || {});
-        sendPushNotification(toFingerprint, kind).catch((error) => console.error(error));
+        sendPushNotification(toFingerprint, kind, sanitizeNoticeHint(message.payload?.hint)).catch((error) => console.error(error));
       }
       return;
     }
@@ -277,7 +277,7 @@ totalRelays++;
       : PUSHABLE_PAYLOADS.has(payloadType);
     if (wakes) {
       const kind = pushKindFor(payloadType, message.payload || {});
-      sendPushNotification(toFingerprint, kind).catch((error) => console.error(error));
+      sendPushNotification(toFingerprint, kind, sanitizeNoticeHint(message.payload?.hint)).catch((error) => console.error(error));
     }
   }
   for (const recipient of allTargets) {

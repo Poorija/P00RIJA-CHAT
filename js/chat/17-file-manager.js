@@ -776,14 +776,27 @@ function reportChatStorageFailure(key) {
 notify(t('خواندن یا ذخیره داده‌های چت ناموفق بود. داده‌های قبلی حفظ شده‌اند؛ برنامه را دوباره باز کنید یا فضای دستگاه را بررسی کنید.',
   'Chat storage failed. Existing data was preserved; reopen the app or check device storage.'), 'error');
 }
+/* Can a write reach storage right now — with the screen locked as well.
+ *
+ * The lock is a screen (js/app.js lockApp): the profile's key is still in this
+ * page, and what is written under it is exactly what an open app writes. A
+ * write used to wait for the unlock, and what arrived at a locked app lived
+ * only in memory until then; a phone that discards a backgrounded page lost it
+ * -- after the relay had been told it was safe. A page that holds no key (a
+ * reload onto the lock screen) still cannot write, and holds. */
+function vaultCanWrite() {
+if (isUnlocked()) return true;
+const st = appState();
+return Boolean(st && st.activeProfile && !chatState?.wiped);
+}
 function saveEncrypted(key, value) {
 const address = chatStorageAddress(key);
 if (unreadableChatStores.has(address)) return false;
 encryptedStoreCache.set(address, { value, dirty: true });
-/* A write with the vault shut is held, not refused: the arrival that made it
+/* A write with no key at all is held, not refused: the arrival that made it
    is real, and dropping it on the floor is what produced messages that
    vanished between lock and unlock. */
-if (!isUnlocked()) return true;
+if (!vaultCanWrite()) return true;
 try {
 localStorage.setItem(key, app().encryptStorageData(value));
 const entry = encryptedStoreCache.get(address);
@@ -844,7 +857,7 @@ return fallback;
 /* Persist everything the cache has been holding. Runs on unlock: whatever
    arrived while the vault was shut lands in localStorage here. */
 function flushEncryptedStoreCache() {
-if (!isUnlocked()) return 0;
+if (!vaultCanWrite()) return 0;
 let flushed = 0;
 for (const [address, entry] of encryptedStoreCache) {
 if (!entry.dirty) continue;
@@ -931,6 +944,13 @@ requestsSeeded: Boolean(chatState.prefs?.requestsSeeded),
 /* Sender-made link previews, desktop only and off unless turned on
    (54-link-preview.js). */
 linkPreviews: chatState.prefs?.linkPreviews === true,
+/* What a notification may say (69-notice-hints.js): off until asked for. The
+   keys are this account's own, kept with the prefs because they are the same
+   kind of thing: a choice made on this device. */
+notifyShowSender: chatState.prefs?.notifyShowSender === true,
+notifyShowPreview: chatState.prefs?.notifyShowPreview === true,
+noticeKeys: chatState.prefs?.noticeKeys && typeof chatState.prefs.noticeKeys === 'object' ? chatState.prefs.noticeKeys : {},
+noticeGivenTo: chatState.prefs?.noticeGivenTo && typeof chatState.prefs.noticeGivenTo === 'object' ? chatState.prefs.noticeGivenTo : {},
 });
 }
 /* The webview's internal origin is never a relay.
@@ -3191,6 +3211,7 @@ Object.defineProperties(globalThis, {
   "encryptedStoreCache": { get() { return encryptedStoreCache; }, set() { throw new TypeError('Assignment to constant variable encryptedStoreCache.'); }, configurable: true },
   "chatStorageAddress": { get() { return chatStorageAddress; }, set(value) { chatStorageAddress = value; }, configurable: true },
   "reportChatStorageFailure": { get() { return reportChatStorageFailure; }, set(value) { reportChatStorageFailure = value; }, configurable: true },
+  "vaultCanWrite": { get() { return vaultCanWrite; }, set(value) { vaultCanWrite = value; }, configurable: true },
   "saveEncrypted": { get() { return saveEncrypted; }, set(value) { saveEncrypted = value; }, configurable: true },
   "forgetEncrypted": { get() { return forgetEncrypted; }, set(value) { forgetEncrypted = value; }, configurable: true },
   "loadEncrypted": { get() { return loadEncrypted; }, set(value) { loadEncrypted = value; }, configurable: true },

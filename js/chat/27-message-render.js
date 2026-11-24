@@ -1884,7 +1884,11 @@ const conversationLockedNow = typeof conversationLocked === 'function' && conver
    arriving message put "Name: <the message>" on the lock screen of every
    native build, Android included. */
 if (typeof sendDesktopSystemNotification === 'function') {
-sendDesktopSystemNotification(t('پیام رمزنگاری‌شدهٔ تازه رسید.', 'Encrypted chat update received.'), 'info');
+{
+/* The fixed line, unless this person asked for more (69-notice-hints.js). */
+const line = typeof noticeLineFor === 'function' ? noticeLineFor(entry, senderName, { strict: appLocked || chatScreenLocked || conversationLockedNow }) : { title: 'P00RIJA Chat', body: t('پیام رمزنگاری‌شدهٔ تازه رسید.', 'Encrypted chat update received.') };
+sendDesktopSystemNotification(line.body, 'info', { title: line.title });
+}
 }
 if (!appLocked && !chatScreenLocked) {
 /* One toast per conversation, counted (tallyIncomingForToast). */

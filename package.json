@@ -1,7 +1,7 @@
 {
   "name": "p00rija-chat",
-  "version": "2.16.7",
-  "buildTag": "chat-v32",
+  "version": "2.17.1",
+  "buildTag": "chat-v35",
   "description": "P00RIJA Chat — end-to-end encrypted messenger with its own relay",
   "main": "scripts/server.js",
   "directories": {

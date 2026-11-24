@@ -33,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const app = readFileSync(join(ROOT, 'js', 'app.js'), 'utf8');
 const render = readFileSync(join(ROOT, 'js', 'chat', '27-message-render.js'), 'utf8');
+const notice = readFileSync(join(ROOT, 'js', 'chat', '69-notice-hints.js'), 'utf8');
 
 let failures = 0;
 let checks = 0;
@@ -110,18 +111,25 @@ ok(Boolean(previewCall), 'the arrival path still raises a toast for the preview'
 ok(previewCall && /system:\s*false/.test(previewCall[1]),
   'and it refuses the system mirror, so the preview stays inside the app');
 
-/* Something still has to be announced, and it has to say nothing. */
-const systemCall = /sendDesktopSystemNotification\(\s*t\(([^)]*)\)/.exec(render);
-ok(Boolean(systemCall), 'the arrival path raises its own system notification');
-ok(systemCall && !/\$\{/.test(systemCall[1]),
-  'whose text is a fixed string — nothing interpolated into it');
+/* Something still has to be announced, and by default it says nothing. What
+   it may say beyond that is two switches, both off until the person turns them
+   on (js/chat/69-notice-hints.js), and every lock puts the fixed line back. */
+const systemCall = /sendDesktopSystemNotification\(\s*line\.body/.exec(render);
+ok(Boolean(systemCall), 'the arrival path raises its own system notification, from the line the switches allow');
+ok(/noticeLineFor\(entry, senderName, \{ strict: appLocked \|\| chatScreenLocked \|\| conversationLockedNow \}\)/.test(render),
+  'a locked app, chat tab or conversation gets the bare line whatever was asked');
+const fixed = /return \{ title: 'P00RIJA Chat', body: t\('([^']*)', '([^']*)'\) \};\s*\}\s*\n\s*\/\* -+ the keys/.exec(notice) || /Encrypted chat update received\./.exec(notice);
+ok(Boolean(fixed) && /Encrypted chat update received\./.test(notice), 'with both switches off the line is the fixed string');
+ok(/notifyShowSender === true/.test(notice) && /notifyShowPreview === true/.test(notice),
+  'and each switch is on only when it was set to true — absent, null or anything else is off');
+ok(!/notifyShow(Sender|Preview): *true/.test(readFileSync(join(ROOT, 'js', 'chat', '20-call-rows.js'), 'utf8')),
+  'no default turns either one on');
 
-/* The sender's name is content too: it says who is talking to whom, which is
-   the one thing the encryption cannot hide. */
+/* A name or a preview may be said only through that path. */
 const mirrored = [...render.matchAll(/sendDesktopSystemNotification\(([^;]*)\);/g)]
   .map((match) => match[1]);
 ok(mirrored.every((argument) => !/senderName|label|entry\.|\$\{/.test(argument)),
-  'no system notification anywhere in this file carries a name or a preview');
+  'no system notification in the render file carries a name or a preview except by that path');
 
 console.log(`\n${failures ? `${failures} of ${checks} checks failed` : `${checks} checks passed`}\n`);
 process.exit(failures ? 1 : 0);

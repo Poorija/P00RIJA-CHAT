@@ -186,7 +186,7 @@ try {
       tuneOpus(lines, [['111', 'opus']]);
       return lines[1];
     })();
-    const mirrorDefault = chatState.profile?.mirrorSelfVideo === true;
+    const mirrorDefault = chatState.profile?.mirrorSelfVideo !== false;
     stream.getTracks().forEach((track) => track.stop());
     await new Promise((r) => setTimeout(r, 300));
     navigator.mediaDevices.getUserMedia = realGum;
@@ -198,7 +198,7 @@ try {
   check('and ending the call closes it, microphone and all', call.after === 0, String(call.after));
   check('Opus is asked for full band, mono, without DTX, with FEC', /usedtx=0/.test(call.opus) && /maxplaybackrate=48000/.test(call.opus) && /stereo=0/.test(call.opus) && /useinbandfec=1/.test(call.opus), call.opus);
   check('the camera is asked for 60 frames a second', call.askedFps === 60, `asked ${call.askedFps}, the test camera gave ${call.fps}`);
-  check('the self-view is not mirrored by default', call.mirrorDefault === false && (await ALI.evaluate(() => chatState.callMirrorSelf)) === false);
+  check('the self-view is mirrored by default, as a front camera shows it (2.16.0), and the switch can turn it off', call.mirrorDefault === true && (await ALI.evaluate(() => chatState.callMirrorSelf)) === true);
 
   const errors = [ALI, SARA, PHONE, DESK, STRANGER, FAR].filter(Boolean).flatMap((page) => page.__errors || []);
   check('no page errors', errors.length === 0, errors.join(' | '));

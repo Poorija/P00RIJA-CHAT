@@ -321,6 +321,8 @@ Object.defineProperties(globalThis, {
   "syncStageBackdrop": { get() { return syncStageBackdrop; }, set(value) { syncStageBackdrop = value; }, configurable: true },
   "applyCallStageFit": { get() { return applyCallStageFit; }, set(value) { applyCallStageFit = value; }, configurable: true },
   "refreshCallLayout": { get() { return refreshCallLayout; }, set(value) { refreshCallLayout = value; }, configurable: true },
+  "nudgeVideoLayout": { get() { return nudgeVideoLayout; }, set(value) { nudgeVideoLayout = value; }, configurable: true },
+  "nudgeStageWhenAspectChanges": { get() { return nudgeStageWhenAspectChanges; }, set(value) { nudgeStageWhenAspectChanges = value; }, configurable: true },
   "watchCallStageSize": { get() { return watchCallStageSize; }, set(value) { watchCallStageSize = value; }, configurable: true },
   "bindCallSelfViewGestures": { get() { return bindCallSelfViewGestures; }, set(value) { bindCallSelfViewGestures = value; }, configurable: true },
   "bindCallTileGestures": { get() { return bindCallTileGestures; }, set(value) { bindCallTileGestures = value; }, configurable: true },

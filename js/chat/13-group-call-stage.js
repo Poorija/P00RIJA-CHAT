@@ -304,7 +304,6 @@ function closeGroupCallStage() {
   document.documentElement.classList.remove('chat-group-call-active');
 }
 
-
 /* ---- published to globalThis (roadmap 2.1, tools/esm-chat.cjs) ---- */
 Object.defineProperties(globalThis, {
   "CALL_REACTIONS": { get() { return CALL_REACTIONS; }, set() { throw new TypeError('Assignment to constant variable CALL_REACTIONS.'); }, configurable: true },

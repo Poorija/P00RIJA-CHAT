@@ -8,7 +8,7 @@
  */
 
 const APP_VERSION = '2.26';
-const APP_VERSION_SEMVER = '2.16.7';
+const APP_VERSION_SEMVER = '2.17.1';
 /* Same-number patch rounds are invisible to the user otherwise — the About
    page prints the build tag so any device can say which round it is on.
  *
@@ -27,7 +27,7 @@ const APP_BUILD_TAG = (() => {
     const found = /[?&]v=\d+\.\d+\.\d+-([A-Za-z0-9._-]+)/.exec(src);
     if (found) return found[1];
   } catch (_error) { /* no document, or no currentScript */ }
-  return 'chat-v32';
+  return 'chat-v35';
 })();
 /* The About page prints the version. Reading it from here rather than from a
    literal in the markup is what keeps the two from drifting apart again —
@@ -801,6 +801,10 @@ carrierReadPlaceholder: 'پیام خوانده‌شده این‌جا نشان �
 carrierKeep: 'افزودن به گفتگو',
 sendReceipts: 'ارسال رسید خواندن',
 sendReceiptsHint: 'رسید خواندن یک پاسخ فوری و تضمین‌شده به هر پیامی است که می‌رسد — و همین آن را برای کسی که بیرونِ ترافیک را می‌بیند سودمند می‌کند: بدون خواندن هیچ محتوایی، می‌شود از روی همان پاسخ فهمید چه کسانی با هم حرف می‌زنند. خاموش: این پاسخ خودکار فرستاده نمی‌شود، و طرف مقابل تیک دوم را نمی‌بیند.',
+noticeShowSender: 'نمایش نام فرستنده در اعلان',
+noticeShowSenderHint: 'خاموش (پیش‌فرض): اعلان فقط می‌گوید پیام رمزنگاری‌شده‌ای رسیده. روشن: نام فرستنده را هم می‌گوید («پیام تازه از علی»).',
+noticeShowPreview: 'نمایش متن پیام یا نوع رسانه در اعلان',
+noticeShowPreviewHint: 'خاموش (پیش‌فرض): اعلان هیچ محتوایی ندارد. روشن: آغاز متن پیام را نشان می‌دهد و برای رسانه می‌گوید چیست (استیکر، عکس، ویدیو، پیام صوتی، فایل…). نام و متن با کلیدی رمز می‌شوند که فقط دستگاه شما و مخاطبان‌تان دارند؛ رله و سرویس اعلان گوگل/اپل آن‌ها را نمی‌خوانند، اما هر که صفحهٔ قفل شما را ببیند می‌خواند.',
 turnCredential: 'رمز TURN',
 turnHelpNote: 'نام کاربری و رمز TURN همان `TURN_USER` و `TURN_PASSWORD` داخل فایل `.env` یا `docker-compose.env.example` هستند. برای کاربران بیرون از شبکه، Server URL و TURN باید دامنه/IP قابل دسترس عمومی باشند.',
 connect: 'اتصال',
@@ -1559,6 +1563,10 @@ carrierReadPlaceholder: 'The message read out of it appears here…',
 carrierKeep: 'Add to the conversation',
 sendReceipts: 'Send read receipts',
 sendReceiptsHint: 'A read receipt is a guaranteed, immediate reply to every message that arrives — which is exactly what makes it useful to somebody watching the outside of the traffic: without reading any content, the pairs who are talking can be worked out from that reply alone. Off: the automatic reply is not sent, and the other side does not see the second tick.',
+noticeShowSender: 'Show the sender\'s name in notifications',
+noticeShowSenderHint: 'Off (default): a notification says only that an encrypted message arrived. On: it also names the sender ("New message from Ali").',
+noticeShowPreview: 'Show the message or the kind of media in notifications',
+noticeShowPreviewHint: 'Off (default): a notification carries no content. On: it shows the start of a text, and for media says what it is (sticker, photo, video, voice message, file…). The name and the text are encrypted with a key only this device and your contacts hold; the relay and Google/Apple\'s notification service cannot read them — but anyone who sees your locked screen can.',
 turnCredential: 'TURN Password',
 turnHelpNote: 'TURN username and password are the same as `TURN_USER` and `TURN_PASSWORD` in your `.env` or `docker-compose.env.example`. For users outside the network, Server URL and TURN must be public accessible domains/IPs.',
 connect: 'Connect',
@@ -4687,15 +4695,13 @@ granted: state.desktopNotifications.permission === 'granted',
 permission: state.desktopNotifications.permission
 };
 }
-async function sendDesktopSystemNotification(message, type = 'info') {
+async function sendDesktopSystemNotification(message, type = 'info', { title: wantedTitle = '' } = {}) {
 if (!isDesktopAppRuntime() || !state.settings.notifications) return;
 const notificationApi = getDesktopNotificationApi();
 if (!notificationApi) return;
 const permission = await ensureDesktopNotificationPermission(false);
 if (!permission.granted) return;
-const title = type === 'error'
-? 'P00RIJA Chat'
-: 'P00RIJA Chat';
+const title = String(wantedTitle || '').slice(0, 80) || 'P00RIJA Chat';
 try {
 await notificationApi.sendNotification({
 title,
@@ -5141,7 +5147,7 @@ document.addEventListener('visibilitychange', () => {
 if (!document.hidden) checkForUpdate();
 });
 navigator.serviceWorker.addEventListener('controllerchange', () => {
-const reloadKey = 'poorija-sw-reload-2.16.7-chat-v32';
+const reloadKey = 'poorija-sw-reload-2.17.1-chat-v35';
 if (pwaReloadedForUpdate || sessionStorage.getItem(reloadKey) === '1') return;
 pwaReloadedForUpdate = true;
 sessionStorage.setItem(reloadKey, '1');
@@ -5154,7 +5160,7 @@ window.addEventListener('load', () => {
    URL had stopped changing, and tools/check-versions.cjs could not see it
    because it only asked whether this file mentions the tag anywhere, which
    the reload key above already satisfied. It is checked by itself now. */
-navigator.serviceWorker.register('./sw.js?v=2.16.7-chat-v32', { scope: './' }).then((registration) => {
+navigator.serviceWorker.register('./sw.js?v=2.17.1-chat-v35', { scope: './' }).then((registration) => {
 state.pwa.swReady = true;
 registration.update?.();
 setInstallButtonsVisibility();

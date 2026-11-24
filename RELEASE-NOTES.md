@@ -1,3 +1,98 @@
+# P00RIJA Chat 2.17.1
+
+Version 2.17.1 · build chat-v35
+
+Hardening of 2.17.0's notification switches, from a review of them.
+
+**Fixed**
+
+- **The name on a notification is the one this device saved for the contact,
+  never the one the hint carries.** A contact holding a key could otherwise have
+  signed a notification as someone else. A name and a line that open under
+  different contacts' keys are not believed.
+- **A contact in a locked conversation is given no key**, so nothing of theirs
+  can show on a lock screen (the worker cannot see locks; the page decides who
+  is given one, and takes the key back when a conversation is locked).
+
+Not changed, and said so: a hint replayed within a day and a half shows the old
+line again (the relay can already raise any push it likes; the hint can say only
+what a real contact really sent), and an app lock does not stop a notification
+the person asked to name or quote — the setting says so.
+
+Tests: `noticehints` 27 checks.
+
+# P00RIJA Chat 2.17.0
+
+Version 2.17.0 · build chat-v34
+
+What a notification says, in the person's hands. The protocol is extended (a
+sealed message of one new kind and one optional field on the envelope); apps and
+servers of 2.16.x keep working with this one, and a server that is not yet
+updated simply never carries the new field.
+
+**New**
+
+- **Two switches, off by default: the sender's name, and the message.**
+  Settings → Notifications and sounds → *What a notification says*. Off, a
+  notification says only that an encrypted message arrived, as before. On, it
+  can say "New message from Ali", and show the start of a text or what a media
+  message is (sticker, GIF, photo, video, voice message, audio, file, location),
+  in the language of the device. They work with the app closed.
+
+  The relay and the push service of Google or Apple never learn either. Each
+  switch that is on gives this device a key *for each contact* — never one that
+  everybody holds, so a contact can speak only as themselves and can be cut off
+  alone (blocked, removed, or the switch turned off) — handed to that contact
+  sealed like any message. A contact writing to an absent person adds the name and the
+  kind-and-start-of-text to the envelope, each encrypted under the matching key
+  and padded to a fixed size; the relay passes them on inside the push as bytes it
+  cannot open (and drops anything that is not that shape), and the service worker
+  opens them with the keys the app left for it in IndexedDB, believing none that
+  is more than a day and a half old. A switch that is off
+  has no key anywhere, so nothing is encrypted for it and nothing is on the wire;
+  turning it off takes the key back from the contacts. Anyone who can see a
+  locked screen can read what it shows — the settings say so — and a locked app,
+  chat tab or conversation still shows the bare line on the desktop shell.
+
+**Fixed**
+
+- The desktop and native shells' own notification takes its title from the same
+  place, so it can carry the name when asked.
+
+Tests: `noticehints` is new (22 checks): the line a phone shows from a hint in
+both languages, every case where it must stay the fixed line, and two real apps
+and a relay (off: no hint; on: keys handed over, the hint in the mailbox with no
+name or word readable, the worker saying who wrote and what; off again: keys
+withdrawn, no hint). `unifiedpush` checks the relay's shape rule;
+`notificationprivacy` now holds the new invariant: nothing but the fixed line
+unless asked.
+
+# P00RIJA Chat 2.16.8
+
+Version 2.16.8 · build chat-v33
+
+A message that arrived while the app was locked could be lost for good. That is
+the report of a phone that rang for a message and showed none when it was opened.
+
+**Fixed**
+
+- **A message taken by a locked app is kept, and told to the relay only when it
+  is kept.** The lock is a screen: the app stays connected and receives. But
+  what it received while locked was held in memory until the password was typed,
+  and the relay was told at once that it had arrived and so destroyed its own
+  copy. A phone that discards a backgrounded app — an iPhone does, within
+  minutes — took the page, the memory and the only copy with it: the notification
+  was all that was left, and opening the app showed nothing. Now the chat writes
+  to storage with the screen locked exactly as it does open (the key is in the
+  page either way), and an acknowledgement waits until nothing the chat holds is
+  unsaved — a locked page that holds no key, or a store that failed to write,
+  holds it until it can. What waits stays on the relay, which hands it over again.
+
+Tests: `offlinerecv` is new (27 checks, Chromium and WebKit): the receiver away
+and back, the page frozen and thawed, the sender restarting under a receiver that
+keeps its page, and a locked receiver discarded by the system, over the relay and
+over the live channel. `offlinefuzz` draws such orders at random from a seed.
+
 # P00RIJA Chat 2.16.7
 
 Version 2.16.7 · build chat-v32

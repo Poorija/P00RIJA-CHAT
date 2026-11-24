@@ -2873,6 +2873,12 @@ function startOfflineRing(peerRecord, mode) {
 /* ---- published to globalThis (roadmap 2.1, tools/esm-chat.cjs) ---- */
 Object.defineProperties(globalThis, {
   "playMediaElement": { get() { return playMediaElement; }, set(value) { playMediaElement = value; }, configurable: true },
+  "callVideoElementsNow": { get() { return callVideoElementsNow; }, set(value) { callVideoElementsNow = value; }, configurable: true },
+  "callVideoUnhealthy": { get() { return callVideoUnhealthy; }, set(value) { callVideoUnhealthy = value; }, configurable: true },
+  "callVideoTapArmed": { get() { return callVideoTapArmed; }, set(value) { callVideoTapArmed = value; }, configurable: true },
+  "armTapToShowVideo": { get() { return armTapToShowVideo; }, set(value) { armTapToShowVideo = value; }, configurable: true },
+  "reattachCallVideo": { get() { return reattachCallVideo; }, set(value) { reattachCallVideo = value; }, configurable: true },
+  "watchCallVideo": { get() { return watchCallVideo; }, set(value) { watchCallVideo = value; }, configurable: true },
   "streamHasLiveVideo": { get() { return streamHasLiveVideo; }, set(value) { streamHasLiveVideo = value; }, configurable: true },
   "prepareVideoElement": { get() { return prepareVideoElement; }, set(value) { prepareVideoElement = value; }, configurable: true },
   "syncVideoElementFit": { get() { return syncVideoElementFit; }, set(value) { syncVideoElementFit = value; }, configurable: true },

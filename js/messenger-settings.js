@@ -453,6 +453,10 @@
             toggle({ icon: 'fa-moon', tile: '#5e5ce6', label: t('اعلان وقتی برنامه بسته است', 'Notify while the app is closed'), source: 'pushBackgroundToggle' }),
             visible('pushTtlSelect') ? choice({ icon: 'fa-hourglass-half', tile: '#8e8e93', label: t('حذف خودکار اشتراک پس از', 'Remove the subscription after'), source: 'pushTtlSelect' }) : '',
           ], pushHint)
+          + group(t('محتوای اعلان', 'What a notification says'), [
+            toggle({ icon: 'fa-user', tile: '#ff9f0a', label: t('نمایش نام فرستنده', 'Show the sender\'s name'), source: 'chatNoticeShowSender' }),
+            toggle({ icon: 'fa-message', tile: '#30b0c7', label: t('نمایش متن پیام یا نوع رسانه', 'Show the message or the kind of media'), source: 'chatNoticeShowPreview' }),
+          ], [hintOf('chatNoticeShowSender'), hintOf('chatNoticeShowPreview')].filter(Boolean).join(' '))
           + group(t('زنگ تماس', 'Call ringtone'), [
             choice({ icon: 'fa-phone-volume', tile: '#34c759', label: t('صدا', 'Sound'), source: 'chatRingtoneSelect' }),
             buttonsRow([

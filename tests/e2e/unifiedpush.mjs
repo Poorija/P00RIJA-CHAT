@@ -232,6 +232,31 @@ if (delivered.length > 0) {
   ok(!asText.includes(recipient.fingerprint), 'it does not name the recipient either');
 }
 
+// ---- a hint for somebody who asked their notifications to say more -------
+/* The sender's name and what it is, already encrypted (js/chat/69-notice-hints.js),
+   ride the envelope and go on inside the push, untouched and unread. What the
+   relay does decide is the shape: nothing larger or stranger than that. */
+{
+  const hintSocket = await connect(sender);
+  const sendWith = async (hint, tag) => {
+    const before = delivered.length;
+    hintSocket.send(JSON.stringify({ type: 'relay', toFingerprint: recipient.fingerprint, persist: true,
+      payload: { type: 'offline-chat', notify: true, sealed: 'opaque', hint }, tag }));
+    for (let i = 0; i < 40 && delivered.length === before; i += 1) await new Promise((resolve) => setTimeout(resolve, 250));
+    try { return JSON.parse(delivered[delivered.length - 1]?.body || '{}'); } catch (_error) { return {}; }
+  };
+  const good = { n: { iv: 'AAAAAAAAAAAAAAAA', c: 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=' }, p: { iv: 'BBBBBBBBBBBBBBBB', c: 'MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5' } };
+  const withHint = await sendWith(good, 'suite-hint-1');
+  ok(withHint.hint && withHint.hint.n?.c === good.n.c && withHint.hint.p?.c === good.p.c, 'a well-formed hint goes on inside the push, as it came');
+  const oversize = await sendWith({ n: { iv: 'AAAAAAAAAAAAAAAA', c: 'A'.repeat(5000) } }, 'suite-hint-2');
+  ok(!oversize.hint, 'a hint past the size a name and a line need is dropped');
+  const strange = await sendWith({ n: { iv: '<script>', c: 'not base64 at all!!' }, extra: 'x' }, 'suite-hint-3');
+  ok(!strange.hint && !JSON.stringify(strange).includes('script'), 'a hint of the wrong shape is dropped, and nothing else of it is carried');
+  const none = await sendWith(undefined, 'suite-hint-4');
+  ok(!('hint' in none), 'a message with no hint gets a push with none, as before');
+  hintSocket.close();
+}
+
 // ---- the guard itself ---------------------------------------------------
 /* /push/subscribe takes no credentials, so the endpoint URL is
    attacker-controlled and this process will POST to it. Without a check that

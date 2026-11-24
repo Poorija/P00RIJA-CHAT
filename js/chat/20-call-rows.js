@@ -338,7 +338,7 @@ return `${text.slice(0, lead)}...${text.slice(-tail)}`;
 }
 let historyStorageOwner = '';
 function flushHistoryStore() {
-if (!isUnlocked() || historyStorageOwner !== chatStorageAddress(CHAT_HISTORY_STORAGE_KEY)) return false;
+if (!vaultCanWrite() || historyStorageOwner !== chatStorageAddress(CHAT_HISTORY_STORAGE_KEY)) return false;
 if (chatState.historySaveTimer) {
 clearTimeout(chatState.historySaveTimer);
 chatState.historySaveTimer = null;
@@ -606,6 +606,10 @@ chatState.prefs.turnChoices = savedPrefs.turnChoices && typeof savedPrefs.turnCh
 chatState.prefs.pathChoices = savedPrefs.pathChoices && typeof savedPrefs.pathChoices === 'object'
 ? savedPrefs.pathChoices : {};
 chatState.prefs.linkPreviews = savedPrefs.linkPreviews === true;
+chatState.prefs.notifyShowSender = savedPrefs.notifyShowSender === true;
+chatState.prefs.notifyShowPreview = savedPrefs.notifyShowPreview === true;
+chatState.prefs.noticeKeys = savedPrefs.noticeKeys && typeof savedPrefs.noticeKeys === 'object' ? savedPrefs.noticeKeys : {};
+chatState.prefs.noticeGivenTo = savedPrefs.noticeGivenTo && typeof savedPrefs.noticeGivenTo === 'object' ? savedPrefs.noticeGivenTo : {};
 }
 /* Everybody already talked to is accepted once, so message requests
    (49-message-requests.js) start with strangers and nobody else. */
@@ -1021,6 +1025,7 @@ if (pwaButton) pwaButton.disabled = !isUsableRelayOrigin(chatState.profile.serve
 document.getElementById('chatShowSuspensionCountdown').checked = chatState.profile.showSuspensionCountdown !== false;
 const receiptsToggle = document.getElementById('chatSendReceipts');
 if (receiptsToggle) receiptsToggle.checked = receiptsEnabled();
+if (typeof syncNoticeToggles === 'function') syncNoticeToggles();
 /* Both "remove background noise" switches, in Settings and in the call. */
 document.querySelectorAll('[data-call-noise-toggle]').forEach((input) => {
 input.checked = typeof callNoiseSuppressionEnabled === 'function' ? callNoiseSuppressionEnabled() : true;
@@ -1196,12 +1201,17 @@ Object.defineProperties(globalThis, {
   "isFinalCallStatus": { get() { return isFinalCallStatus; }, set(value) { isFinalCallStatus = value; }, configurable: true },
   "callLogKey": { get() { return callLogKey; }, set(value) { callLogKey = value; }, configurable: true },
   "closeActiveCallLog": { get() { return closeActiveCallLog; }, set(value) { closeActiveCallLog = value; }, configurable: true },
+  "callRouteOf": { get() { return callRouteOf; }, set(value) { callRouteOf = value; }, configurable: true },
+  "callRouteByPeer": { get() { return callRouteByPeer; }, set() { throw new TypeError('Assignment to constant variable callRouteByPeer.'); }, configurable: true },
+  "rememberCallRoute": { get() { return rememberCallRoute; }, set(value) { rememberCallRoute = value; }, configurable: true },
+  "liveCallFor": { get() { return liveCallFor; }, set(value) { liveCallFor = value; }, configurable: true },
+  "settleCallEntry": { get() { return settleCallEntry; }, set(value) { settleCallEntry = value; }, configurable: true },
   "appendCall": { get() { return appendCall; }, set(value) { appendCall = value; }, configurable: true },
   "formatCallStatus": { get() { return formatCallStatus; }, set(value) { formatCallStatus = value; }, configurable: true },
   "isMissedCallStatus": { get() { return isMissedCallStatus; }, set(value) { isMissedCallStatus = value; }, configurable: true },
-  "rememberCallRoute": { get() { return rememberCallRoute; }, set(value) { rememberCallRoute = value; }, configurable: true },
   "callRouteLabel": { get() { return callRouteLabel; }, set(value) { callRouteLabel = value; }, configurable: true },
   "callHistoryText": { get() { return callHistoryText; }, set(value) { callHistoryText = value; }, configurable: true },
+  "callHistoryBaseText": { get() { return callHistoryBaseText; }, set(value) { callHistoryBaseText = value; }, configurable: true },
   "appendCallHistory": { get() { return appendCallHistory; }, set(value) { appendCallHistory = value; }, configurable: true },
   "shortSecurityValue": { get() { return shortSecurityValue; }, set(value) { shortSecurityValue = value; }, configurable: true },
   "historyStorageOwner": { get() { return historyStorageOwner; }, set(value) { historyStorageOwner = value; }, configurable: true },

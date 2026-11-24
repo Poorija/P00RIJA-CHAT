@@ -108,7 +108,7 @@ function disconnectRestrictedPeer(record, restriction) {
   }, 1500);
 }
 
-async function sendPushNotification(toFingerprint, kind = 'chat') {
+async function sendPushNotification(toFingerprint, kind = 'chat', hint = null) {
   const fingerprint = sanitizeFingerprint(toFingerprint);
   const key = pushIndexKey(fingerprint);
   const now = Date.now();
@@ -162,6 +162,9 @@ async function sendPushNotification(toFingerprint, kind = 'chat') {
        by the message it arrives beside. */
     tag: pushTagFor(kind),
     url: './index.html#chat',
+    /* Opaque to this relay: what the sender encrypted for a device that asked
+       for its notifications to say more. Present only then. */
+    ...(hint ? { hint } : {}),
     data: {
       kind,
       timestamp: Date.now(),

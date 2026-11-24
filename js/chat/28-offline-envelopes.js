@@ -232,7 +232,7 @@ return PoorijaIdentity.openSealed(identity, purpose, sealed);
  * private key and nothing else. The relay keeps only what it actually uses:
  * the class, to know how long to hold it, and the routing fields.
  * ------------------------------------------------------------------ */
-function offlineEnvelope(message, { createdAt, seal = '', messageClass = 'text', body = null, kex = null, notify = true, scope = '' } = {}) {
+function offlineEnvelope(message, { createdAt, seal = '', messageClass = 'text', body = null, kex = null, notify = true, scope = '', hint = null } = {}) {
 const envelope = {
 type: 'offline-chat',
 fromPeerId: chatState.peerId,
@@ -276,6 +276,10 @@ if (kex) envelope.kex = kex;
    chunk of a file — this is the one bit of metadata that lets it ring once for
    the file rather than once per chunk, and it says nothing about content. */
 if (notify === false) envelope.notify = false;
+/* Two ciphertexts the relay cannot open and hands on with the push: the
+   sender's name and the kind of thing, each under a key the recipient gave
+   for exactly that (69-notice-hints.js). */
+if (hint && typeof hint === 'object' && (hint.n || hint.p)) envelope.hint = hint;
 /* No session key means no key to encrypt with, and in that case the plaintext
    shape is the only way the message travels at all. Older builds also only
    understand that shape, so it stays readable. */

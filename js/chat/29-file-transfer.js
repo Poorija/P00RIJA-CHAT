@@ -1044,8 +1044,12 @@ body = null;
 /* Media is a stream of chunks; only the first of them is worth a notification,
    and the caller says which one that is. */
 const wakesTheDevice = notify === undefined ? messageClass !== 'media' : notify;
+/* For a contact who asked to be told more on the notification this raises: the
+   sender's name and what it is, each encrypted under a key that contact gave
+   (69-notice-hints.js). Nothing at all for one who did not. */
+const noticeHint = wakesTheDevice && typeof noticeHintFor === 'function' ? await noticeHintFor(peerRecord, message) : null;
 const envelope = offlineEnvelope(message, {
-createdAt, seal, messageClass, body, kex, notify: wakesTheDevice, scope,
+createdAt, seal, messageClass, body, kex, notify: wakesTheDevice, scope, hint: noticeHint,
 });
 /* The sealed body hides the message id from the relay, so the tag it echoes
    in queued/error frames has to ride on the envelope itself. */
@@ -2638,6 +2642,11 @@ return;
 }
 /* A fellow member asking for, or handing over, the cards of a group both are
    in — sealed and authenticated by this session; see 41-member-cards.js. */
+/* A contact's keys for what a notification of theirs may say. */
+if (message.type === 'notice-key') {
+if (typeof handleNoticeKeyMessage === 'function') await handleNoticeKeyMessage(session, message);
+return;
+}
 if (message.type === 'member-cards' || message.type === 'member-cards-request') {
 if (typeof handleMemberCardsMessage === 'function') await handleMemberCardsMessage(session, message);
 return;
@@ -3753,8 +3762,61 @@ if (typeof learnRelayMirrors === 'function') window.setTimeout(() => { learnRela
 /* The operator's relay list, checked against the key this app trusts (61-relay-directory.js). */
 if (typeof refreshRelayDirectory === 'function') window.setTimeout(() => { refreshRelayDirectory().catch(() => {}); }, 9000);
 }
+/* An acknowledgement is a promise: "this is safe on this device, destroy your
+ * copy". Kept only when it is true.
+ *
+ * With the vault shut, a write is held in memory and reaches storage at the
+ * unlock (saveEncrypted, 17-file-manager.js) -- so a message that arrived at a
+ * locked app was acknowledged while it existed nowhere but in a page that an
+ * iPhone throws away after a few minutes in the background. The notification
+ * had come, the relay had nothing left, the page was gone, and what the person
+ * found when they opened the app was no message at all. The same for a write
+ * that failed (a full store): the cache stays dirty, and the acknowledgement
+ * went out anyway.
+ *
+ * So an acknowledgement waits until nothing the chat holds is unsaved. What it
+ * waits for stays on the relay, which hands it again to the next connection;
+ * the copy that comes is recognised by its id and acknowledged then. */
+function mailIsDurable() {
+if (typeof vaultCanWrite === 'function' && !vaultCanWrite()) return false;
+if (typeof encryptedStoreCache === 'undefined') return true;
+for (const entry of encryptedStoreCache.values()) if (entry && entry.dirty) return false;
+return true;
+}
+const HELD_MAIL_ACK_LIMIT = 5000;
+function holdMailAck(relayId) {
+if (!chatState.heldMailAcks) chatState.heldMailAcks = new Set();
+if (chatState.heldMailAcks.size >= HELD_MAIL_ACK_LIMIT) return;
+chatState.heldMailAcks.add(relayId);
+/* While the vault is open a dirty store is a write that failed: try it again
+   now and then. While it is shut, the unlock is what releases these. */
+if (!chatState.heldMailAckTimer && typeof vaultCanWrite === 'function' && vaultCanWrite()) {
+chatState.heldMailAckTimer = setTimeout(() => { chatState.heldMailAckTimer = null; releaseHeldMailAcks(); }, 4000);
+}
+}
+function releaseHeldMailAcks() {
+const held = chatState.heldMailAcks;
+if (!held || !held.size) return 0;
+if (typeof flushEncryptedStoreCache === 'function' && typeof vaultCanWrite === 'function' && vaultCanWrite()) flushEncryptedStoreCache();
+if (!mailIsDurable()) {
+if (!chatState.heldMailAckTimer && vaultCanWrite()) {
+chatState.heldMailAckTimer = setTimeout(() => { chatState.heldMailAckTimer = null; releaseHeldMailAcks(); }, 10000);
+}
+return 0;
+}
+if (chatState.ws?.readyState !== WebSocket.OPEN) return 0;
+const ids = Array.from(held);
+held.clear();
+for (let at = 0; at < ids.length; at += 200) {
+chatState.ws.send(JSON.stringify({ type: 'relay-ack', ids: ids.slice(at, at + 200), auto: 1 }));
+}
+return ids.length;
+}
+window.addEventListener('poorija:unlock', () => { setTimeout(releaseHeldMailAcks, 0); setTimeout(releaseHeldMailAcks, 1500); });
 function ackRelayMessage(relayId) {
-if (!relayId || chatState.ws?.readyState !== WebSocket.OPEN) return;
+if (!relayId) return;
+if (!mailIsDurable()) { holdMailAck(relayId); return; }
+if (chatState.ws?.readyState !== WebSocket.OPEN) return;
 /* Acknowledged at once, whether or not this account has other devices. A
    device with siblings used to hold its acknowledgements while any sibling
    was away, which made the relay keep every message — file chunks included —
@@ -3830,6 +3892,7 @@ Object.defineProperties(globalThis, {
   "purgeConversationEverywhere": { get() { return purgeConversationEverywhere; }, set(value) { purgeConversationEverywhere = value; }, configurable: true },
   "deleteActiveConversation": { get() { return deleteActiveConversation; }, set(value) { deleteActiveConversation = value; }, configurable: true },
   "lastSeenFlushAt": { get() { return lastSeenFlushAt; }, set(value) { lastSeenFlushAt = value; }, configurable: true },
+  "flushSeenFlushRetry": { get() { return flushSeenFlushRetry; }, set(value) { flushSeenFlushRetry = value; }, configurable: true },
   "SEEN_RECEIPT_BURST_LIMIT": { get() { return SEEN_RECEIPT_BURST_LIMIT; }, set() { throw new TypeError('Assignment to constant variable SEEN_RECEIPT_BURST_LIMIT.'); }, configurable: true },
   "flushSeenReceipts": { get() { return flushSeenReceipts; }, set(value) { flushSeenReceipts = value; }, configurable: true },
   "DELIVERED_RECEIPT_JITTER_MS": { get() { return DELIVERED_RECEIPT_JITTER_MS; }, set() { throw new TypeError('Assignment to constant variable DELIVERED_RECEIPT_JITTER_MS.'); }, configurable: true },
@@ -3904,6 +3967,10 @@ Object.defineProperties(globalThis, {
   "bindDataConnection": { get() { return bindDataConnection; }, set(value) { bindDataConnection = value; }, configurable: true },
   "onPeerDiscovered": { get() { return onPeerDiscovered; }, set(value) { onPeerDiscovered = value; }, configurable: true },
   "broadcastHello": { get() { return broadcastHello; }, set(value) { broadcastHello = value; }, configurable: true },
+  "mailIsDurable": { get() { return mailIsDurable; }, set(value) { mailIsDurable = value; }, configurable: true },
+  "HELD_MAIL_ACK_LIMIT": { get() { return HELD_MAIL_ACK_LIMIT; }, set() { throw new TypeError('Assignment to constant variable HELD_MAIL_ACK_LIMIT.'); }, configurable: true },
+  "holdMailAck": { get() { return holdMailAck; }, set(value) { holdMailAck = value; }, configurable: true },
+  "releaseHeldMailAcks": { get() { return releaseHeldMailAcks; }, set(value) { releaseHeldMailAcks = value; }, configurable: true },
   "ackRelayMessage": { get() { return ackRelayMessage; }, set(value) { ackRelayMessage = value; }, configurable: true },
   "flushDeferredMailAcks": { get() { return flushDeferredMailAcks; }, set(value) { flushDeferredMailAcks = value; }, configurable: true },
   "clearReconnectTimer": { get() { return clearReconnectTimer; }, set(value) { clearReconnectTimer = value; }, configurable: true },
