@@ -1,3 +1,92 @@
+# P00RIJA Chat 2.16.6
+
+Version 2.16.6 · build chat-v31
+
+**Fixed**
+
+- **"Seen" is sent for a message that arrives right after another.** The pass that
+  sends the seen receipts of an open conversation is held to one every 400
+  milliseconds, and a message that arrived inside that window waited for something
+  else to draw the conversation again before its receipt went out; across relays,
+  about one pair in ten lost it. It now tries again just after the window.
+
+Checked, live, across all eight relays: every one of the 56 ordered pairs, online
+and with the receiver away (the message waits on the relay and comes when the
+receiver does), gets its message, its delivered tick and its seen tick.
+
+# P00RIJA Chat 2.16.5
+
+Version 2.16.5 · build chat-v30
+
+Finishes 2.16.4: the app now sends receipts the way the relay keeps them.
+
+**Fixed**
+
+- **A sealed receipt is sent as mail that the relay keeps and that is sent again.**
+  2.16.4 taught the relays to keep a receipt for somebody away, but the app still
+  marked its receipts as not to be kept and left them untagged, so nothing was
+  kept and a link that was down at that moment still lost the tick. They are now
+  persisted and tagged, which also puts them in the outbox that sends a transit
+  envelope again, with backoff, until the far relay takes it.
+
+# P00RIJA Chat 2.16.4
+
+Version 2.16.4 · build chat-v29
+
+Delivered and seen ticks no longer get lost.
+
+**Fixed**
+
+- **A receipt for somebody who is away is kept.** A delivered or seen tick was
+  sent once and dropped by the relay if the person it was for was not connected
+  at that moment, or if a link between two relays was down: nothing kept it and
+  nothing sent it again, so the sender's message stayed at *sent* or *delivered*
+  for good. In a run across eight relays, eighteen of fifty-six senders never got
+  their tick (the same run across five relays lost none). Receipts are now kept
+  on the sender's relay for two days, without waking anybody, at most 300 to a
+  mailbox, and delivered when the sender's app is next there. What a relay can
+  see of one is that it is a receipt, no more than it could see of its being
+  small and sent a moment after a message.
+
+Tests: `receiptkeep` is new (a typing indicator for somebody away is dropped, a
+receipt is kept and expires, mail is as it was).
+
+# P00RIJA Chat 2.16.3
+
+Version 2.16.3 · build chat-v28
+
+Messages written from one relay to a person who lives on another now reach them
+even when the sender's app did not know where they live.
+
+**Fixed**
+
+- **Mail parked on the wrong relay is carried on by the relays themselves.** A
+  device that does not know where a contact lives writes to its own relay; that
+  relay had never seen the person, kept the message and said "queued", and it
+  stayed in that mailbox for good unless the app, still running and on that
+  conversation, asked the family where the person lived and sent it again. Found
+  between the Finland relay and an Iran one: eighteen messages for one person
+  (who had moved home between two Iran relays) sat on the Finland relay. A relay
+  now does what the app would have: it asks the relays it is linked to, sealed,
+  whether the person lives with them, and sends what it holds to the one that
+  answers. It asks again every few minutes, less often after three empty answers,
+  and never for mail that arrived from another relay, so two relays cannot hand
+  one message back and forth. It asks about at most twenty people a minute, keeps
+  a table of who was asked to a size, and carries mail on only when exactly one
+  relay says the person lives with it (2.16.2 was cut and not deployed past the
+  first server; this is the release that carries the change).
+
+**Checked, live**
+
+- A message, its reply, the ticks and a call, in both directions, between the
+  Finland relay and an Iran relay, between two users made for the test, also after
+  one of them moved its home to a third relay; and between the Sweden relay and
+  an Iran relay that are not linked to each other, by way of the others.
+
+Tests: `strangermail` is new (three relays: mail written to the wrong one is
+carried to the right one, once; a person nobody hosts, and a person of the relay
+itself, are left alone).
+
 # P00RIJA Chat 2.16.1
 
 Version 2.16.1 · build chat-v26

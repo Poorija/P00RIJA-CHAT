@@ -792,6 +792,7 @@ notify(isGroup
 // every render, so a message that arrived while the app was backgrounded still
 // turns blue for the sender the moment its conversation is opened.
 let lastSeenFlushAt = 0;
+let flushSeenFlushRetry = 0;
 const SEEN_RECEIPT_BURST_LIMIT = 20;
 function flushSeenReceipts() {
 if (document.hidden || appState()?.activeTab !== 'chat') return;
@@ -811,7 +812,13 @@ if (typeof isMessageRequest === 'function' && isMessageRequest(peer)) return;
 // renderMessages() runs on almost every state change; without this the same
 // pass could fire repeatedly within a frame.
 const now = Date.now();
-if (now - lastSeenFlushAt < 400) return;
+/* Not just skipped: a message that arrives inside the window is no new render
+   to wait for, and its "seen" never went out until something else happened to
+   draw the conversation (measured: about one pair in ten of a burst). */
+if (now - lastSeenFlushAt < 400) {
+  if (!flushSeenFlushRetry) flushSeenFlushRetry = window.setTimeout(() => { flushSeenFlushRetry = 0; flushSeenReceipts(); }, 450);
+  return;
+}
 lastSeenFlushAt = now;
 const key = getConversationKey(peer);
 const pending = (chatState.history[key] || [])
@@ -1061,7 +1068,8 @@ await signOfflineEnvelope(envelope);
 if (sealSender) {
 try {
 await sealEnvelopeSender(envelope, kex ? envelopeKey : session.cryptoKey, {
-ephemeral: EPHEMERAL_RELAY_TYPES.has(String(message?.type || '')),
+ephemeral: EPHEMERAL_RELAY_TYPES.has(String(message?.type || '')) && String(message?.type || '') !== 'receipt',
+receipt: String(message?.type || '') === 'receipt',
 });
 } catch (error) {
 console.warn('[Chat] could not seal the sender; it travels named:', error);
@@ -1725,8 +1733,14 @@ if (!peerRecord.fingerprint && !peerRecord.clientId) return false;
    they are left out. Old servers never echo the tag — harmless either way. */
 /* A sealed-sender envelope keeps its inner type in the box and says only
    whether it is worth keeping (eph). */
-const persist = payload?.eph !== 1 && !EPHEMERAL_RELAY_TYPES.has(String(payload?.inner || payload?.type || ''));
-const tag = persist ? sanitizeRemoteId(payload?.tag || payload?.id || payload?.messageId || '') : '';
+/* A sealed receipt (eph 2, 51-envelope-privacy.js) is kept by the relay for a
+   person who is away, so it is sent as mail: persisted, and tagged, which is
+   what lets the transit outbox send it again when a link between relays was
+   down at that moment. It was sent once and forgotten, and the tick it was
+   for never came. */
+const keptReceipt = payload?.eph === 2;
+const persist = keptReceipt || (payload?.eph !== 1 && !EPHEMERAL_RELAY_TYPES.has(String(payload?.inner || payload?.type || '')));
+const tag = persist ? sanitizeRemoteId(payload?.tag || payload?.id || payload?.messageId || (keptReceipt ? generateId('rcpt') : '')) : '';
 if (tag) {
 chatState.pendingRelayTags.set(tag, { conversationKey: getConversationKey(peerRecord), messageId: tag });
 /* Bounded, oldest first: a map that only grew would remember every message

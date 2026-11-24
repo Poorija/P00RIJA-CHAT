@@ -48,6 +48,135 @@ function forwardMail(toRelay, fingerprint, items, { remove = false } = {}) {
   }
   return true;
 }
+/* ---- mail parked at a relay its person does not use --------------------------
+ *
+ * A device writes to its own relay when it does not know where the person it
+ * writes to lives (a card without a relay, an account that moved home, a key
+ * that was replaced). That relay has never seen them, queues the envelope and
+ * answers "queued" — and it stayed there. The device is meant to ask the family
+ * where the person lives and send it again (js/chat/40-route-finder.js), and
+ * when it does not — the app was put away, the conversation is not the one open,
+ * the message was a sticker rather than text — the message sat in a mailbox its
+ * recipient never opens. Measured between the Finland and an Iran relay: eighteen
+ * messages for one person, parked for good.
+ *
+ * So the relay does what the device would have: it asks every relay it is linked
+ * to, sealed, the question a device asks (route-query, about one fingerprint it
+ * already holds mail for), and sends what it holds to the one that answers
+ * "home" (or, failing that, "guest"). Nothing it did not already hold is
+ * revealed, and a relay answers this question at a rate of its own choosing.
+ * The mail is marked as forwarded, so the far relay never hands it back and it
+ * is not forwarded more than twice. It is asked again every few minutes, and
+ * less often after it has been asked three times for nothing. */
+const STRANGER_ASK_MS = Number(process.env.CHAT_STRANGER_ASK_MS || 5 * 60 * 1000);
+const STRANGER_QUIET_MS = Number(process.env.CHAT_STRANGER_QUIET_MS || 60 * 60 * 1000);
+const STRANGER_SWEEP_MS = Number(process.env.CHAT_STRANGER_SWEEP_MS || 5 * 60 * 1000);
+const STRANGER_PER_SWEEP = 40;
+const strangerAsked = new Map();
+/* However many strangers are written to, the family is asked about at most this
+   many people a minute, and the table of who was asked is kept to a size. A
+   client that writes to a thousand made-up fingerprints gets the first few
+   asked about and the rest picked up by the sweep, later; it cannot spend the
+   other relays' per-link question budget, which presence queries share. */
+const STRANGER_PER_MINUTE = Number(process.env.CHAT_STRANGER_PER_MINUTE || 20);
+const STRANGER_TABLE_MAX = 2000;
+let strangerWindow = { since: 0, count: 0 };
+function strangerBudget() {
+  const now = Date.now();
+  if (now - strangerWindow.since > 60000) strangerWindow = { since: now, count: 0 };
+  if (strangerWindow.count >= STRANGER_PER_MINUTE) return false;
+  strangerWindow.count += 1;
+  return true;
+}
+function pruneStrangerTable() {
+  for (const fingerprint of Array.from(strangerAsked.keys())) {
+    if (!offlineBoxes.has(fingerprint) && !strangerAsked.get(fingerprint)?.busy) strangerAsked.delete(fingerprint);
+  }
+  while (strangerAsked.size > STRANGER_TABLE_MAX) strangerAsked.delete(strangerAsked.keys().next().value);
+}
+function chaseStrangerMail(fingerprint) {
+  if (!isFingerprintKey(fingerprint)) return false;
+  if (identityLivesHere(fingerprint) || guestBook.isGuest(fingerprint) || residentSocketUp(fingerprint) || guestBook.movedTo(fingerprint)) return false;
+  const items = (offlineBoxes.get(fingerprint) || []).filter((item) => (Number(item.hops) || 0) < GUEST_FORWARD_HOPS);
+  if (!items.length) return false;
+  const state = strangerAsked.get(fingerprint) || { at: 0, misses: 0, busy: false };
+  const wait = state.misses >= 3 ? STRANGER_QUIET_MS : STRANGER_ASK_MS;
+  if (state.busy || Date.now() - state.at < wait) return false;
+  const targets = directoryMembers().map((id) => relayPeers.linkFor(id)).filter((link) => link && link.peerKey);
+  if (!targets.length) return false;
+  if (!strangerBudget()) return false;
+  if (strangerAsked.size >= STRANGER_TABLE_MAX) pruneStrangerTable();
+  state.at = Date.now();
+  state.busy = true;
+  strangerAsked.set(fingerprint, state);
+  const answers = [];
+  let pending = 0;
+  const finish = () => {
+    state.busy = false;
+    /* One relay saying "home" is enough; two saying it is a disagreement the
+       relay does not settle on its own authority, and the mail stays. */
+    const homes = answers.filter((answer) => answer.home);
+    const pick = homes.length === 1 ? homes[0] : (homes.length ? null : answers.find((answer) => answer.guest));
+    if (!pick) { state.misses += 1; return; }
+    state.misses = 0;
+    const now = (offlineBoxes.get(fingerprint) || []).filter((item) => item.via !== pick.relay && (Number(item.hops) || 0) < GUEST_FORWARD_HOPS);
+    if (now.length) {
+      console.log(`[Relay] ${now.length} parked item(s) for ${fingerprint.slice(0, 12)} go to ${pick.relay.slice(0, 12)}, where they live`);
+      forwardMail(pick.relay, fingerprint, now, { remove: true });
+    }
+  };
+  for (const link of targets) {
+    let envelope;
+    try { envelope = sealTransit(link.peerId, link.peerKey, { type: 'route-query', toFingerprint: fingerprint }); } catch (_error) { continue; }
+    const ref = crypto.randomUUID();
+    pending += 1;
+    rememberTransitWait(ref, {
+      clientId: 'relay:stranger-mail', tag: '', toRelay: link.peerId, via: link.peerId, expiresAt: Date.now() + 20000,
+      reply: (answer) => {
+        if (answer?.type === 'route' && answer.toFingerprint === fingerprint && (answer.home || answer.guest)) {
+          answers.push({ relay: link.peerId, home: Boolean(answer.home), guest: Boolean(answer.guest) });
+        }
+        pending -= 1;
+        if (pending === 0) finish();
+      },
+    });
+    if (!link.send({ kind: 'transit', ref, envelope })) {
+      forgetTransitWait(ref);
+      pending -= 1;
+    }
+  }
+  if (pending <= 0) finish();
+  return true;
+}
+function strangerSweep() {
+  pruneStrangerTable();
+  let asked = 0;
+  for (const fingerprint of Array.from(offlineBoxes.keys())) {
+    if (asked >= STRANGER_PER_SWEEP) break;
+    if (chaseStrangerMail(fingerprint)) asked += 1;
+  }
+}
+/* Receipts kept for a person who is away: two days, and no more than this many in
+   one mailbox (the oldest go first), so a long absence cannot fill it with ticks. */
+const RECEIPT_KEEP_MS = Number(process.env.CHAT_RECEIPT_KEEP_MS || 48 * 60 * 60 * 1000);
+const RECEIPT_BOX_MAX = 300;
+function receiptSweep() {
+  const now = Date.now();
+  for (const [fingerprint, items] of Array.from(offlineBoxes.entries())) {
+    if (!items.some((item) => item.receipt)) continue;
+    let receipts = items.filter((item) => item.receipt && now - Date.parse(item.queuedAt || 0) <= RECEIPT_KEEP_MS);
+    if (receipts.length > RECEIPT_BOX_MAX) receipts = receipts.slice(receipts.length - RECEIPT_BOX_MAX);
+    const keep = new Set(receipts);
+    const kept = items.filter((item) => !item.receipt || keep.has(item));
+    if (kept.length === items.length) continue;
+    if (kept.length) offlineBoxes.set(fingerprint, kept); else offlineBoxes.delete(fingerprint);
+    saveOfflineBox(fingerprint);
+  }
+}
+setInterval(() => { try { receiptSweep(); } catch (error) { console.warn('[Relay] receipt sweep failed:', error.message); } }, Number(process.env.CHAT_RECEIPT_SWEEP_MS || 10 * 60 * 1000)).unref?.();
+setTimeout(() => { try { strangerSweep(); } catch (error) { console.warn('[Relay] stranger sweep failed:', error.message); } }, 45000).unref?.();
+setInterval(() => { try { strangerSweep(); } catch (error) { console.warn('[Relay] stranger sweep failed:', error.message); } }, STRANGER_SWEEP_MS).unref?.();
+
 /* What waits here for someone whose stay has ended, home — except anything
    that came from home in the first place. */
 function forwardLeftovers(fingerprint, home) {

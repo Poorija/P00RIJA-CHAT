@@ -152,7 +152,7 @@ async function withdrawHashFor(tag) {
 
 /* ---- sealing the sender ------------------------------------------------------ */
 
-async function sealEnvelopeSender(envelope, key, { ephemeral = false } = {}) {
+async function sealEnvelopeSender(envelope, key, { ephemeral = false, receipt = false } = {}) {
   if (!envelope || !key) return envelope;
   const hidden = {};
   for (const field of SEALED_SENDER_FIELDS) {
@@ -168,6 +168,11 @@ async function sealEnvelopeSender(envelope, key, { ephemeral = false } = {}) {
   /* The one fact the relay still needs about what is inside: whether to keep
      it at all. */
   if (ephemeral) envelope.eph = 1;
+  /* A receipt is kept for a person who is away, briefly (two days) and without
+     waking anything: eph 2. It used to be dropped like a typing indicator, so
+     a receipt sent while the sender's app was away, or while a link between
+     relays was down, was lost for good and the tick never came. */
+  if (receipt) { envelope.eph = 2; envelope.notify = false; }
   if (envelope.tag) envelope.wd = await withdrawHashFor(envelope.tag);
   return envelope;
 }

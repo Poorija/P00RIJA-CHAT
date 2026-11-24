@@ -2,7 +2,7 @@
 
 # Running the server
 
-This is the server package of P00RIJA Chat v2.16.1, and a P00RIJA Chat server is four containers: the **app** (nginx, serving the web
+This is the server package of P00RIJA Chat v2.16.6, and a P00RIJA Chat server is four containers: the **app** (nginx, serving the web
 app over HTTPS), the **relay** (messages waiting for people who are away, call
 signalling, push, the monitor), **coturn** (the TURN server that carries a call
 when two devices cannot reach each other), and a **certificate renewer**. It is

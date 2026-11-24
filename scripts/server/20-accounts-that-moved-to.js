@@ -103,6 +103,7 @@ totalRelays++;
   }
 
   const payloadType = String(message.payload?.type || 'unknown');
+  const isReceiptEnvelope = message.payload?.eph === 2;
   /* Sealed sender (js/chat/51-envelope-privacy.js): the sender's name is in an
      encrypted box, and this relay neither files the item under the sender nor
      hands the sender's name to the recipient's socket. */
@@ -133,7 +134,10 @@ totalRelays++;
     const innerType = String(message.payload?.inner || '');
     /* A sealed envelope keeps its inner type in the box and states only the
        one bit the relay needs: whether to keep it at all. */
-    if (EPHEMERAL_PAYLOADS.has(payloadType) || EPHEMERAL_PAYLOADS.has(innerType) || message.payload?.eph === 1) {
+    /* A receipt is the one ephemeral thing that is kept, for two days and
+       without waking anybody (eph 2): the sender was
+       away, or a link was down, and the tick would never have come. */
+    if (!isReceiptEnvelope && (EPHEMERAL_PAYLOADS.has(payloadType) || EPHEMERAL_PAYLOADS.has(innerType) || message.payload?.eph === 1)) {
       reply({ type: 'error', reason: 'target-offline', toClientId: message.toClientId || '', tag });
       return;
     }
@@ -151,6 +155,7 @@ totalRelays++;
         queuedAt: new Date().toISOString(),
         /* Guest mode: which family relay forwarded it here, and whether it is
            held for a guest (kept for less time). */
+        ...(isReceiptEnvelope ? { receipt: 1 } : {}),
         ...(viaRelay ? { via: viaRelay, hops: viaHops } : {}),
         ...(guestHeldFor(toFingerprint) ? { guestHeld: true } : {}),
       };
@@ -185,12 +190,16 @@ totalRelays++;
       reply({ type: 'queued', toFingerprint, count: remaining ? remaining.length : 0, tag, known: identityLivesHere(toFingerprint) || guestBook.isGuest(toFingerprint) });
       /* Someone whose guest stay here ended: it goes on to their home. */
       forwardIfGuestLeft(toFingerprint);
+      /* Written to here by one of this relay's own clients for somebody who does
+         not live here: find where they do (14-guest-mail.js). Mail that came by
+         another relay is not chased, so two relays cannot hand it to each other. */
+      if (!viaRelay) chaseStrangerMail(toFingerprint);
       /* A real chat message travels as a sealed 'offline-chat' envelope, so
          the type the relay can see is the envelope's, not the message's —
          gating on the inner names meant no queued message ever rang a
          device. The envelope says whether it is worth waking someone for;
          everything else falls back to the list of plain types. */
-      const wakes = payloadType === 'offline-chat'
+      const wakes = isReceiptEnvelope ? false : payloadType === 'offline-chat'
         ? message.payload?.notify !== false
         : PUSHABLE_PAYLOADS.has(payloadType);
       if (wakes) {

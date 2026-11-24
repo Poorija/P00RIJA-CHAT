@@ -7,7 +7,7 @@
  * version as a network service and its users are entitled to your source.
  */
 
-const CACHE_NAME = 'poorija-chat-v2.16.1-chat-v26';
+const CACHE_NAME = 'poorija-chat-v2.16.6-chat-v31';
 
 // Live endpoints proxied by nginx: never cached, always straight to the network.
 const NETWORK_ONLY_PREFIXES = [
