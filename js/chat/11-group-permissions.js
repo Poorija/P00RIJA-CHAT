@@ -232,13 +232,13 @@ function renderMentionPicker() {
   const state = space ? currentMentionQuery(composer) : null;
   if (!state) {
     box.classList.add('hidden');
-    box.innerHTML = '';
+    box.replaceChildren();
     return;
   }
   const rows = mentionCandidates(state.query);
   if (!rows.length) {
     box.classList.add('hidden');
-    box.innerHTML = '';
+    box.replaceChildren();
     return;
   }
   box.classList.remove('hidden');

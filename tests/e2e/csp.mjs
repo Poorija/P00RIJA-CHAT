@@ -73,13 +73,12 @@ console.log('\n===== the committed nginx policy =====');
   check('frame-ancestors is none', directive('frame-ancestors').trim() === "'none'");
   check('default-src is self', directive('default-src').trim() === "'self'");
 
-  /* Stated as a deliberate exception rather than left implicit: index.html
-     carries 276 inline handlers, so dropping 'unsafe-inline' would break the
-     interface. If that ever changes, this check should be the thing that
-     reminds someone to tighten it. */
-  check("script-src still allows inline, which is a known and accepted gap",
-    /'unsafe-inline'/.test(directive('script-src')), directive('script-src'));
-  check('but it does NOT allow eval',
+  /* No code written into a page runs: index.html has no inline handler or
+     script (js/inline-actions.js, boot-shell.js, boot-fonts.js hold them), so
+     an injected one has nothing to hide among. */
+  check("script-src does NOT allow inline code",
+    !/'unsafe-inline'/.test(directive('script-src')), directive('script-src'));
+  check('and does NOT allow eval',
     !/'unsafe-eval'/.test(directive('script-src')), directive('script-src'));
   check('WASM is allowed, because Argon2 needs it',
     /'wasm-unsafe-eval'/.test(directive('script-src')));

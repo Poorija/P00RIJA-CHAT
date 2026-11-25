@@ -515,10 +515,10 @@
          that look like a healthy server. */
       if (els.relayInstance) els.relayInstance.textContent = 'این نسخهٔ سرور این گزارش را نمی‌دهد';
       [els.relayLimits, els.relayMailboxes, els.relayThrottle].forEach((list) => {
-        if (list) list.innerHTML = '';
+        if (list) list.replaceChildren();
       });
       if (els.relayDiscardSummary) els.relayDiscardSummary.textContent = '-';
-      if (els.relayDiscardTable) els.relayDiscardTable.innerHTML = '';
+      if (els.relayDiscardTable) els.relayDiscardTable.replaceChildren();
       return;
     }
 

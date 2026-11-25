@@ -221,11 +221,11 @@
       /* Detached and emptied, so the library's later callback has nothing on
          the page to reach: it may still set the src of an <img> nobody can
          see, and that is the end of it. */
-      staging.innerHTML = '';
+      staging.replaceChildren();
     }
     if (!matrix || !modules) return null;
 
-    box.innerHTML = '';
+    box.replaceChildren();
     const plate = document.createElement('div');
     plate.className = 'qr-plate';
     plate.style.background = preset.light;

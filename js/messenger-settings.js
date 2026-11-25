@@ -311,7 +311,7 @@
         const zones = global.knownTimeZones?.() || [];
         input?.addEventListener('input', () => {
           const query = input.value.trim().toLowerCase();
-          if (!query) { results.innerHTML = ''; return; }
+          if (!query) { results.replaceChildren(); return; }
           const matches = zones.filter((tz) => tz.toLowerCase().includes(query)).slice(0, 30);
           results.innerHTML = matches.length
             ? `<div class="msgr-group">${matches.map((tz) => `<button type="button" class="msgr-row no-tile msgr-clock-row" data-add="${esc(tz)}"><span class="msgr-row-label">${esc(global.clockLabelFor?.(tz) || tz)}<small>${esc(tz)}</small></span><span class="msgr-row-value">${esc(global.formatZoneTime?.(tz) || '')}</span><i class="fas fa-plus msgr-add-mark" aria-hidden="true"></i></button>`).join('')}</div>`

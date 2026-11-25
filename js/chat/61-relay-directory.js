@@ -456,7 +456,7 @@ function renderRelayFamily() {
   const view = relayFamilyView();
   if (!view.pin && !view.directory) {
     node.classList.add('hidden');
-    node.innerHTML = '';
+    node.replaceChildren();
     return;
   }
   node.classList.remove('hidden');

@@ -369,8 +369,11 @@ if (html === beforeManifest) {
   console.warn('Warning: no <link rel="manifest"> found in index.html.');
 }
 
-const NATIVE_BOOTSTRAP = `<script>
-/* Injected by scripts/prepare-tauri-web.js — native shell only. */
+/* The bootstrap is a file of its own, not a script written into the page: the
+   policy refuses code written into a page (script-src has no 'unsafe-inline'),
+   and the native shell's policy is left alone by Tauri
+   (dangerousDisableAssetCspModification), so an inline one would never run. */
+const NATIVE_BOOTSTRAP_SOURCE = `/* Injected by scripts/prepare-tauri-web.js — native shell only. */
 (function () {
   window.__POORIJA_NATIVE_SHELL__ = true;
   try {
@@ -390,8 +393,8 @@ const NATIVE_BOOTSTRAP = `<script>
     delete window.PushManager;
   } catch (error) { /* non-configurable on this engine */ }
 })();
-</script>
 `;
+const NATIVE_BOOTSTRAP = '<script src="js/native-bootstrap.js"></script>\n';
 
 /* Looks for the ASSIGNMENT, not the name.
  *
@@ -403,7 +406,8 @@ const NATIVE_BOOTSTRAP = `<script>
  * still in place, and the app registered a service worker that deliberately is
  * not copied here: a 404 and a thrown script on every start, on all five
  * platforms. tests/e2e/native-shell.mjs is what noticed. */
-if (!/__POORIJA_NATIVE_SHELL__\s*=\s*true/.test(html)) {
+fs.writeFileSync(path.join(outDir, 'js', 'native-bootstrap.js'), NATIVE_BOOTSTRAP_SOURCE);
+if (!/js\/native-bootstrap\.js/.test(html)) {
   const headIndex = html.search(/<head[^>]*>/i);
   if (headIndex === -1) {
     throw new Error('index.html has no <head> to inject the native bootstrap into.');
@@ -451,7 +455,8 @@ const verify = fs.readFileSync(copiedIndex, 'utf8');
 if (/rel=["']manifest["']/i.test(verify)) {
   throw new Error('The PWA manifest link survived the rewrite.');
 }
-if (!/__POORIJA_NATIVE_SHELL__/.test(verify)) {
+if (!/js\/native-bootstrap\.js/.test(verify)
+  || !/__POORIJA_NATIVE_SHELL__\s*=\s*true/.test(fs.readFileSync(path.join(outDir, 'js', 'native-bootstrap.js'), 'utf8'))) {
   throw new Error('The native bootstrap was not injected.');
 }
 

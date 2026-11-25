@@ -588,7 +588,7 @@ function renderLinkCode() {
   const body = linkState.overlay?.querySelector('.chat-link-body');
   const box = body?.querySelector('[data-link-qr]');
   if (!box) return;
-  box.innerHTML = '';
+  box.replaceChildren();
   /* Low error correction is right for a code on a screen — nothing scratches
      it — and keeps it to fewer, larger modules; drawn as large as the card
      allows. */

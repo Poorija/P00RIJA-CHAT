@@ -41,6 +41,7 @@ const NOTICE_NAME_BYTES = 128;
 const NOTICE_BODY_BUCKETS = [256, 512, 768];
 const NOTICE_TEXT_CHARS = 140;
 const NOTICE_KEY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const NOTICE_DEVICES_MAX = 4;
 
 /* ---- the switches ------------------------------------------------------------ */
 
@@ -192,17 +193,37 @@ async function syncNoticeKeys({ redistribute = false } = {}) {
 /* The sealed message that hands a contact their keys (or takes them back: an
    empty key is a revocation). Never in the clear: with no prekey of theirs to
    seal to it waits, and so does a contact the relay has not shown us yet. */
-function noticeKeyMessage(mine) {
-  return { type: 'notice-key', v: 2, s: mine?.s || '', p: mine?.p || '', createdAt: new Date().toISOString() };
+function noticeKeyBody(mine) {
+  return { v: 3, d: typeof getDeviceId === 'function' ? String(getDeviceId() || '').slice(0, 64) : '', s: mine?.s || '', p: mine?.p || '' };
+}
+/* How a key reaches a contact, and only these ways: inside the live session's
+   own encryption (an AES-GCM payload of the session, which a channel merely
+   encrypted by DTLS is not), or inside an envelope sealed to the contact's
+   prekey. An envelope that could not be sealed — a prekey past its window, a
+   contact on a ratchet to whom the identity key may not be used — would carry the
+   message in the clear, with the key in it, so it is not sent: it waits. */
+async function sendNoticeKeyToPeer(peer, mine) {
+  const body = noticeKeyBody(mine);
+  const createdAt = new Date().toISOString();
+  const session = chatState.sessions.get(peer.peerId);
+  if (session?.connection?.open && session.cryptoKey && session.keyReady !== false && typeof encryptForSession === 'function') {
+    const payload = await encryptForSession(session, new TextEncoder().encode(JSON.stringify(body)), 'notice-key');
+    if (typeof safeConnectionSend === 'function' && safeConnectionSend(session.connection, { type: 'notice-key', v: 3, payload, createdAt }, 'notice-key')) return true;
+  }
+  const prekeyLive = peer.prekeyPublic && (!peer.prekeyExpiresAt || Date.parse(peer.prekeyExpiresAt) > Date.now());
+  if (!prekeyLive || typeof sendSealedRelay !== 'function') return false;
+  return Boolean(await sendSealedRelay(peer, session || null, { type: 'notice-key', ...body, createdAt }, { createdAt, notify: false, requireSealed: true }));
 }
 function noticeAudience() {
   return (chatState.peers || []).filter((peer) => !peer.type && !peer.system && !peer.blocked
     && typeof isSelfPeerRecord === 'function' && !isSelfPeerRecord(peer)
     && typeof isProfileAudience === 'function' && isProfileAudience(peer)
-    /* A locked conversation exists to keep its words off screens the owner has
-       not opened; a contact in one is given no key, so nothing of theirs can
-       show on a lock screen (the worker cannot see locks, so it is done here). */
-    && !(typeof conversationLocked === 'function' && typeof getConversationKey === 'function' && conversationLocked(getConversationKey(peer))));
+    /* A conversation that HAS a lock — open at this moment or not — exists to
+       keep its words off screens the owner has not opened; a contact in one is
+       given no key, so nothing of theirs can show on a lock screen (the worker
+       cannot see locks, so it is done here). Re-checked every minute, so a lock
+       set later takes the key back. */
+    && !(typeof conversationHasLock === 'function' && typeof getConversationKey === 'function' && conversationHasLock(getConversationKey(peer))));
 }
 /* The name THIS device has for a contact — what the worker shows, never the one
    a hint carries: a contact holding a key could otherwise sign as "Mom". */
@@ -213,32 +234,34 @@ async function giveNoticeKeysToContacts({ revoked = [] } = {}) {
   const keys = noticeKeysOf(chatState.prefs);
   const given = chatState.prefs.noticeGivenTo && typeof chatState.prefs.noticeGivenTo === 'object' ? chatState.prefs.noticeGivenTo : {};
   let sent = 0;
-  const reachable = (peer) => chatState.sessions.get(peer.peerId)?.connection?.open || peer.prekeyPublic;
-  const send = (peer, mine, tag) => {
+  const peerOf = (id) => (chatState.peers || []).find((item) => (item.fingerprint || item.peerId) === id);
+  const reachable = (peer) => chatState.sessions.get(peer.peerId)?.connection?.open
+    || (peer.prekeyPublic && (!peer.prekeyExpiresAt || Date.parse(peer.prekeyExpiresAt) > Date.now()));
+  /* A contact whose key was taken back and who could not be told at once stays
+     owed the word: it is kept as 'REVOKE' and sent whenever they can be reached,
+     instead of being forgotten (and the contact left believing a key that is gone). */
+  for (const id of revoked) if (given[id]) given[id] = 'REVOKE';
+  for (const id of Object.keys(given)) {
+    if (given[id] !== 'REVOKE') continue;
+    const peer = peerOf(id);
+    if (!peer || peer.blocked) { delete given[id]; continue; }   /* gone, or never to be messaged */
+    if (!reachable(peer)) continue;
     try {
-      if (typeof relaySessionEvent === 'function' && relaySessionEvent(peer, noticeKeyMessage(mine))) {
-        given[peer.fingerprint || peer.peerId] = tag;
-        sent += 1;
-      }
-    } catch (error) { console.warn('[Chat] a notification key could not be sent:', error); }
-  };
+      if (await sendNoticeKeyToPeer(peer, { s: '', p: '' })) { delete given[id]; sent += 1; }
+    } catch (error) { console.warn('[Chat] a notification key could not be taken back:', error); }
+  }
   for (const peer of noticeAudience()) {
     const id = peer.fingerprint || peer.peerId;
     const mine = keys.per[id];
     if (!id || !mine || !reachable(peer)) continue;
     const tag = `${mine.s.slice(0, 6)}|${mine.p.slice(0, 6)}`;
-    if (given[id] !== tag) send(peer, mine, tag);
-  }
-  /* A contact whose key was taken back is told so, if it ever had one; a
-     blocked contact is not messaged at all, and just stops being believed here. */
-  for (const id of revoked) {
-    if (!given[id]) continue;
-    const peer = (chatState.peers || []).find((item) => (item.fingerprint || item.peerId) === id);
-    if (peer && !peer.blocked && reachable(peer)) send(peer, { s: '', p: '' }, '');
-    else delete given[id];
+    if (given[id] === tag) continue;
+    try {
+      if (await sendNoticeKeyToPeer(peer, mine)) { given[id] = tag; sent += 1; }
+    } catch (error) { console.warn('[Chat] a notification key could not be sent:', error); }
   }
   chatState.prefs.noticeGivenTo = given;
-  if (sent) saveChatPrefs();
+  if (sent || revoked.length) saveChatPrefs();
   return sent;
 }
 
@@ -252,9 +275,17 @@ async function handleNoticeKeyMessage(session, message) {
     if (!text) return '';
     try { return noticeFromB64(text).length === 32 ? text : ''; } catch (_error) { return ''; }
   };
-  const next = { s: clean(message.s), p: clean(message.p), at: Date.now() };
+  const device = String(message.d || 'legacy').replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 64) || 'legacy';
+  /* One entry per device of the contact: the same account on a second device
+     must not overwrite the first's keys, or the first device's pushes stop
+     opening. Four at most, the oldest let go. */
   const before = JSON.stringify(peer.noticeKeys || {});
-  if (next.s || next.p) peer.noticeKeys = next; else delete peer.noticeKeys;
+  const devices = { ...(peer.noticeKeys?.devices || {}) };
+  if (peer.noticeKeys && !peer.noticeKeys.devices && (peer.noticeKeys.s || peer.noticeKeys.p)) devices.legacy = { s: peer.noticeKeys.s || '', p: peer.noticeKeys.p || '', at: peer.noticeKeys.at || 0 };
+  const next = { s: clean(message.s), p: clean(message.p), at: Date.now() };
+  if (next.s || next.p) devices[device] = next; else delete devices[device];
+  const newest = Object.entries(devices).sort((x, y) => (y[1].at || 0) - (x[1].at || 0)).slice(0, NOTICE_DEVICES_MAX);
+  if (newest.length) peer.noticeKeys = { devices: Object.fromEntries(newest) }; else delete peer.noticeKeys;
   if (before !== JSON.stringify(peer.noticeKeys || {}) && typeof saveContacts === 'function') saveContacts();
 }
 
@@ -288,23 +319,35 @@ function noticeEntryFor(peerRecord, message) {
   }
   return null;
 }
-async function noticeHintFor(peerRecord, message) {
+function noticeDevicesOf(peerRecord) {
   const keys = peerRecord?.noticeKeys;
-  if (!keys || (!keys.s && !keys.p)) return null;
+  if (!keys) return [];
+  if (keys.devices) return Object.values(keys.devices).filter((entry) => entry && (entry.s || entry.p));
+  return keys.s || keys.p ? [keys] : [];
+}
+async function noticeHintFor(peerRecord, message) {
+  const devices = noticeDevicesOf(peerRecord);
+  if (!devices.length) return null;
   if (!NOTICE_WAKING_TYPES.has(String(message?.type || ''))) return null;
   const entry = noticeEntryFor(peerRecord, message);
   if (!entry) return null;
-  const hint = {};
+  const names = [];
+  const bodies = [];
   try {
-    if (keys.s) {
-      const name = String(chatState.profile?.name || '').trim().slice(0, 48);
-      if (name) hint.n = await noticeSeal(keys.s, { n: name, at: Date.now() }, [NOTICE_NAME_BYTES]);
+    const name = String(chatState.profile?.name || '').trim().slice(0, 48);
+    const body = { k: noticeKindOf(entry), t: noticeTextOf(entry) };
+    for (const device of devices) {
+      if (device.s && name) names.push(await noticeSeal(device.s, { n: name, at: Date.now() }, [NOTICE_NAME_BYTES]));
+      if (device.p) bodies.push(await noticeSeal(device.p, { ...body, at: Date.now() }, NOTICE_BODY_BUCKETS));
     }
-    if (keys.p) hint.p = await noticeSeal(keys.p, { k: noticeKindOf(entry), t: noticeTextOf(entry), at: Date.now() }, NOTICE_BODY_BUCKETS);
   } catch (error) {
     console.warn('[Chat] a notification hint could not be made:', error);
     return null;
   }
+  /* One part for one device (as before); a list when the contact has several. */
+  const hint = {};
+  if (names.length) hint.n = names.length === 1 ? names[0] : names;
+  if (bodies.length) hint.p = bodies.length === 1 ? bodies[0] : bodies;
   return hint.n || hint.p ? hint : null;
 }
 
@@ -331,9 +374,11 @@ window.addEventListener('poorija:unlock', () => {
   setTimeout(() => { syncNoticeToggles(); if (noticeWantsSender() || noticeWantsPreview()) syncNoticeKeys({ redistribute: true }).catch(() => {}); }, 2500);
 });
 setInterval(() => {
-  if (!noticeWantsSender() && !noticeWantsPreview()) return;
   if (typeof isUnlocked === 'function' && !isUnlocked()) return;
-  syncNoticeKeys().catch(() => {});
+  if (noticeWantsSender() || noticeWantsPreview()) { syncNoticeKeys().catch(() => {}); return; }
+  /* Both switches off: what is still owed is a withdrawal not yet delivered. */
+  const owed = Object.values(chatState.prefs?.noticeGivenTo || {}).includes('REVOKE');
+  if (owed) giveNoticeKeysToContacts().catch(() => {});
 }, 60000);
 
 /* ---- published to globalThis (roadmap 2.1, tools/esm-chat.cjs) ---- */
@@ -343,6 +388,7 @@ Object.defineProperties(globalThis, {
   "NOTICE_BODY_BUCKETS": { get() { return NOTICE_BODY_BUCKETS; }, set() { throw new TypeError('Assignment to constant variable NOTICE_BODY_BUCKETS.'); }, configurable: true },
   "NOTICE_TEXT_CHARS": { get() { return NOTICE_TEXT_CHARS; }, set() { throw new TypeError('Assignment to constant variable NOTICE_TEXT_CHARS.'); }, configurable: true },
   "NOTICE_KEY_TTL_MS": { get() { return NOTICE_KEY_TTL_MS; }, set() { throw new TypeError('Assignment to constant variable NOTICE_KEY_TTL_MS.'); }, configurable: true },
+  "NOTICE_DEVICES_MAX": { get() { return NOTICE_DEVICES_MAX; }, set() { throw new TypeError('Assignment to constant variable NOTICE_DEVICES_MAX.'); }, configurable: true },
   "noticeWantsSender": { get() { return noticeWantsSender; }, set(value) { noticeWantsSender = value; }, configurable: true },
   "noticeWantsPreview": { get() { return noticeWantsPreview; }, set(value) { noticeWantsPreview = value; }, configurable: true },
   "noticeKindWord": { get() { return noticeKindWord; }, set(value) { noticeKindWord = value; }, configurable: true },
@@ -357,7 +403,8 @@ Object.defineProperties(globalThis, {
   "noticeOpeningKey": { get() { return noticeOpeningKey; }, set(value) { noticeOpeningKey = value; }, configurable: true },
   "noticeRandomKey": { get() { return noticeRandomKey; }, set(value) { noticeRandomKey = value; }, configurable: true },
   "syncNoticeKeys": { get() { return syncNoticeKeys; }, set(value) { syncNoticeKeys = value; }, configurable: true },
-  "noticeKeyMessage": { get() { return noticeKeyMessage; }, set(value) { noticeKeyMessage = value; }, configurable: true },
+  "noticeKeyBody": { get() { return noticeKeyBody; }, set(value) { noticeKeyBody = value; }, configurable: true },
+  "sendNoticeKeyToPeer": { get() { return sendNoticeKeyToPeer; }, set(value) { sendNoticeKeyToPeer = value; }, configurable: true },
   "noticeAudience": { get() { return noticeAudience; }, set(value) { noticeAudience = value; }, configurable: true },
   "noticeSavedName": { get() { return noticeSavedName; }, set(value) { noticeSavedName = value; }, configurable: true },
   "giveNoticeKeysToContacts": { get() { return giveNoticeKeysToContacts; }, set(value) { giveNoticeKeysToContacts = value; }, configurable: true },
@@ -366,6 +413,7 @@ Object.defineProperties(globalThis, {
   "noticePadded": { get() { return noticePadded; }, set(value) { noticePadded = value; }, configurable: true },
   "noticeSeal": { get() { return noticeSeal; }, set(value) { noticeSeal = value; }, configurable: true },
   "noticeEntryFor": { get() { return noticeEntryFor; }, set(value) { noticeEntryFor = value; }, configurable: true },
+  "noticeDevicesOf": { get() { return noticeDevicesOf; }, set(value) { noticeDevicesOf = value; }, configurable: true },
   "noticeHintFor": { get() { return noticeHintFor; }, set(value) { noticeHintFor = value; }, configurable: true },
   "syncNoticeToggles": { get() { return syncNoticeToggles; }, set(value) { syncNoticeToggles = value; }, configurable: true },
   "onNoticeToggle": { get() { return onNoticeToggle; }, set(value) { onNoticeToggle = value; }, configurable: true },

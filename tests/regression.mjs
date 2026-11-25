@@ -65,8 +65,9 @@ const OUT = value('out', join(HERE, 'regression-report', STAMP));
    reason, in every report; the list is the honest edge of what this gate covers. */
 const NOT_RUNNABLE = {
   twoservers: 'needs two real deployments, named by PKG_URL_A and PKG_URL_B; there is nothing to start them from here',
-  'native-shell': 'needs src-tauri/tauri.conf.json: this repository holds the web app, the relay and the panel, not the native shell\'s sources',
-  nativeui: 'needs src-tauri/tauri.conf.json (see native-shell)',
+  release37: 'retired in 2.20.0: it drives the "shared lock" card of the vault tab and the parent project\'s tab set (passwords, notes), neither of which this app has; the lock engine is covered by vaultlock, lockdefence, chatlock2 and release44',
+  uxfixes: 'retired in 2.20.0: written for the pre-2.3 shell (the rail, the section switcher, the old head); 29 of its 177 checks assert that shell\'s structure and fail by design, and the rest are covered by messenger, navfixes, chatnavfit and the call suites',
+  nativeui: 'retired: drives the parent project\'s SSH-key tab (sshGenerateBtn, "Generate"), which this app no longer has; its native-shell half is covered by native-shell, which runs',
   /* The owner decided on 2026-11-19 (docs/ROADMAP-3.0.md) that no wire
      compatibility with P00RIJA Cryptography is kept. From 2.7b an account
      moves to identity v4 (Ed25519 + X25519), which that app cannot read, so
@@ -88,9 +89,8 @@ const QUARANTINE = {
   chataudit: 'one check ("very long arrives"): the app delivers a 4000-character message in under 100 ms (probed 2026-11-16); the suite\'s wait counts [data-id] nodes in #chatMessages and does not see it. The other 37 pass.',
   controls: 'two checks written for the old skin — "every checkbox in the app is the theme\'s control colour" — which the messenger skin\'s iOS-style switches (green on, fixed) replace by design; the rest (9) pass.',
   formatbar: '3 of 11: the geometry of the floating format bar is read against the textarea\'s top, which the new composer reports as 0; the bar opens and formats (the other 8 pass). A tap on a bar button times out in that geometry.',
-  release37: 'drives the retired "shared lock" card in the vault tab and the parent project\'s tab set (passwords, notes); the lock engine is covered by vaultlock, lockdefence, chatlock2 and release44.',
+  chatnavfit: '16 of 17: measures the labels of the pre-2.3 chat strip (#content-chat .chat-nav-bar), which the messenger skin hides (every label reads 0 px wide); the same on 2.17.2, found by the full gate of 2.20.0. The tab labels of the skin that is shown are covered by navfixes and messenger.',
   sileotoasts: 'one check ("toasts start below the phone header": 8px); the toasts are drawn and the rest pass; the header is a different height in the messenger skin.',
-  uxfixes: 'a 176-check suite written for the pre-2.3 shell (the rail, the section switcher, the old head); 27 checks assert that shell\'s structure and fail by design; the 149 that pass are still run. To be split into suites for the shell that exists.',
 };
 
 /* A suite that runs, but without a section it cannot decide on this host. It passes what it ran, and the report names what it

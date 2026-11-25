@@ -1250,3 +1250,54 @@ Each closes a finding of §6; see `docs/ROADMAP-4-5.md` §4 for the design.
 * **F6** — `kex-confirm` is checked with HMAC verify (`kexConfirmTagValid`).
 * **SFrame replay window** (§6 item 26) — `fresh()` before decrypting,
   `accept()` after authentication (2.14.0).
+
+
+## 8. Changes after §7 (2.16.0 – 2.20.0, 2026-11-23 – 2026-11-25)
+
+Wire and behaviour that a second implementation, or a reader checking the code,
+needs. Tests are named beside each.
+
+* **Receipts kept for an absent person — `eph: 2`.** A sealed receipt
+  (`inner: 'receipt'`) carries `eph: 2` and `notify: false`. The relay keeps it
+  in the recipient's mailbox for 48 hours (`RECEIPT_KEEP_MS`) and no more than 300
+  per mailbox, the oldest going first (`receiptSweep`, `scripts/server/14-guest-mail.js`);
+  it wakes nobody. The item is marked `receipt: 1` on every path that files it,
+  including the one taken for a connected socket that is not reading (2.20.0).
+  `eph: 1` (typing) is still dropped. The client sends receipts `persist: true`
+  with a tag, so the transit outbox sends them again. Tests: `receiptkeep`, `chatticks`.
+* **Mail for a stranger — `route-query` (`chaseStrangerMail`).** Mail written
+  here for somebody who does not live here is chased: this relay asks the family
+  "do you hold their identity?", and only an answer of exactly one *home* is
+  followed; the chase is budgeted per sweep and the table capped. Test: `strangermail`.
+* **An acknowledgement is a promise that the message is kept (2.16.8).** The
+  client sends `relay-ack` only when nothing it holds is unsaved
+  (`mailIsDurable`, `js/chat/29-file-transfer.js`); a store written while the
+  screen is locked is written through (`vaultCanWrite`, 17-file-manager.js). An
+  acknowledgement waits otherwise and is released on unlock. Test: `offlinerecv`.
+* **What a notification says — `notice-key` and `envelope.hint` (2.17.x, 2.20.0).**
+  Two switches (`notifyShowSender`, `notifyShowPreview`), off by default.
+  - A device with a switch on makes a 32-byte AES-GCM key per switch **per
+    contact** and gives it to that contact in a `notice-key` message
+    `{ v: 3, d: deviceId, s: b64|'', p: b64|'' }` (empty = withdrawn). It travels
+    only inside the live session's payload (`kind: 'notice-key'`) or inside an
+    envelope's sealed body (`requireSealed`); the receiver believes it only so
+    (`session.viaSealedBody`). A contact keeps up to 4 devices' keys. A withdrawal
+    that cannot be delivered is kept (`noticeGivenTo[fp] = 'REVOKE'`) and sent later.
+  - A sender with keys adds `hint: { n, p }` to a waking envelope: `n` the sender's
+    name `{ n, at }` padded to 128 bytes, `p` the kind and the first 140
+    characters `{ k, t, at }` padded to 256/512/768, each `{ iv, c }` base64 under the
+    matching key (one part, or a list of up to 4 for a contact with several
+    devices). The relay keeps only a well-formed hint (`sanitizeNoticeHint`,
+    `scripts/lib/push-wording.js`) and puts it in the push; it cannot open it.
+  - The service worker (`sw.js`, `noticeFromHint`) reads `{ list: [{ s, p, name }],
+    show }` from IndexedDB `poorija-notice`, tries each contact's pair, requires both
+    halves to open under the same pair and `at` to be within 36 hours, and shows
+    the name **this device saved** for that contact. No key, no switch or any
+    failure gives the fixed line. A contact in a conversation that has a lock is
+    given no key. Tests: `noticehints`, `unifiedpush`, `notificationprivacy`.
+* **Keys not rotated, said plainly (§6).** The account's signing key `sk` and
+  agreement key `ak` have no rotation policy: they change only by an identity move.
+  A relay's identity key (the one that proves it and agrees transit seals) is the
+  same until the operator replaces it; key transparency (§7 F2) makes a swap
+  visible, it does not prevent one.
+

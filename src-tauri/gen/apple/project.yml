@@ -56,8 +56,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 2.17.1
-        CFBundleVersion: "2.17.1"
+        CFBundleShortVersionString: 2.20.0
+        CFBundleVersion: "2.20.0"
     entitlements:
       path: p00rija-chat_iOS/p00rija-chat_iOS.entitlements
     scheme:

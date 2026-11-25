@@ -861,7 +861,7 @@
     }
     const box = el('lanPairCanvas');
     if (!box) return;
-    box.innerHTML = '';
+    box.replaceChildren();
     new global.QRCode(box, {
       text: code, width: 240, height: 240, correctLevel: global.QRCode.CorrectLevel.M
     });

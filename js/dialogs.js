@@ -121,7 +121,7 @@
     choicesEl.classList.toggle('is-pair', Boolean(wantsChoices && config.choices.length === 2 && config.choices.every((choice) => !choice.hint)));
     choicesEl.classList.toggle('is-danger', Boolean(wantsChoices && config.danger));
     cancelBtn.classList.toggle('is-primary', config.kind === 'choose');
-    choicesEl.innerHTML = '';
+    choicesEl.replaceChildren();
     if (wantsChoices) {
       config.choices.forEach((choice, index) => {
         const button = document.createElement('button');

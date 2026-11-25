@@ -45,6 +45,22 @@ try {
   check('and mail is kept as it was', plain?.type === 'queued' && await box(carol.fingerprint) === 2);
   const expired = await waitUntil(async () => await box(carol.fingerprint) === 1, 8000);
   check('receipts are not kept for ever, the message is', expired, `${await box(carol.fingerprint)}`);
+  /* A person whose socket is open but who reads nothing (a phone in a pocket):
+     the receipt takes the live path, and its copy in the box is aged out and
+     capped like any other. It was kept for good. */
+  const dave = relayTestIdentity();
+  const daveHere = fleet.client('a', 'dave-1', dave);
+  await daveHere.ready;
+  await daveHere.waitFor((m) => m.type === 'peers' || m.type === 'roster', 15000).catch(() => null);
+  const live = await (async () => {
+    const tag = `m${n += 1}`;
+    bob.send({ type: 'relay', toFingerprint: dave.fingerprint, payload: { type: 'offline-chat', eph: 2, notify: false }, persist: true, tag });
+    return bob.waitFor((m) => m.tag === tag, 10000).catch(() => null);
+  })();
+  check('a receipt for a connected socket is kept in the box until it is acknowledged', live?.type === 'queued' && await box(dave.fingerprint) === 1, JSON.stringify(live));
+  const liveGone = await waitUntil(async () => await box(dave.fingerprint) === 0, 8000);
+  check('and, never acknowledged, it ages out as a receipt does', liveGone, `${await box(dave.fingerprint)}`);
+  daveHere.close();
   bob.close();
 } finally {
   await fleet.stopAll().catch(() => {});

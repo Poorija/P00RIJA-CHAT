@@ -518,7 +518,7 @@ function renderCalls() {
   /* The standalone tab strip in the markup is a second copy of the filters the
      working pane draws for itself; it is emptied and hidden rather than kept
      in step. */
-  if (callsFilterTabs) callsFilterTabs.innerHTML = '';
+  if (callsFilterTabs) callsFilterTabs.replaceChildren();
 
   const visible = visibleCallRecords();
   if (count) count.textContent = String(visible.length);
@@ -650,7 +650,7 @@ ${toolbar}
     if (callsPanelList) callsPanelList.innerHTML = workingPane;
   } else {
     if (list) list.innerHTML = workingPane;
-    if (callsPanelList) callsPanelList.innerHTML = '';
+    if (callsPanelList) callsPanelList.replaceChildren();
   }
   holdsWork(list, !twoColumn);
   holdsWork(callsPanelList, twoColumn);
@@ -814,7 +814,7 @@ if (!panel) return;
 const pinned = history.filter((entry) => entry.pinned).slice(-3).reverse();
 if (!peer || !conversationKey || !pinned.length) {
 panel.classList.add('hidden');
-panel.innerHTML = '';
+panel.replaceChildren();
 return;
 }
 panel.classList.remove('hidden');

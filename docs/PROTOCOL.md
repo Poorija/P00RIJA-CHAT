@@ -7,10 +7,15 @@ it.
 
 ## What each side holds
 
-- **An identity key**: RSA-3072. It is the name of the person: the fingerprint is
-  its hash, and a contact's key is *pinned* the first time it is seen. A key that
-  later changes is not accepted silently: the conversation says so and, for a
-  contact whose key was verified, refuses to send until it is checked again.
+- **An identity key**: since 2.7 an account is **identity v4** — an Ed25519 key
+  that signs and an X25519 key that agrees (the fingerprint is the hash of the
+  signing key, `scripts/lib/identity-v4.js`). Older accounts have RSA-3072, and
+  an account moves from one to the other by a continuation signed by both keys;
+  for 90 days after a move the old RSA key is still believed for what it signed
+  before. The key is the name of the person: the fingerprint is its hash, and a
+  contact's key is *pinned* the first time it is seen. A key that later changes
+  is not accepted silently: the conversation says so and, for a contact whose
+  key was verified, refuses to send until it is checked again.
 - **A vault**: everything stored on the device (messages, contacts, keys) is
   encrypted under a master password. A second password opens a decoy profile.
 - **Safety numbers**: the emoji key (`09-the-emoji-key.js`) and the QR code let
@@ -23,7 +28,8 @@ A live session is keyed by an exchange (`19-forward-secrecy.js`,
 
 1. One side (the one whose fingerprint sorts first) offers: a fresh ECDH P-256
    key **and** a fresh ML-KEM-768 public key, signed with its identity key
-   (`kex-offer/3`).
+   (`kex-offer/4` toward a contact that reads it, which also signs the ratchet
+   keys it asks for; `kex-offer/3` otherwise — `docs/SPEC.md` §7 F1).
 2. The other answers with its own ECDH key and an ML-KEM ciphertext to the
    offered key, signed (`kex-answer/3`).
 3. Both derive the session key with HKDF from the ECDH secret and the ML-KEM
@@ -34,7 +40,11 @@ A live session is keyed by an exchange (`19-forward-secrecy.js`,
 4. The answering side does not use the key until the other has proved it holds
    it (`kex-confirm`).
 
-Each message is then AES-256-GCM under that session key. The keys are ephemeral,
+Each message is then AES-256-GCM under a key of its own: with the **Double
+Ratchet** (X25519 and ML-KEM-768 steps, `js/crypto/ratchet.js`) every payload is
+sealed with the next message key of the sending chain, and a stolen key opens
+one message and neither the ones before nor, after the next step, the ones
+after; a contact that cannot do it is on the session key alone. The keys are ephemeral,
 so a later theft of the identity key does not open recorded conversations
 (forward secrecy per connection).
 

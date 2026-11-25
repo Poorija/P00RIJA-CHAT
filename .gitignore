@@ -107,3 +107,6 @@ standalone-relay/lib/
 
 # Regression gate output (tests/regression.mjs)
 tests/regression-report/
+
+# Scratch the planning tools leave behind
+.superpowers/

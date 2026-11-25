@@ -393,7 +393,7 @@ if (chatState.activeView === 'connection') {
    the panel directly above it. */
 heading?.classList.add('hidden');
 list.classList.add('hidden');
-list.innerHTML = '';
+list.replaceChildren();
 return;
 }
 heading?.classList.remove('hidden');
@@ -805,7 +805,7 @@ const box = modal.querySelector('#chatIdentityQrBox');
 /* The camera-sized card for the code; identityText() stays what gets copied. */
 const content = typeof identityQrText === 'function' ? identityQrText() : identityText();
 modal.classList.remove('hidden');
-box.innerHTML = '';
+box.replaceChildren();
 try {
 /* Through the shared kit rather than a bare QRCode call: it carries the
    quiet zone the specification requires (this was drawn hard against the

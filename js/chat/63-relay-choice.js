@@ -444,7 +444,7 @@ function renderRelayChoice() {
   if (!node) return;
   if (!relayChoiceAvailable()) {
     node.classList.add('hidden');
-    node.innerHTML = '';
+    node.replaceChildren();
     return;
   }
   node.classList.remove('hidden');

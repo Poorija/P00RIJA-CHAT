@@ -8,7 +8,7 @@
  */
 
 const APP_VERSION = '2.26';
-const APP_VERSION_SEMVER = '2.17.1';
+const APP_VERSION_SEMVER = '2.20.0';
 /* Same-number patch rounds are invisible to the user otherwise — the About
    page prints the build tag so any device can say which round it is on.
  *
@@ -27,7 +27,7 @@ const APP_BUILD_TAG = (() => {
     const found = /[?&]v=\d+\.\d+\.\d+-([A-Za-z0-9._-]+)/.exec(src);
     if (found) return found[1];
   } catch (_error) { /* no document, or no currentScript */ }
-  return 'chat-v35';
+  return 'chat-v37';
 })();
 /* The About page prints the version. Reading it from here rather than from a
    literal in the markup is what keeps the two from drifting apart again —
@@ -2878,7 +2878,7 @@ async function renderVaultFiles() {
   const lock = window.PoorijaChat?.vaultLock?.()?.state?.() || { enabled: true, unlocked: false };
   if (lock.enabled && !lock.unlocked) {
     manager.classList.add('hidden');
-    manager.innerHTML = '';
+    manager.replaceChildren();
     curtain.classList.remove('hidden');
     curtain.innerHTML = `<div class="poorija-vault-empty"><i class="fas fa-lock"></i><br>${escapeHTML(state.language === 'en'
       ? 'Locked. Enter the password to see what is stored.'
@@ -4903,16 +4903,16 @@ container.innerHTML = tabOrder.map((tabId, index) => {
 const definition = sidebarTabDefinitions().find((tab) => tab.id === tabId);
 const label = definition ? getTranslatedText(definition.labelKey, tabId) : tabId;
 return `
-<div class="tab-order-row" draggable="true" ondragstart="handleTabOrderDragStart(event, '${tabId}')" ondragover="handleTabOrderDragOver(event)" ondragleave="handleTabOrderDragLeave(event)" ondrop="handleTabOrderDrop(event, '${tabId}')" ondragend="handleTabOrderDragEnd()">
+<div class="tab-order-row" draggable="true" data-call-dragstart="handleTabOrderDragStart" data-call-dragover="handleTabOrderDragOver" data-call-dragleave="handleTabOrderDragLeave" data-call-drop="handleTabOrderDrop" data-call-dragend="handleTabOrderDragEnd" data-args='${JSON.stringify([tabId])}'>
 <div class="flex items-center gap-3 min-w-0">
 <span class="tab-order-handle" aria-hidden="true"><i class="fas fa-grip-lines"></i></span>
 <span class="text-sm font-semibold text-slate-700 dark:text-slate-100">${escapeHtml(label)}</span>
 </div>
 <div class="tab-order-actions">
-<button type="button" onclick="moveTabOrder('${tabId}', -1)" class="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors" title="${escapeHtml(getTranslatedText('moveUp'))}" ${index === 0 ? 'disabled' : ''}>
+<button type="button" data-call-click="moveTabOrder" data-args='${JSON.stringify([tabId, -1])}' class="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors" title="${escapeHtml(getTranslatedText('moveUp'))}" ${index === 0 ? 'disabled' : ''}>
 <i class="fas fa-arrow-up"></i>
 </button>
-<button type="button" onclick="moveTabOrder('${tabId}', 1)" class="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors" title="${escapeHtml(getTranslatedText('moveDown'))}" ${index === tabOrder.length - 1 ? 'disabled' : ''}>
+<button type="button" data-call-click="moveTabOrder" data-args='${JSON.stringify([tabId, 1])}' class="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors" title="${escapeHtml(getTranslatedText('moveDown'))}" ${index === tabOrder.length - 1 ? 'disabled' : ''}>
 <i class="fas fa-arrow-down"></i>
 </button>
 </div>
@@ -5147,7 +5147,7 @@ document.addEventListener('visibilitychange', () => {
 if (!document.hidden) checkForUpdate();
 });
 navigator.serviceWorker.addEventListener('controllerchange', () => {
-const reloadKey = 'poorija-sw-reload-2.17.1-chat-v35';
+const reloadKey = 'poorija-sw-reload-2.20.0-chat-v37';
 if (pwaReloadedForUpdate || sessionStorage.getItem(reloadKey) === '1') return;
 pwaReloadedForUpdate = true;
 sessionStorage.setItem(reloadKey, '1');
@@ -5160,7 +5160,7 @@ window.addEventListener('load', () => {
    URL had stopped changing, and tools/check-versions.cjs could not see it
    because it only asked whether this file mentions the tag anywhere, which
    the reload key above already satisfied. It is checked by itself now. */
-navigator.serviceWorker.register('./sw.js?v=2.17.1-chat-v35', { scope: './' }).then((registration) => {
+navigator.serviceWorker.register('./sw.js?v=2.20.0-chat-v37', { scope: './' }).then((registration) => {
 state.pwa.swReady = true;
 registration.update?.();
 setInstallButtonsVisibility();
@@ -7358,13 +7358,13 @@ container.innerHTML = state.generatedPasswords.map(p => `
 <div class="flex items-center justify-between gap-2 min-w-0">
 <span class="text-xs text-gray-500 dark:text-gray-400 truncate" dir="ltr">${p.password.length} ${state.language === 'fa' ? 'کاراکتر' : 'chars'} · ${new Date(p.created).toLocaleDateString(state.language === 'fa' ? 'fa-IR' : 'en-US')}</span>
 <div class="flex gap-2 shrink-0">
-<button onclick="viewPassword(${p.id})" class="px-3 py-1 bg-gray-200 dark:bg-slate-700 text-white rounded text-sm hover:bg-gray-300 dark:hover:bg-slate-600 transition-colors" title="View">
+<button data-call-click="viewPassword" data-args='${JSON.stringify([p.id])}' class="px-3 py-1 bg-gray-200 dark:bg-slate-700 text-white rounded text-sm hover:bg-gray-300 dark:hover:bg-slate-600 transition-colors" title="View">
 <i class="fas fa-eye"></i>
 </button>
-<button onclick="copyPassword(${p.id})" class="px-3 py-1 bg-gray-200 dark:bg-slate-700 text-white rounded text-sm hover:bg-gray-300 dark:hover:bg-slate-600 transition-colors" title="Copy">
+<button data-call-click="copyPassword" data-args='${JSON.stringify([p.id])}' class="px-3 py-1 bg-gray-200 dark:bg-slate-700 text-white rounded text-sm hover:bg-gray-300 dark:hover:bg-slate-600 transition-colors" title="Copy">
 <i class="fas fa-copy"></i>
 </button>
-<button onclick="deletePassword(${p.id})" class="px-3 py-1 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded text-sm" title="Delete">
+<button data-call-click="deletePassword" data-args='${JSON.stringify([p.id])}' class="px-3 py-1 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded text-sm" title="Delete">
 <i class="fas fa-trash"></i>
 </button>
 </div>
@@ -8116,7 +8116,7 @@ const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const secret = generateSecureRandomString(32, chars);
 state.twoFA.tempSecret = secret;
 const qrContainer = document.getElementById('settingsQrcode');
-qrContainer.innerHTML = '';
+qrContainer.replaceChildren();
 const issuer = encodeURIComponent('P00RIJÃ');
 const account = encodeURIComponent('User');
 const otpauth = `otpauth://totp/${issuer}:${account}?secret=${secret}&issuer=${issuer}`;
@@ -8443,7 +8443,7 @@ bar.innerHTML = ids.map((id) => {
 const item = MOBILE_TAB_CATALOG.find((entry) => entry.id === id);
 if (!item) return '';
 const label = lang ? item.en : item.fa;
-return `<button type="button" class="mobile-tab-btn${state.activeTab === id ? ' is-active' : ''}" data-mtab="${id}" onclick="switchTab('${id}')" aria-label="${label}"><i class="fas ${item.icon}"></i><span>${label}</span></button>`;
+return `<button type="button" class="mobile-tab-btn${state.activeTab === id ? ' is-active' : ''}" data-mtab="${id}" data-call-click="switchTab" data-args='${JSON.stringify([id])}' aria-label="${label}"><i class="fas ${item.icon}"></i><span>${label}</span></button>`;
 }).join('');
 bar.dataset.tabSignature = signature;
 bar.style.gridTemplateColumns = `repeat(${Math.max(1, ids.length)}, minmax(0, 1fr))`;
@@ -8510,7 +8510,7 @@ const grid = MOBILE_TAB_CATALOG.map((item) => {
 const on = active.includes(item.id);
 return `<label class="mtab-cfg-row${on ? ' on' : ''}">
 <span class="mtab-cfg-label"><i class="fas ${item.icon}"></i><span>${escapeHtml(labelFor(item))}</span></span>
-<input type="checkbox" data-mtab-cb="${item.id}" ${on ? 'checked' : ''} onchange="toggleMobileTabBarItem('${item.id}')">
+<input type="checkbox" data-mtab-cb="${item.id}" ${on ? 'checked' : ''} data-call-change="toggleMobileTabBarItem" data-args='${JSON.stringify([item.id])}'>
 </label>`;
 }).join('');
 /* The ordered list: exactly the selected tabs, in bar order, each with its
@@ -8523,8 +8523,8 @@ return `<div class="mtab-order-row">
 <i class="fas ${item.icon}"></i>
 <span class="mtab-order-name">${escapeHtml(labelFor(item))}</span>
 <span class="mtab-cfg-order">
-<button type="button" class="mtab-order-btn" ${index === 0 ? 'disabled' : ''} onclick="moveMobileTabBarItem('${tabId}', -1)" aria-label="up"><i class="fas fa-chevron-up"></i></button>
-<button type="button" class="mtab-order-btn" ${index === active.length - 1 ? 'disabled' : ''} onclick="moveMobileTabBarItem('${tabId}', 1)" aria-label="down"><i class="fas fa-chevron-down"></i></button>
+<button type="button" class="mtab-order-btn" ${index === 0 ? 'disabled' : ''} data-call-click="moveMobileTabBarItem" data-args='${JSON.stringify([tabId, -1])}' aria-label="up"><i class="fas fa-chevron-up"></i></button>
+<button type="button" class="mtab-order-btn" ${index === active.length - 1 ? 'disabled' : ''} data-call-click="moveMobileTabBarItem" data-args='${JSON.stringify([tabId, 1])}' aria-label="down"><i class="fas fa-chevron-down"></i></button>
 </span>
 </div>`;
 }).join('');
@@ -9012,7 +9012,7 @@ list.innerHTML = items.map((item) => `
 </div>
 <p class="text-sm text-gray-600 dark:text-gray-400">${escapeHTML(item.desc)}</p>
 </div>
-<button onclick="switchTab('${item.action}')" class="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors whitespace-nowrap">
+<button data-call-click="switchTab" data-args='${JSON.stringify([item.action])}' class="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors whitespace-nowrap">
 ${state.language === 'fa' ? 'باز کردن بخش مرتبط' : 'Open related area'}
 </button>
 </div>
@@ -9307,7 +9307,7 @@ el.dispatchEvent(new Event('input', { bubbles: true }));
 };
 function renderVirtualKeyboard() {
 const container = document.getElementById('virtualKeyboard');
-container.innerHTML = '';
+container.replaceChildren();
 // Shuffle keys
 const keys = vkShift ? [...vkKeysUpper] : [...vkKeysLower];
 for (let i = keys.length - 1; i > 0; i--) {

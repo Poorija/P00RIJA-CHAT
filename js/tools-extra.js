@@ -170,7 +170,7 @@
   function qrRenderFrame() {
     const box = el('qrBridgeCanvas');
     if (!box || !qrState.frames.length) return;
-    box.innerHTML = '';
+    box.replaceChildren();
     if (typeof global.QRCode === 'undefined') {
       box.innerHTML = `<p class="text-sm text-red-500">${esc(t('کتابخانهٔ QR بارگذاری نشد.', 'The QR library did not load.'))}</p>`;
       return;

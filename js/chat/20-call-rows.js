@@ -682,10 +682,16 @@ announceProfileToContacts();
 notify(t('پروفایل چت ذخیره شد', 'Chat profile saved'), 'success');
 }
 function sessionSecurityText(session) {
-if (!session?.cryptoKey) {
-return t('منتظر تبادل کلید RSA -> AES-GCM', 'Waiting for RSA -> AES-GCM key exchange');
+/* What this session is really keyed with — not the identity key's algorithm,
+   which is not what a message is encrypted under. */
+if (!session?.cryptoKey && !session?.ratchet) {
+return t('منتظر تبادل کلید امن', 'Waiting for the secure key exchange');
 }
-return t('RSA-OAEP-3072 + AES-256-GCM', 'RSA-OAEP-3072 + AES-256-GCM');
+if (session.ratchet?.v === 2) return 'Double Ratchet (X25519 + ML-KEM-768) + AES-256-GCM';
+if (session.ratchet) return t('زنجیرهٔ کلید برای هر پیام + ', 'A key per message + ') + (session.keyHybrid ? 'ML-KEM-768 + ECDH P-256 + AES-256-GCM' : 'ECDH P-256 + AES-256-GCM');
+if (session.keyHybrid) return 'ML-KEM-768 + ECDH P-256 + AES-256-GCM';
+if (session.keySource === 'negotiated') return 'ECDH P-256 + AES-256-GCM';
+return 'RSA-OAEP-3072 + AES-256-GCM';
 }
 /* Three states, not two. "Not connected" covers both "trying" and "gave up",
    and they deserve different colours: amber while something is still in

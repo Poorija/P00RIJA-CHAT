@@ -859,7 +859,7 @@ const space = getActiveConversation();
 const visible = Boolean(space?.type === 'group' && chatState.activeView === 'groups');
 panel.classList.toggle('hidden', !visible);
 if (!visible) {
-panel.innerHTML = '';
+panel.replaceChildren();
 return;
 }
 const peers = chatState.peers

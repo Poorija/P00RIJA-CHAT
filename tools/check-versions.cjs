@@ -182,6 +182,21 @@ if (docDrift.length) {
   process.exit(1);
 }
 
+/* The lockfile has to be one cargo accepts: a hand edit (or a search-and-replace
+   that reached another crate's version) breaks every native build, and nothing
+   above reads it beyond the app's own block. Only where cargo is installed. */
+try {
+  const { spawnSync } = require('child_process');
+  const have = spawnSync('cargo', ['--version'], { encoding: 'utf8' });
+  if (have.status === 0) {
+    const run = spawnSync('cargo', ['metadata', '--manifest-path', path.join(ROOT, 'src-tauri', 'Cargo.toml'), '--locked', '--format-version', '1'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+    if (run.status !== 0) {
+      console.error(`\n  src-tauri/Cargo.lock is not one cargo accepts:\n    ${String(run.stderr || '').trim().split('\n').slice(0, 3).join('\n    ')}`);
+      process.exit(1);
+    }
+  }
+} catch (_error) { /* no cargo to ask */ }
+
 Object.entries(found).forEach(([where, value]) => {
   console.log(`  ${String(value).padEnd(10)} ${where}`);
 });

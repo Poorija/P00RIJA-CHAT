@@ -126,8 +126,17 @@ function sanitizeNoticeHint(value) {
   const part = (item) => (item && typeof item.iv === 'string' && typeof item.c === 'string'
     && item.iv.length >= 8 && item.iv.length <= 32 && item.c.length >= 16 && item.c.length <= 1400
     && HINT_PART.test(item.iv) && HINT_PART.test(item.c) ? { iv: item.iv, c: item.c } : null);
-  const n = part(value.n);
-  const p = part(value.p);
+  /* One part, or a list of up to four: a contact may have the app on several
+     devices, each with a key of its own. */
+  const many = (item) => {
+    if (Array.isArray(item)) {
+      const list = item.slice(0, 4).map(part).filter(Boolean);
+      return list.length ? (list.length === 1 ? list[0] : list) : null;
+    }
+    return part(item);
+  };
+  const n = many(value.n);
+  const p = many(value.p);
   return n || p ? { ...(n ? { n } : {}), ...(p ? { p } : {}) } : null;
 }
 

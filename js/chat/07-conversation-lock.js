@@ -252,7 +252,7 @@ function lockVaultNow() {
   document.querySelectorAll('[data-shared-password]').forEach(input => { input.value = ''; input.type = 'password'; });
   document.querySelectorAll('[data-shared-eye]').forEach(button => button.setAttribute('aria-pressed', 'false'));
   const manager = document.getElementById('vaultFileManager');
-  if (manager) { manager.classList.add('hidden'); manager.innerHTML = ''; }
+  if (manager) { manager.classList.add('hidden'); manager.replaceChildren(); }
   if (vaultLockConfig().enabled) {
     chatState.activeConversationId = '';
     chatState.activePeerClientId = '';

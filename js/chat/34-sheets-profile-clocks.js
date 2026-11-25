@@ -77,7 +77,7 @@ function openFullSheet({ title, build, onClose = null }) {
   closeFullSheet({ silent: true });
   sheet.querySelector('.chat-fullsheet-title').textContent = title || '';
   const body = sheet.querySelector('.chat-fullsheet-body');
-  body.innerHTML = '';
+  body.replaceChildren();
   const borrowed = [];
   /* `adopt` is how a sheet takes a live control instead of drawing a copy of
      it: the node keeps its id and every listener already bound to it, and it
@@ -114,7 +114,7 @@ function closeFullSheet({ silent = false } = {}) {
   }
   sheet.classList.remove('is-open');
   sheet.classList.add('hidden');
-  sheet.querySelector('.chat-fullsheet-body').innerHTML = '';
+  sheet.querySelector('.chat-fullsheet-body').replaceChildren();
   document.body.classList.remove('chat-fullsheet-open');
 }
 
@@ -436,7 +436,7 @@ function openClockSheet() {
 
       const drawResults = () => {
         const query = search.value.trim().toLowerCase();
-        if (!query) { results.innerHTML = ''; return; }
+        if (!query) { results.replaceChildren(); return; }
         const matches = zones.filter((tz) => tz.toLowerCase().includes(query)).slice(0, 40);
         results.innerHTML = matches.length
           ? matches.map((tz) => `
@@ -456,7 +456,7 @@ function openClockSheet() {
             }
             saveClocks([...(chatState.clocks || []), { tz, label: clockLabelFor(tz) }]);
             search.value = '';
-            results.innerHTML = '';
+            results.replaceChildren();
             drawCurrent();
           });
         });

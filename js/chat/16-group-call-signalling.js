@@ -2420,7 +2420,7 @@ function renderStickerPanel() {
   if (!chatState.stickerManageMode) clearStickerManageSelection();
 
   if (!packs.length) {
-    tabs.innerHTML = '';
+    tabs.replaceChildren();
     tabs.__html = '';
     grid.__html = '';
     grid.innerHTML = `<div class="chat-sticker-empty">

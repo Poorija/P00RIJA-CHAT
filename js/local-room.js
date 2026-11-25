@@ -345,8 +345,8 @@
     if (!call) {
       screen.classList.add('hidden');
       document.body.classList.remove('link-call-open');
-      stage.innerHTML = '';
-      strip.innerHTML = '';
+      stage.replaceChildren();
+      strip.replaceChildren();
       el('linkCallResumeBtn')?.classList.add('hidden');
       return;
     }

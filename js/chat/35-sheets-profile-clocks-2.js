@@ -1341,7 +1341,7 @@ closed: false,
 setPollComposerVisible(false);
 const questionInput = document.getElementById('chatPollQuestion');
 if (questionInput) questionInput.value = '';
-document.getElementById('chatPollOptions').innerHTML = '';
+document.getElementById('chatPollOptions').replaceChildren();
 renderPollOptionInputs();
 } catch (error) {
 console.error('[Poll] send failed', error);

@@ -559,7 +559,7 @@ async function drainKeyboardCatcher() {
         (image.closest('picture') || image).remove();
       }
       const text = (box.textContent || '').replace(/￼/g, '');
-      if (!box.querySelector('img')) box.innerHTML = '';
+      if (!box.querySelector('img')) box.replaceChildren();
       if (text.trim()) {
         moveTextToComposer(text);
         /* Said once: somebody typing here would otherwise get a toast for

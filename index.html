@@ -20,96 +20,7 @@
 <meta name="color-scheme" content="dark">
 <style>html,body{background:#0f172a}</style>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<script>
-/* Native shell bootstrap — runs before the first paint so the standalone /
-   mobile layout (and therefore the bottom tab bar geometry) is correct on
-   frame 1 instead of only after window.load. */
-(function () {
-    var doc = document.documentElement;
-    var ua = navigator.userAgent || '';
-    var isIpadOs = (navigator.maxTouchPoints || 0) > 1 && /MacIntel/i.test(navigator.platform || '');
-    var isIos = /iPad|iPhone|iPod/i.test(ua) || isIpadOs;
-    var isStandalone = window.navigator.standalone === true
-        || window.matchMedia('(display-mode: standalone)').matches
-        || window.matchMedia('(display-mode: fullscreen)').matches
-        || window.matchMedia('(display-mode: minimal-ui)').matches
-        /* The native phone shell (Tauri iOS/Android) is an installed app in
-           every way the pwa-standalone rules describe: launched from a home
-           screen, outside a browser, carrying safe-area insets. Without this
-           the phone build ran the browser-tab presentation — square panels,
-           and a bottom tab bar only the chat tab could win back. */
-        || (window.__POORIJA_NATIVE_SHELL__ === true && (isIos || /Android/i.test(ua)));
-    /* `mobile-browser-context` drives ~900 stylesheet rules, and every one of
-       them is written for a single-column phone screen. Deciding it from the
-       user agent meant an iPad in landscape ran the phone layout at 1366px
-       wide, while the stylesheet's own @media queries had already switched to
-       the desktop one -- which is how the conversation list ended up hidden
-       inside a grid column that was still 360px wide. Decide it from the same
-       1024px breakpoint the CSS uses, so the two can never disagree again. */
-    var isTouchDevice = isIpadOs || (navigator.maxTouchPoints || 0) > 0
-        || /Android|webOS|iPhone|iPad|iPod|Mobile|CriOS/i.test(ua);
-    var isMobile = window.innerWidth < 1024;
-    doc.classList.toggle('pwa-standalone', isStandalone);
-    doc.classList.toggle('mobile-browser-context', isMobile);
-    doc.classList.toggle('touch-device', isTouchDevice);
-    doc.classList.toggle('ios-device', isIos);
-    /* The language screen has no `hidden` class in the markup, so on every
-       launch it painted first and was only swapped for the password field once
-       app.js reached checkFirstVisit() — the flash of the language chooser on
-       the login screen. The choice is a single localStorage read, so make it
-       here, before the first paint. */
-    try {
-        var storedLang = localStorage.getItem('poorija_lang');
-        if (storedLang) {
-            doc.classList.add('has-language');
-            /* And the way the text runs: the markup says Persian, right to left,
-               and an English visitor read the install screen backwards (full stops
-               first) until the app had started. */
-            doc.lang = storedLang;
-            doc.dir = storedLang === 'fa' ? 'rtl' : 'ltr';
-        }
-    } catch (error) { /* storage blocked — app.js still decides after load */ }
-    /* Paint the OS chrome (Android status/nav bar, iOS letterbox strip) in the
-       saved theme colour immediately, so there is never a mismatched band. */
-    try {
-        var themeColors = {
-            light: '#f8fafc', dark: '#0f172a', pastel: '#fffafa', midnight: '#0a0e27',
-            neon: '#050505', dracula: '#282a36', nord: '#2e3440', solarized: '#fdf6e3',
-            cyberpunk: '#0d0221', ocean: '#001f3f', forest: '#1e392a', aurora: '#06111f',
-            sunset: '#2b0f54', linen: '#faf5ef', obsidian: '#050816'
-        };
-        var saved = localStorage.getItem('poorija_theme');
-        var color = themeColors[saved];
-        /* Not painted in the saved theme's colour: whatever the theme, the first
-           screen is the language, install or password screen, and those are dark.
-           A light theme painted its pale colour here, which was a white flash and
-           a white strip above a dark screen. The theme's own colour is put on the
-           page when the app opens (applyStatusBarColour); the classes below are
-           still set now, so the variables are right when it does. */
-        /* And the theme CLASS, before the first paint.
-           Painting only the meta tag was half the job: html's own
-           background-color is #f9fafb until setTheme() runs from app.js, which
-           is after parse. On iOS the band behind the status bar is painted from
-           the page background, so every cold start and every reload flashed a
-           white strip across the top of a dark app — the "sometimes a white bar
-           appears" report. Setting the class here means html is already the
-           right colour when the first frame is composited. */
-        var darkThemes = ['dark', 'midnight', 'neon', 'dracula', 'nord', 'cyberpunk',
-                          'ocean', 'forest', 'aurora', 'sunset', 'obsidian'];
-        /* Exactly the classes setTheme() knows how to take off again, so an
-           early guess is never left behind when the theme is changed later.
-           No inline background here: a style attribute on <html> would outrank
-           every theme rule for the rest of the session. */
-        var themeClasses = ['pastel', 'midnight', 'neon', 'dracula', 'nord', 'solarized',
-                            'custom', 'cyberpunk', 'ocean', 'forest', 'aurora', 'sunset',
-                            'linen', 'obsidian'];
-        if (saved && color) {
-            if (themeClasses.indexOf(saved) !== -1) doc.classList.add('theme-' + saved);
-            if (darkThemes.indexOf(saved) !== -1) doc.classList.add('dark');
-        }
-    } catch (error) { /* storage blocked — the default theme colour stands */ }
-})();
-</script>
+<script src="js/boot-shell.js?v=2.20.0-chat-v37"></script>
 <title>P00RIJÃ Chat | End-to-End Encrypted Messenger</title>
 <meta name="description" content="P00RIJÃ Chat - end-to-end encrypted messaging, calls and file transfer, on your own relay">
 <meta name="theme-color" content="#0f172a">
@@ -143,7 +54,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="assets/pwa-icons/apple-touch-icon.png">
 <link rel="apple-touch-icon-precomposed" sizes="180x180" href="assets/pwa-icons/apple-touch-icon.png">
 <!-- Font Awesome -->
-<link rel="preload" href="vendor/fontawesome/css/all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+<link rel="preload" href="vendor/fontawesome/css/all.min.css" as="style" data-as-stylesheet="1">
 <noscript><link rel="stylesheet" href="vendor/fontawesome/css/all.min.css"></noscript>
 <style>
 @keyframes fast-pulse {0%,100%{opacity:1}50%{opacity:.3}}
@@ -172,649 +83,11 @@ font-display: swap;
 <script defer src="vendor/otpauth/otpauth.umd.min.js"></script>
 <script defer src="vendor/hash-wasm/argon2.umd.min.js"></script>
 <script defer src="vendor/jszip/jszip.min.js"></script>
-<link rel="stylesheet" href="vendor/tailwind/tailwind.generated.css?v=2.17.1-chat-v35">
-<link rel="stylesheet" href="css/styles.css?v=2.17.1-chat-v35">
-<link rel="stylesheet" href="css/messenger.css?v=2.17.1-chat-v35">
-<link rel="stylesheet" href="css/chat-ui.css?v=2.17.1-chat-v35">
-<script>
-    (function() {
-        window.loadDeferredFonts = function() {
-        const primaryFonts = [
-        { family: 'B Yekan', url: 'fonts/BYekan.ttf' },
-        { family: 'Roboto', url: 'fonts/Roboto/Roboto-Regular.ttf' },
-        { family: 'Open Sans', url: 'fonts/Open_Sans/OpenSans-Regular.ttf' },
-        { family: 'Lato', url: 'fonts/Lato/Lato-Regular.ttf' },
-        { family: 'Tahoma', url: 'fonts/tahoma.ttf' }
-        ];
-        const secondaryFonts = [
-        { family: 'Baloo Bhaijaan 2', url: 'fonts/Baloo_Bhaijaan_2/BalooBhaijaan2-VariableFont_wght.ttf' },
-        { family: 'Beiruti', url: 'fonts/Beiruti/Beiruti-VariableFont_wght.ttf' },
-        { family: 'El Messiri', url: 'fonts/El_Messiri/ElMessiri-VariableFont_wght.ttf' },
-        { family: 'Handjet', url: 'fonts/Handjet/Handjet-VariableFont_ELGR,ELSH,wght.ttf' },
-        { family: 'Harmattan', url: 'fonts/Harmattan/Harmattan-Regular.ttf' },
-        { family: 'IBM Plex Sans Arabic', url: 'fonts/IBM_Plex_Sans_Arabic/IBMPlexSansArabic-Regular.ttf' },
-        { family: 'Noto Naskh Arabic', url: 'fonts/Noto_Naskh_Arabic/NotoNaskhArabic-VariableFont_wght.ttf' },
-        { family: 'Parastoo', url: 'fonts/Parastoo/Parastoo-VariableFont_wght.ttf' },
-        { family: 'Playpen Sans Arabic', url: 'fonts/Playpen_Sans_Arabic/PlaypenSansArabic-VariableFont_wght.ttf' },
-        { family: 'Rubik', url: 'fonts/Rubik/Rubik-VariableFont_wght.ttf' },
-        { family: 'Zain', url: 'fonts/Zain/Zain-Regular.ttf' }
-        ];
-        const injectFonts = (fontList) => {
-            let css = '';
-            fontList.forEach(f => {
-                css += `@font-face { font-family: '${f.family}'; src: url('${f.url}') format('truetype'); font-display: swap; }\n`;
-            });
-            const style = document.createElement('style');
-            style.textContent = css;
-            document.head.appendChild(style);
-        };
-        // Load primary fonts first
-        injectFonts(primaryFonts);
-        // Defer secondary fonts even further
-        if ('requestIdleCallback' in window) {
-            requestIdleCallback(() => injectFonts(secondaryFonts), { timeout: 2000 });
-        } else {
-            setTimeout(() => injectFonts(secondaryFonts), 1000);
-        }
-        };
-        /* Smart viewport controller — measures REAL env() safe-area insets with a
-           hidden probe element (JS cannot read env() directly) and publishes them
-           as --pwa-safe-* custom properties. Re-measured on every resize/rotation,
-           which also heals the iOS bug where env() resolves to 0 after navigation. */
-        /* The CSS viewport units are the only other way to ask the engine how
-           tall the viewport is, and they do not always agree with
-           window.innerHeight. If any of them resolves LARGER than
-           documentElement.clientHeight, that extra height is real, reachable
-           viewport that a bottom:0 element is failing to use — which is
-           exactly the shape of the band that has survived every fix so far.
-           Measured, never assumed. */
-        window.measureViewportUnits = function() {
-            const doc = document.documentElement;
-            let probe = document.getElementById('pwaUnitProbe');
-            if (!probe) {
-                probe = document.createElement('div');
-                probe.id = 'pwaUnitProbe';
-                probe.setAttribute('aria-hidden', 'true');
-                probe.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;'
-                    + 'pointer-events:none;z-index:-1;padding:0;margin:0;border:0;';
-                (document.body || doc).appendChild(probe);
-            }
-            const read = (unit) => {
-                probe.style.height = '100' + unit;
-                const value = probe.getBoundingClientRect().height;
-                return Math.round(value) || 0;
-            };
-            const units = { vh: read('vh'), dvh: read('dvh'), lvh: read('lvh'), svh: read('svh') };
-            probe.style.height = '0';
-            units.largest = Math.max(units.vh, units.dvh, units.lvh, units.svh, doc.clientHeight || 0);
-            return units;
-        };
-
-        window.measureSafeInsets = function() {
-            const doc = document.documentElement;
-            let probe = document.getElementById('pwaSafeProbe');
-            if (!probe) {
-                probe = document.createElement('div');
-                probe.id = 'pwaSafeProbe';
-                probe.setAttribute('aria-hidden', 'true');
-                /* The probe consumes env() ONLY through dedicated --probe-env-*
-                   properties so it can never feed back on the published
-                   --pwa-safe-* values it is measuring (rotation-safe). */
-                probe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none;z-index:-1;'
-                    + '--probe-env-top: env(safe-area-inset-top, 0px);'
-                    + '--probe-env-bottom: env(safe-area-inset-bottom, 0px);'
-                    + '--probe-env-left: env(safe-area-inset-left, 0px);'
-                    + '--probe-env-right: env(safe-area-inset-right, 0px);'
-                    + 'padding-top: var(--probe-env-top);padding-bottom: var(--probe-env-bottom);'
-                    + 'padding-left: var(--probe-env-left);padding-right: var(--probe-env-right);';
-                doc.appendChild(probe);
-            }
-            const cs = getComputedStyle(probe);
-            const px = (value) => Math.max(0, Math.round(parseFloat(value) || 0));
-            const top = px(cs.paddingTop), bottom = px(cs.paddingBottom);
-            const left = px(cs.paddingLeft), right = px(cs.paddingRight);
-            /* ---------------------------------------------------------------
-               Window-mode guard.
-
-               env(safe-area-inset-*) is the spec-correct source and it is
-               AUTHORITATIVE whenever it reports anything at all: a non-zero
-               inset means the viewport genuinely extends into the unsafe area,
-               so the app must pay it. When the OS insets the window itself,
-               env() correctly reports 0, because the viewport no longer
-               reaches the unsafe area.
-
-               The previous build second-guessed env() by comparing
-               screen.height with window.innerHeight. That is not a usable
-               signal on iOS: in a cover-fit standalone window WebKit
-               under-reports innerHeight by exactly the top inset — a real
-               reading from a 15 Pro Max was screen 932 / window 873 / env
-               59 / 34, i.e. the window does cover the whole screen and the
-               59px "missing height" is a measurement artefact. Reading that
-               as a letterbox is what zeroed the notch clearance and dropped
-               the header under the clock.
-
-               The gap is therefore consulted ONLY when env() reports nothing,
-               which is the one case where it still carries information:
-                 • window shorter than the screen — the OS keeps the bands
-                   outside the window, so the app owes nothing on either edge;
-                 • window as tall as the screen — legacy black-translucent:
-                   content renders under the status bar but no inset is
-                   exposed, so the clearance has to be invented.
-               --------------------------------------------------------------- */
-            const units = window.measureViewportUnits();
-            const ua = navigator.userAgent || '';
-            const isIos = /iPad|iPhone|iPod/i.test(ua)
-                || ((navigator.maxTouchPoints || 0) > 1 && /MacIntel/i.test(navigator.platform || ''));
-            const isStandalone = window.navigator.standalone === true
-                || window.matchMedia('(display-mode: standalone)').matches
-                || window.matchMedia('(display-mode: fullscreen)').matches;
-            const scr = window.screen || {};
-            const portrait = window.innerHeight >= window.innerWidth;
-            const physicalHeight = portrait
-                ? Math.max(scr.width || 0, scr.height || 0)
-                : Math.min(scr.width || 0, scr.height || 0);
-            const longEdge = Math.max(scr.width || 0, scr.height || 0);
-            const windowGap = physicalHeight > 0 ? physicalHeight - window.innerHeight : 0;
-            const keyboardUp = doc.classList.contains('keyboard-open');
-            const envReportsInsets = top > 0 || bottom > 0 || left > 0 || right > 0;
-
-            /* Status-bar heights iOS uses in standalone, by device class. Only
-               ever applied in the legacy mode below, where env() gives us
-               nothing to work with but the clock really is painted over the
-               app's own header. */
-            const iosStatusBar = longEdge >= 852 ? 54 : longEdge >= 812 ? 47 : 20;
-
-            let mode, usedTop = top, usedBottom = bottom;
-            if (!isStandalone) {
-                mode = 'browser';
-            } else if (envReportsInsets) {
-                mode = 'cover-fit';
-            } else if (!keyboardUp && windowGap > 20) {
-                mode = 'os-inset';
-                usedTop = 0;
-                usedBottom = 0;
-            } else {
-                mode = 'legacy-through';
-                usedTop = isIos ? iosStatusBar : 0;
-                usedBottom = 0;
-            }
-            const osInset = mode === 'os-inset';
-            const insets = { top: usedTop, bottom: usedBottom, left, right };
-
-            /* A measured 0 is never published as an inline value unless we are
-               deliberately pinning it: iOS reports env() as 0 for a few frames
-               after a navigation, and freezing 0px inline would permanently
-               shadow the pure-CSS env() fallback declared on :root. */
-            const publish = (name, value) => {
-                if (value > 0) doc.style.setProperty(name, `${value}px`);
-                else if (osInset) doc.style.setProperty(name, '0px');
-                else doc.style.removeProperty(name);
-            };
-            publish('--pwa-safe-top', insets.top);
-            publish('--pwa-safe-bottom', insets.bottom);
-            publish('--pwa-safe-left', insets.left);
-            publish('--pwa-safe-right', insets.right);
-            doc.classList.toggle('safe-notched', insets.top > 24);
-            doc.classList.toggle('safe-home-bar', insets.bottom > 12);
-            doc.classList.toggle('ios-window-inset', osInset);
-            /* Screen the web view was never given. <body> covers the view edge
-               to edge, so <html>'s background only ever shows in exactly that
-               band — painting it the tab bar's colour makes the bar read as if
-               it continued to the physical bottom edge. */
-            const visibleViewport = Math.max(
-                Math.round(window.visualViewport?.height || 0), doc.clientHeight || 0);
-            const withheldBand = physicalHeight > 0
-                ? Math.round(physicalHeight - visibleViewport) : 0;
-            doc.classList.toggle('os-band', withheldBand > 8);
-            /* Kept for the on-device diagnostic in Settings. */
-            window.__nativeShellMetrics = {
-                standalone: isStandalone,
-                mode,
-                units,
-                /* Everything the engine will admit to about the drawing area. */
-                screenW: scr.width || 0,
-                windowW: window.innerWidth,
-                dpr: window.devicePixelRatio || 1,
-                /* Screen minus LAYOUT viewport. Anything above zero is screen
-                   the web view was never given, so no CSS can reach it. */
-                outsideGap: physicalHeight > 0 ? Math.round(physicalHeight - doc.clientHeight) : 0,
-                screen: physicalHeight,
-                window: window.innerHeight,
-                gap: windowGap,
-                envTop: top, envBottom: bottom,
-                usedTop: insets.top, usedBottom: insets.bottom
-            };
-            return insets;
-        };
-        window.updateViewportHeight = function() {
-            const vv = window.visualViewport;
-            const doc = document.documentElement;
-            const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
-            const isIpadOs = (navigator.maxTouchPoints || 0) > 1 && /MacIntel/i.test(navigator.platform || '');
-            /* Two different questions, and they used to share one answer:
-               the soft keyboard is a property of the device, the single-column
-               layout is a property of the viewport width. */
-            const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|Mobile|CriOS/i.test(navigator.userAgent || '') || isIpadOs;
-            const isMobile = window.innerWidth < 1024;
-            window.measureSafeInsets();
-            const layoutHeight = Math.round(window.innerHeight || doc.clientHeight || 0);
-            const visualHeight = Math.round(vv?.height || layoutHeight);
-            const offsetTop = Math.max(0, Math.round(vv?.offsetTop || 0));
-            const keyboardInset = Math.max(0, layoutHeight - visualHeight - offsetTop);
-            const isKeyboardOpen = keyboardInset > 110;
-            const vh = visualHeight * 0.01;
-            doc.style.setProperty('--vh', `${vh}px`);
-            /* While the keyboard is closed the pure-CSS 100dvh rules own the layout:
-               stale JS pixel values are removed so they can never letterbox the app. */
-            if (isKeyboardOpen) {
-                doc.style.setProperty('--app-height', `${Math.max(320, layoutHeight)}px`);
-                doc.style.setProperty('--app-window-height', `${Math.max(320, layoutHeight)}px`);
-                doc.style.setProperty('--app-viewport-height', `${Math.max(320, visualHeight)}px`);
-                doc.style.setProperty('--app-visual-height', `${Math.max(320, visualHeight)}px`);
-            } else {
-                ['--app-height', '--app-window-height', '--app-viewport-height', '--app-visual-height']
-                    .forEach((prop) => doc.style.removeProperty(prop));
-            }
-            /* Always, keyboard or not, and under a name nothing else touches.
-               --app-visual-height above is deliberately forced to 100dvh by the
-               full-bleed rules whenever no keyboard is up, so a layer that has
-               to end exactly where the keyboard begins cannot read it: with the
-               keys up it is right, and the rest of the time it is the window.
-               This one is only ever the measured visible height.
-               (js/app.js carries the same logic; both copies have to agree, or
-               whichever runs last undoes the other.) */
-            doc.style.setProperty('--app-live-height', `${Math.max(320, visualHeight)}px`);
-            /* iOS reports 100dvh SHORTER than the real standalone window: this
-               project's own diagnostic came back vh=932 dvh=873 on an iPhone.
-               Anything sized with dvh therefore stops ~60px above the bottom
-               edge and leaves an empty band. Publish the measured window
-               height so the shell can be anchored to the real thing. */
-            doc.style.setProperty('--app-shell-height', `${Math.max(320, layoutHeight)}px`);
-            doc.style.setProperty('--app-visual-offset-top', `${offsetTop}px`);
-            doc.style.setProperty('--app-keyboard-inset', `${keyboardInset}px`);
-            doc.style.setProperty('--mobile-keyboard-bottom', `${isMobileDevice && isKeyboardOpen ? keyboardInset : 0}px`);
-            doc.style.setProperty('--keyboard-height', `${keyboardInset}px`);
-            doc.style.setProperty('--keyboard-offset', isKeyboardOpen ? `${keyboardInset}px` : '0px');
-            const wasKeyboardOpen = doc.classList.contains('keyboard-open');
-            doc.classList.toggle('keyboard-open', isKeyboardOpen);
-            doc.classList.toggle('pwa-standalone', isStandalone);
-            doc.classList.toggle('mobile-browser-context', isMobile);
-            doc.classList.toggle('touch-device', isMobileDevice || (navigator.maxTouchPoints || 0) > 0);
-            if (isKeyboardOpen && !wasKeyboardOpen && document.activeElement) {
-                if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.id === 'chatComposer') {
-                    setTimeout(() => {
-                        const messages = document.getElementById('chatMessages');
-                        if (messages) messages.scrollTop = messages.scrollHeight;
-                        window.scrollTo(0, 0);
-                    }, 100);
-                }
-            }
-        };
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', window.updateViewportHeight);
-            window.visualViewport.addEventListener('scroll', window.updateViewportHeight);
-        }
-        window.addEventListener('resize', window.updateViewportHeight);
-        window.addEventListener('orientationchange', () => setTimeout(window.updateViewportHeight, 200));
-        window.addEventListener('load', window.updateViewportHeight);
-        /* First measurement as early as the DOM allows, then two re-measurements:
-           iOS frequently reports env() as 0 on the first frames of a standalone
-           launch and only settles once the window has been handed to the app. */
-        document.addEventListener('DOMContentLoaded', window.updateViewportHeight);
-        window.addEventListener('pageshow', window.updateViewportHeight);
-        window.addEventListener('load', () => {
-            setTimeout(window.updateViewportHeight, 120);
-            setTimeout(window.updateViewportHeight, 600);
-            setTimeout(window.tryFullHeightViewport, 400);
-            setTimeout(window.reassertViewportFit, 900);
-            setTimeout(window.reassertViewportFit, 1800);
-        });
-        /* Some WebKit builds latch viewport-fit at the very first parse of the
-           meta tag and keep the window short for the whole session. Replacing
-           the tag with a brand-new element forces a fresh viewport evaluation,
-           and the replacement is deliberately minimal — no extra viewport keys
-           that an older WebKit might choke on before it reaches viewport-fit.
-           Only ever runs when the window is measurably shorter than the screen,
-           so a healthy full-screen launch is never disturbed. */
-        window.tryFullHeightViewport = function() {
-            const vv = window.visualViewport;
-            const meta = document.querySelector('meta[name="viewport"]');
-            if (!vv || !meta || meta.dataset.fullHeightTried) return;
-            const scr = window.screen || {};
-            const portrait = window.innerHeight >= window.innerWidth;
-            const physical = portrait
-                ? Math.max(scr.width || 0, scr.height || 0)
-                : Math.min(scr.width || 0, scr.height || 0);
-            if (!physical || physical - vv.height <= 20) return;
-            meta.dataset.fullHeightTried = '1';
-            const original = meta.getAttribute('content') || '';
-            const before = Math.round(vv.height);
-            meta.setAttribute('content', original + ', height=device-height');
-            setTimeout(() => {
-                const after = Math.round(vv.height);
-                if (after <= before + 4) {
-                    /* No gain: put the viewport back exactly as it was rather
-                       than leave a non-standard key in place. */
-                    meta.setAttribute('content', original);
-                }
-                window.__fullHeightResult = { before, after, kept: after > before + 4 };
-                window.updateViewportHeight();
-                window.syncTabBarAnchor();
-            }, 240);
-        };
-        let viewportFitAttempts = 0;
-        window.reassertViewportFit = function() {
-            const doc = document.documentElement;
-            if (viewportFitAttempts >= 2) return;
-            const withheld = (window.__nativeShellMetrics || {}).outsideGap || 0;
-            if (!doc.classList.contains('ios-window-inset') && withheld <= 20) return;
-            const meta = document.querySelector('meta[name="viewport"]');
-            if (!meta) return;
-            viewportFitAttempts += 1;
-            const fresh = document.createElement('meta');
-            fresh.setAttribute('name', 'viewport');
-            fresh.setAttribute('content',
-                'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
-            meta.parentNode.replaceChild(fresh, meta);
-            /* Re-measure repeatedly: iOS resizes the window asynchronously and
-               the class must clear itself once the window becomes full height. */
-            [80, 300, 900, 2000].forEach((delay) => setTimeout(window.updateViewportHeight, delay));
-        };
-        document.addEventListener('focusin', (event) => {
-            const target = event.target;
-            if (!target || !target.matches?.('input, textarea, select, [contenteditable="true"]')) return;
-            const syncFocusedField = () => {
-                window.updateViewportHeight();
-                if (target.id === 'chatComposer') {
-                    const messages = document.getElementById('chatMessages');
-                    if (messages) messages.scrollTop = messages.scrollHeight;
-                    return;
-                }
-                if (document.documentElement.classList.contains('mobile-browser-context')) {
-                    target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
-                }
-            };
-            setTimeout(syncFocusedField, 80);
-            setTimeout(syncFocusedField, 260);
-        });
-        document.addEventListener('focusout', () => setTimeout(window.updateViewportHeight, 100));
-
-        /* ---------------------------------------------------------------
-           Tab-bar anchor — measure, do not assume.
-
-           `position: fixed; bottom: 0` is supposed to land on the bottom edge
-           of the layout viewport, but on this app it demonstrably does not on
-           every iOS build: with the bar's own padding proven to be 0 there was
-           still a band underneath it. Rather than keep guessing which ancestor
-           or which viewport unit is short, the bar's real painted position is
-           measured against documentElement.clientHeight and the difference is
-           fed back as a negative bottom offset. The bar grows by the same
-           amount at the TOP, so the labels stay on the bottom edge and the
-           extra height simply bridges whatever the gap was.
-
-           If the gap is instead OUTSIDE the layout viewport (the OS keeping a
-           band for itself), this measures 0 and the diagnostic in Settings
-           shows it under "outside viewport" — nothing in a web page can paint
-           there.
-           --------------------------------------------------------------- */
-        window.syncTabBarAnchor = function() {
-            const doc = document.documentElement;
-            const bar = document.getElementById('mobileTabBar');
-            if (!bar) return;
-            if (getComputedStyle(bar).display === 'none') return;
-            const current = parseFloat(doc.style.getPropertyValue('--tabbar-bottom-shift')) || 0;
-            const rect = bar.getBoundingClientRect();
-            if (!rect.height) return;
-            /* The layout viewport, and nothing else. This used to take the
-               LARGER of clientHeight and visualViewport.height, on the theory
-               that the biggest number was the real drawing area. On a phone the
-               visual viewport grows every time the browser's toolbars collapse
-               during a scroll, so the bar was pushed down to chase them — and
-               the shift accumulates, so it ratcheted until the bar sat below
-               the screen and never came back. Secure Chat was the one place it
-               survived, because that screen scrolls its own panes and never
-               collapses the toolbars. position:fixed resolves against the
-               layout viewport, so that is what the gap must be measured to. */
-            const target = doc.clientHeight || 0;
-            const gap = target - rect.bottom;
-            window.__tabBarAnchor = {
-                barBottom: Math.round(rect.bottom),
-                layoutViewport: doc.clientHeight,
-                target,
-                insideGap: Math.round(gap),
-                shift: current
-            };
-            if (Math.abs(gap) < 1) return;
-            /* The ceiling used to be 96px, which is taller than the bar itself
-               (62-70px). A shift that large could park the whole row below the
-               screen, and on iOS it did. No real letterbox or home-indicator
-               band is deeper than 48px, so past that the number is a runaway
-               rather than a measurement. */
-            const next = Math.min(48, Math.max(0, Math.round(current + gap)));
-            if (Math.abs(next - current) < 1) return;
-            if (next > 0) doc.style.setProperty('--tabbar-bottom-shift', next + 'px');
-            else doc.style.removeProperty('--tabbar-bottom-shift');
-            window.__tabBarAnchor.shift = next;
-            /* Belt and braces: whatever the arithmetic just produced, the row
-               of buttons has to stay reachable. The bar's own top edge never
-               moves once the height grows with the shift, so the box is the
-               wrong thing to test -- measure a button, which is what a finger
-               actually aims at. If the row has been carried past the bottom of
-               the drawable area there is no navigation left, so drop the shift
-               entirely: a bar sitting slightly high is a cosmetic complaint, a
-               bar nobody can reach is a broken app. */
-            const probe = bar.querySelector('.mobile-tab-btn') || bar;
-            const after = probe.getBoundingClientRect();
-            if (after.bottom > (doc.clientHeight || 0) + 2 || after.top >= (doc.clientHeight || 0) - 8) {
-                doc.style.removeProperty('--tabbar-bottom-shift');
-                window.__tabBarAnchor.shift = 0;
-                window.__tabBarAnchor.rescued = true;
-            }
-        };
-        const scheduleAnchorSync = (fromResize) => {
-            /* A resize means the old measurement is stale — the shift is
-               cleared first so the loop re-converges from zero instead of
-               adding to a number taken against a different viewport. */
-            if (fromResize) document.documentElement.style.removeProperty('--tabbar-bottom-shift');
-            requestAnimationFrame(() => window.syncTabBarAnchor());
-            [120, 400, 1200].forEach((delay) => setTimeout(() => window.syncTabBarAnchor(), delay));
-        };
-        window.addEventListener('load', scheduleAnchorSync);
-        window.addEventListener('resize', () => scheduleAnchorSync(true));
-        window.addEventListener('orientationchange', () => setTimeout(() => scheduleAnchorSync(true), 250));
-        document.addEventListener('DOMContentLoaded', scheduleAnchorSync);
-
-        /* On-device display report. Lives in Settings next to the tab-bar
-           customiser and is only offered on phones, where it is the fastest way
-           to tell a full-screen launch apart from a letterboxed one without a
-           desktop debugger attached. */
-        /* ---------------------------------------------------------------
-           Edge mode.
-
-           On this device the platform contradicts itself: visualViewport and
-           clientHeight both say the web view is 873px tall, while env() reports
-           both a 59px top inset AND a 34px bottom inset — which only adds up if
-           the view really does cover all 932px. One of the two is lying and
-           nothing measurable from here can say which. Edge mode applies the
-           difference as a downward offset and lifts the viewport's overflow
-           clip so the bar can paint there; the user can see in one tap which
-           reading was the true one. Off by default, remembered per device. */
-        /* On a viewport wide enough for the sidebar (>=1024px, the same
-           breakpoint the header's menu button uses) the bottom bar is
-           redundant: every one of its tabs is already one click away in the
-           sidebar. Default it off there and let the user opt back in. */
-        const TABBAR_WIDE_KEY = 'poorija_tabbar_wide';
-        window.applyTabBarWideMode = function() {
-            const doc = document.documentElement;
-            let on = false;
-            try { on = localStorage.getItem(TABBAR_WIDE_KEY) === '1'; } catch (error) { /* blocked */ }
-            /* The bar is phone-only now; the class is cleared rather than
-               applied so a previously stored opt-in cannot resurrect it on a
-               screen that already has the sidebar. */
-            /* The sidebar is gone here: the bar is the only navigation, at
-               every width, so the class stays on (js/messenger.js sets it). */
-            doc.classList.add('tabbar-wide-on');
-            void on;
-            const box = document.getElementById('tabbarWideToggle');
-            if (box) box.checked = on;
-            const row = document.getElementById('tabbarWideRow');
-            if (row) row.hidden = !window.matchMedia('(min-width: 1024px)').matches;
-        };
-        window.setTabBarWideMode = function(on) {
-            try { localStorage.setItem(TABBAR_WIDE_KEY, on ? '1' : '0'); } catch (error) { /* blocked */ }
-            window.applyTabBarWideMode();
-            window.updateViewportHeight();
-            window.syncTabBarAnchor();
-        };
-        document.addEventListener('DOMContentLoaded', () => window.applyTabBarWideMode());
-        window.addEventListener('resize', () => window.applyTabBarWideMode());
-
-        const TABBAR_EDGE_KEY = 'poorija_tabbar_edge';
-        window.applyTabBarEdgeMode = function() {
-            const doc = document.documentElement;
-            const scr = window.screen || {};
-            const portrait = window.innerHeight >= window.innerWidth;
-            const physical = portrait
-                ? Math.max(scr.width || 0, scr.height || 0)
-                : Math.min(scr.width || 0, scr.height || 0);
-            const visible = Math.max(
-                Math.round(window.visualViewport?.height || 0), doc.clientHeight || 0);
-            const shortfall = physical > 0 ? Math.round(physical - visible) : 0;
-            /* Auto-engage ONLY in an installed standalone window. In a browser
-               tab the viewport is legitimately short because Safari's own
-               toolbars are sitting there, and pushing the bar into them would
-               hide it behind browser chrome. The shortfall is also capped: a
-               real OS band is a status bar or a home indicator, never 150px. */
-            const isStandaloneWindow = window.navigator.standalone === true
-                || window.matchMedia('(display-mode: standalone)').matches
-                || window.matchMedia('(display-mode: fullscreen)').matches;
-            const envTopNow = Math.round(parseFloat(
-                getComputedStyle(doc).getPropertyValue('--pwa-safe-top')) || 0);
-            /* Which end is the missing band at? An iPhone in a standalone
-               window that does NOT cover the status bar is short by exactly
-               the top inset -- 932 - 873 = 59, and env(safe-area-inset-top) is
-               59 -- and that band is ABOVE the web view, where pushing the bar
-               down reaches nothing. The web view's bottom edge is already the
-               screen's bottom edge, so the shift has nothing to bridge and
-               only carries the buttons out of sight. When the shortfall is
-               accounted for by the top inset, that is the reading, and edge
-               mode must not engage by itself. */
-            const explainedByTop = envTopNow > 0 && Math.abs(shortfall - envTopNow) <= 2;
-            const autoEligible = isStandaloneWindow
-                && !doc.classList.contains('keyboard-open')
-                && envTopNow > 0
-                && !explainedByTop
-                && shortfall > 8 && shortfall <= 70;
-            let stored = null;
-            try { stored = localStorage.getItem(TABBAR_EDGE_KEY); } catch (error) { /* blocked */ }
-            const on = stored === '1' ? true : stored === '0' ? false : autoEligible;
-            doc.classList.toggle('tabbar-edge', on);
-            let edge = on ? Math.max(0, Math.min(70, shortfall)) : 0;
-            if (edge > 0) doc.style.setProperty('--tabbar-edge-shift', edge + 'px');
-            else doc.style.removeProperty('--tabbar-edge-shift');
-            /* Whatever the reading -- auto, or a switch the user flipped once on
-               a device that has since changed -- the row of buttons has to stay
-               inside the visible viewport. Measure it after the shift is on;
-               if it has left the screen, that answers the question the comment
-               above could not, and the shift goes. */
-            window.__tabBarEdge = { shortfall, envTop: envTopNow, explainedByTop, on, edge, rescued: false };
-            if (edge > 0) {
-                const probe = document.querySelector('#mobileTabBar .mobile-tab-btn');
-                const seen = probe ? probe.getBoundingClientRect() : null;
-                if (seen && seen.height && seen.bottom > (doc.clientHeight || 0) + 2) {
-                    doc.classList.remove('tabbar-edge');
-                    doc.style.removeProperty('--tabbar-edge-shift');
-                    edge = 0;
-                    window.__tabBarEdge.edge = 0;
-                    window.__tabBarEdge.rescued = true;
-                }
-            }
-            const box = document.getElementById('tabbarEdgeToggle');
-            if (box) box.checked = doc.classList.contains('tabbar-edge');
-            return edge;
-        };
-        window.setTabBarEdgeMode = function(on) {
-            try { localStorage.setItem(TABBAR_EDGE_KEY, on ? '1' : '0'); } catch (error) { /* blocked */ }
-            window.applyTabBarEdgeMode();
-            window.updateViewportHeight();
-            window.syncTabBarAnchor();
-        };
-        document.addEventListener('DOMContentLoaded', () => {
-            window.applyTabBarEdgeMode();
-            const row = document.getElementById('tabbarEdgeRow');
-            const rootEl = document.documentElement;
-            if (row && (rootEl.classList.contains('touch-device')
-                || rootEl.classList.contains('mobile-browser-context')
-                || rootEl.classList.contains('pwa-standalone'))) {
-                row.hidden = false;
-            }
-        });
-        window.addEventListener('resize', () => window.applyTabBarEdgeMode());
-
-        window.toggleNativeShellDiag = function() {
-            const body = document.getElementById('nativeShellDiagBody');
-            if (!body) return;
-            if (!body.hidden) { body.hidden = true; return; }
-            window.updateViewportHeight();
-            const m = window.__nativeShellMetrics || {};
-            const doc = document.documentElement;
-            const cs = getComputedStyle(doc);
-            if (window.syncTabBarAnchor) window.syncTabBarAnchor();
-            const anchor = window.__tabBarAnchor;
-            const barEl = document.getElementById('mobileTabBar');
-            const bar = barEl && barEl.offsetParent !== null ? barEl.getBoundingClientRect()
-                : (barEl && getComputedStyle(barEl).display !== 'none' ? barEl.getBoundingClientRect() : null);
-            const yes = (value) => value ? '✓' : '✗';
-            body.textContent = [
-                `standalone (PWA)   : ${yes(m.standalone)}`,
-                `window mode        : ${m.mode}`,
-                `screen height      : ${m.screen}px`,
-                `window height      : ${m.window}px`,
-                `window/screen gap  : ${m.gap}px  ${m.mode === 'os-inset' ? '← the OS keeps this band' : '(reporting artefact — ignored)'}`,
-                `layout viewport    : ${doc.clientHeight}px`,
-                `visual viewport    : ${Math.round(window.visualViewport?.height || 0)}px`,
-                `viewport units     : vh=${m.units?.vh} dvh=${m.units?.dvh} lvh=${m.units?.lvh} svh=${m.units?.svh}`,
-                `screen w x h       : ${m.screenW} x ${m.screen}   window w: ${m.windowW}   DPR: ${m.dpr}`,
-                `env() top / bottom : ${m.envTop}px / ${m.envBottom}px`,
-                `insets in use      : ${m.usedTop}px / ${m.usedBottom}px`,
-                `bar box            : ${bar ? Math.round(bar.top) + '..' + Math.round(bar.bottom) : 'hidden'}`,
-                `anchor target      : ${anchor ? anchor.target : '-'}px`,
-                `gap inside viewport: ${anchor ? anchor.insideGap : '-'}px  (corrected by shift ${anchor ? anchor.shift : 0}px)`,
-                `screen not visible : ${m.outsideGap}px  ${m.outsideGap > 0 ? '← outside the visible web view' : '(none — app fills the screen)'}`,
-                `height=device-height: ${window.__fullHeightResult ? (window.__fullHeightResult.kept ? 'WORKED ' + window.__fullHeightResult.before + '->' + window.__fullHeightResult.after : 'no effect, reverted') : 'not needed'}`,
-                `tab bar height     : ${cs.getPropertyValue('--tabbar-h').trim()} = ${bar ? Math.round(bar.height) : '-'}px`,
-                `edge mode          : ${doc.classList.contains('tabbar-edge') ? 'ON, shift ' + (cs.getPropertyValue('--tabbar-edge-shift').trim() || '0px') : 'off'}${(() => {
-                    const e = window.__tabBarEdge;
-                    if (!e) return '';
-                    if (e.rescued) return '  ← dropped: the buttons had left the screen';
-                    if (e.explainedByTop) return `  (shortfall ${e.shortfall}px = top inset ${e.envTop}px — the band is above the view, nothing to bridge)`;
-                    return '';
-                })()}`,
-                `tab row on screen  : ${(() => {
-                    const btn = document.querySelector('#mobileTabBar .mobile-tab-btn');
-                    if (!btn) return 'no bar';
-                    const b = btn.getBoundingClientRect();
-                    const inside = Math.round(Math.min(b.bottom, doc.clientHeight) - Math.max(b.top, 0));
-                    return `${Math.round(b.top)}..${Math.round(b.bottom)} of ${doc.clientHeight} — ${inside}px of ${Math.round(b.height)} visible`;
-                })()}`,
-                `display-mode       : ${['fullscreen','standalone','minimal-ui','browser'].find((mode) => matchMedia(`(display-mode: ${mode})`).matches) || 'unknown'}`,
-                `html classes       : ${doc.className}`,
-            ].join('\n');
-            body.hidden = false;
-        };
-        document.addEventListener('DOMContentLoaded', () => {
-            const diag = document.getElementById('nativeShellDiag');
-            /* Window geometry is a device question, so this must stay reachable
-               on a wide tablet too -- that is precisely where it is needed. */
-            const doc = document.documentElement;
-            if (diag && (doc.classList.contains('touch-device')
-                || doc.classList.contains('mobile-browser-context')
-                || doc.classList.contains('pwa-standalone'))) {
-                diag.hidden = false;
-            }
-        });
-    })();
-</script>
+<link rel="stylesheet" href="vendor/tailwind/tailwind.generated.css?v=2.20.0-chat-v37">
+<link rel="stylesheet" href="css/styles.css?v=2.20.0-chat-v37">
+<link rel="stylesheet" href="css/messenger.css?v=2.20.0-chat-v37">
+<link rel="stylesheet" href="css/chat-ui.css?v=2.20.0-chat-v37">
+<script src="js/boot-fonts.js?v=2.20.0-chat-v37"></script>
 </head>
 <body class="bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-gray-100 transition-colors duration-300  overflow-hidden">
 <nav id="mobileTabBar" class="mobile-tab-bar" aria-label="Mobile quick tabs"></nav>
@@ -864,10 +137,10 @@ font-display: swap;
 </section>
 </div>
 <div class="mt-6 space-y-3">
-<button onclick="promptInstallApp()" type="button" id="mobileInstallGateBtn" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 to-cyan-500 text-white font-semibold  hover:-translate-y-0.5 transition-all" data-i18n="installOrGuide">
+<button data-on-click="a1" type="button" id="mobileInstallGateBtn" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 to-cyan-500 text-white font-semibold  hover:-translate-y-0.5 transition-all" data-i18n="installOrGuide">
 نصب / راهنمای نصب
 </button>
-<button onclick="continueInBrowserExperience()" type="button" class="w-full py-3 rounded-2xl border border-slate-700 text-slate-200 hover:bg-slate-900/40 transition-colors" data-i18n="continueInBrowser">
+<button data-on-click="a2" type="button" class="w-full py-3 rounded-2xl border border-slate-700 text-slate-200 hover:bg-slate-900/40 transition-colors" data-i18n="continueInBrowser">
 ادامه در مرورگر
 </button>
 </div>
@@ -893,14 +166,14 @@ font-display: swap;
 <p class="text-gray-400" data-i18n="selectLanguage">Select Language / انتخاب زبان</p>
 </div>
 <div class="space-y-3">
-<button onclick="selectLanguage('fa')" class="w-full py-4 bg-gradient-to-r from-sky-500 to-blue-600 hover:scale-105 transition-all rounded-xl text-white font-bold text-lg  transition-all flex items-center justify-center gap-3">
+<button data-on-click="a3" class="w-full py-4 bg-gradient-to-r from-sky-500 to-blue-600 hover:scale-105 transition-all rounded-xl text-white font-bold text-lg  transition-all flex items-center justify-center gap-3">
 <span class="text-2xl">🇮🇷</span>
 <div class="text-right">
 <div data-i18n="persian">فارسی</div>
 <div class="text-xs opacity-80">Persian</div>
 </div>
 </button>
-<button onclick="selectLanguage('en')" class="w-full py-4 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-lg hover:bg-slate-700 transition-all flex items-center justify-center gap-3">
+<button data-on-click="a4" class="w-full py-4 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-lg hover:bg-slate-700 transition-all flex items-center justify-center gap-3">
 <span class="text-2xl">🇺🇸</span>
 <div class="text-left">
 <div data-i18n="english">English</div>
@@ -912,7 +185,7 @@ font-display: swap;
 </div>
 <!-- Lock Screen -->
 <div id="lockScreen" class="lock-screen hidden">
-<button onclick="triggerPanic()" class="panic-button absolute top-4 right-4 w-12 h-12 rounded-2xl text-red-500 hover:text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-all flex items-center justify-center group" title="پاک کردن همه‌چیز در این دستگاه" aria-label="پاک کردن همه‌چیز در این دستگاه" data-i18n-title="eraseButtonLabel" data-i18n-aria-label="eraseButtonLabel">
+<button data-on-click="a5" class="panic-button absolute top-4 right-4 w-12 h-12 rounded-2xl text-red-500 hover:text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-all flex items-center justify-center group" title="پاک کردن همه‌چیز در این دستگاه" aria-label="پاک کردن همه‌چیز در این دستگاه" data-i18n-title="eraseButtonLabel" data-i18n-aria-label="eraseButtonLabel">
 <i class="fas fa-biohazard text-lg group-hover:animate-pulse"></i>
 </button>
 <div class="text-center p-8 glass rounded-3xl lock-screen-card compact-mode mx-4 animate-slide-up flex flex-col relative transition-all duration-300" id="lockScreenContainer">
@@ -935,10 +208,10 @@ font-display: swap;
 <input type="password" id="setupPassword" data-i18n-placeholder="masterPassword"
 class="input-with-leading-tools w-full px-4 py-3 pr-12 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 text-right">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('setupPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a6" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
-<button onclick="togglePasswordVisibility('setupPassword', this)" type="button" class="text-gray-400 hover:text-white transition-colors" aria-label="Toggle password visibility">
+<button data-on-click="a7" type="button" class="text-gray-400 hover:text-white transition-colors" aria-label="Toggle password visibility">
 <i class="fas fa-eye"></i>
 </button>
 </div>
@@ -947,10 +220,10 @@ class="input-with-leading-tools w-full px-4 py-3 pr-12 rounded-xl bg-slate-900 b
 <input type="password" id="confirmPassword" data-i18n-placeholder="confirmPassword"
 class="input-with-leading-tools w-full px-4 py-3 pr-12 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 text-right">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('confirmPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a8" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
-<button onclick="togglePasswordVisibility('confirmPassword', this)" type="button" class="text-gray-400 hover:text-white transition-colors" aria-label="Toggle password visibility">
+<button data-on-click="a9" type="button" class="text-gray-400 hover:text-white transition-colors" aria-label="Toggle password visibility">
 <i class="fas fa-eye"></i>
 </button>
 </div>
@@ -988,15 +261,15 @@ class="input-with-leading-tools w-full px-4 py-3 pr-12 rounded-xl bg-slate-900 b
 <p class="text-xs text-gray-400 mb-4" data-i18n="securityQuestionsDesc">Please select and answer 3 questions. These will be the only way to recover your password if forgotten.</p>
 <div class="space-y-3">
 <div>
-<select id="secQ1" onchange="updateSecQuestions()" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none mb-1"></select>
+<select id="secQ1" data-on-change="a10" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none mb-1"></select>
 <input type="text" id="secA1" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none" data-i18n-placeholder="answerPlaceholder" placeholder="پاسخ...">
 </div>
 <div>
-<select id="secQ2" onchange="updateSecQuestions()" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none mb-1"></select>
+<select id="secQ2" data-on-change="a10" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none mb-1"></select>
 <input type="text" id="secA2" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none" data-i18n-placeholder="answerPlaceholder" placeholder="پاسخ...">
 </div>
 <div>
-<select id="secQ3" onchange="updateSecQuestions()" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none mb-1"></select>
+<select id="secQ3" data-on-change="a10" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none mb-1"></select>
 <input type="text" id="secA3" class="w-full px-3 py-2 text-sm rounded-lg bg-slate-900 border border-slate-700 text-white focus:outline-none" data-i18n-placeholder="answerPlaceholder" placeholder="پاسخ...">
 </div>
 </div>
@@ -1014,7 +287,7 @@ class="input-with-leading-tools w-full px-4 py-3 pr-12 rounded-xl bg-slate-900 b
 </ul>
 <div class="flex flex-wrap gap-3 text-xs">
 <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer" class="text-sky-300 hover:text-sky-200 underline" data-i18n="viewLicense">مشاهده لایسنس AGPL v3.0</a>
-<button type="button" onclick="toggleSetupLegalDisclosure()" class="text-amber-300 hover:text-amber-200 underline" data-i18n="viewDisclaimer">مشاهده صلب مسئولیت</button>
+<button type="button" data-on-click="a11" class="text-amber-300 hover:text-amber-200 underline" data-i18n="viewDisclaimer">مشاهده صلب مسئولیت</button>
 </div>
 <div id="setupLegalDisclosure" class="hidden rounded-xl border border-amber-400/20 bg-amber-500/10 p-4 space-y-2 text-xs text-amber-100">
 <p class="font-bold" data-i18n="disclaimerTitle">صلب مسئولیت</p>
@@ -1029,12 +302,12 @@ class="input-with-leading-tools w-full px-4 py-3 pr-12 rounded-xl bg-slate-900 b
 <div class="bg-slate-800 rounded-lg p-4 mb-4">
 <p class="text-sm text-gray-300 text-center" data-i18n="twoFA_prompt">برای امنیت بیشتر و جلوگیری از سؤ استفاده احتمالی از برنامه، لطفاً نسبت به فعال سازی ورود دو مرحله‌ای (2FA)، از بخش تنظیمات، تایید دو مرحله‌ای اقدام نمایید.</p>
 </div>
-<button onclick="setupMasterPassword()" id="setupBtn" disabled
+<button data-on-click="a12" id="setupBtn" disabled
 class="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:scale-105 transition-all rounded-xl text-white font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed">
 <i class="fas fa-lock ml-2"></i>
 <span data-i18n="activateLock">فعالسازی قفل امنیتی</span>
 </button>
-<button onclick="goBackToLang()" class="w-full py-3 mt-2 bg-slate-200 dark:bg-slate-700 rounded-xl text-gray-700 dark:text-gray-300 font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-all">
+<button data-on-click="a13" class="w-full py-3 mt-2 bg-slate-200 dark:bg-slate-700 rounded-xl text-gray-700 dark:text-gray-300 font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-all">
 <i class="fas fa-arrow-left ml-2"></i>
 <span data-i18n="back">بازگشت</span>
 </button>
@@ -1048,10 +321,10 @@ class="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:scale-105 tra
 <input type="password" id="unlockPassword" data-i18n-placeholder="masterPassword"
 class="input-with-leading-tools w-full px-4 py-3 pr-12 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 text-right">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('unlockPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a14" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
-<button onclick="togglePasswordVisibility('unlockPassword', this)" type="button" class="text-gray-400 hover:text-white transition-colors" aria-label="Toggle password visibility">
+<button data-on-click="a15" type="button" class="text-gray-400 hover:text-white transition-colors" aria-label="Toggle password visibility">
 <i class="fas fa-eye"></i>
 </button>
 </div>
@@ -1061,12 +334,12 @@ class="input-with-leading-tools w-full px-4 py-3 pr-12 rounded-xl bg-slate-800 b
 <input type="text" id="login2FACode" data-i18n-placeholder="enter2FACode"
 class="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-center tracking-widest mb-2" maxlength="6">
 </div>
-<button onclick="unlockApp()"
+<button data-on-click="a16"
 class="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:scale-105 transition-all rounded-xl text-white font-bold transition-all">
 <i class="fas fa-unlock ml-2"></i>
 <span data-i18n="unlock">باز کردن قفل</span>
 </button>
-<button id="passkeyUnlockBtn" onclick="unlockWithPasskey()" type="button"
+<button id="passkeyUnlockBtn" data-on-click="a17" type="button"
 class="hidden w-full py-3 mt-3 bg-slate-800 border border-slate-700 hover:border-sky-500 rounded-xl text-white font-bold transition-all">
 <i class="fas fa-fingerprint ml-2"></i>
 <span data-i18n="unlockWithPasskey">ورود با Passkey / Biometric</span>
@@ -1079,7 +352,7 @@ class="hidden w-full py-3 mt-3 bg-slate-800 border border-slate-700 hover:border
 <div id="loginCountdownTimer" class="text-4xl font-mono font-bold text-white tracking-widest mt-2 mb-4 animate-pulse">00:00</div>
 </div>
 <p id="loginError" class="text-red-400 text-sm mt-2 hidden" data-i18n="wrongPassword">رمز عبور اشتباه است!</p>
-<button onclick="showResetPassword()" class="w-full text-center mt-4 text-xs text-brand-400 hover:text-brand-300 underline" data-i18n="forgotPassword">رمز عبور را فراموش کردید؟</button>
+<button data-on-click="a18" class="w-full text-center mt-4 text-xs text-brand-400 hover:text-brand-300 underline" data-i18n="forgotPassword">رمز عبور را فراموش کردید؟</button>
 </div>
 </div>
 <!-- Password Reset Section -->
@@ -1104,7 +377,7 @@ class="hidden w-full py-3 mt-3 bg-slate-800 border border-slate-700 hover:border
 <div class="relative mb-2">
 <input type="password" id="resetNewPassword" data-i18n-placeholder="newPassword" class="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white focus:outline-none focus:border-brand-500">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('resetNewPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a19" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
 </div>
@@ -1112,23 +385,23 @@ class="hidden w-full py-3 mt-3 bg-slate-800 border border-slate-700 hover:border
 <div class="relative">
 <input type="password" id="resetConfirmPassword" data-i18n-placeholder="confirmNewPassword" class="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white focus:outline-none focus:border-brand-500">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('resetConfirmPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a20" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
 </div>
 </div>
 </div>
-<button id="verifyResetBtn" onclick="verifySecurityQuestions()"
+<button id="verifyResetBtn" data-on-click="a21"
 class="w-full py-3 bg-gradient-to-r from-orange-500 to-red-600 hover:scale-105 transition-all rounded-xl text-white font-bold transition-all">
 <i class="fas fa-shield-alt ml-2"></i>
 <span data-i18n="verifyQuestions">بررسی پاسخ‌ها</span>
 </button>
-<button id="setNewResetPasswordBtn" onclick="setNewMasterPasswordFromReset()"
+<button id="setNewResetPasswordBtn" data-on-click="a22"
 class="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:scale-105 transition-all rounded-xl text-white font-bold transition-all hidden mt-2">
 <i class="fas fa-save ml-2"></i>
 <span data-i18n="saveNewPassword">ذخیره رمز جدید</span>
 </button>
-<button onclick="hideResetPassword()" class="w-full py-2 mt-3 bg-slate-700 rounded-xl text-gray-300 hover:bg-slate-600 transition-colors text-sm">
+<button data-on-click="a23" class="w-full py-2 mt-3 bg-slate-700 rounded-xl text-gray-300 hover:bg-slate-600 transition-colors text-sm">
 <span data-i18n="back">بازگشت</span>
 </button>
 </div>
@@ -1171,18 +444,18 @@ class="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:scale-10
 </div>
 </div>
 <div class="flex items-center gap-2">
-<button id="installAppBtn" onclick="promptInstallApp()" class="hidden lg:inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-cyan-500 text-white text-sm font-semibold  hover:-translate-y-0.5 transition-all">
+<button id="installAppBtn" data-on-click="a1" class="hidden lg:inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-cyan-500 text-white text-sm font-semibold  hover:-translate-y-0.5 transition-all">
 <i class="fas fa-download"></i>
 <span data-i18n="installApp">Install App</span>
 </button>
-<button onclick="switchLanguage()" class="header-control-toggle inline-flex p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors text-sm font-bold" id="langBtn">
+<button data-on-click="a24" class="header-control-toggle inline-flex p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors text-sm font-bold" id="langBtn">
 FA / EN
 </button>
-<button onclick="toggleTheme()" class="header-control-toggle inline-flex p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors" aria-label="Toggle theme" id="themeToggleBtn">
+<button data-on-click="a25" class="header-control-toggle inline-flex p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors" aria-label="Toggle theme" id="themeToggleBtn">
 <i class="fas fa-sun text-yellow-500 dark:hidden"></i>
 <i class="fas fa-moon text-blue-400 hidden dark:block"></i>
 </button>
-<button onclick="lockApp()" class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors text-red-500" title="Lock" aria-label="Lock App">
+<button data-on-click="a26" class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors text-red-500" title="Lock" aria-label="Lock App">
 <i class="fas fa-lock"></i>
 </button>
 </div>
@@ -1198,41 +471,41 @@ FA / EN
 <h2 class="sidebar-panel-title text-slate-900 dark:text-white" data-i18n="advancedEncryption">Advanced Encryption Suite</h2>
 <p class="sidebar-app-name text-slate-500 dark:text-slate-300" data-i18n="appNameDisplay">P00RIJÃ Chat</p>
 <div class="sidebar-mobile-controls mt-4 flex flex-wrap gap-2">
-<button onclick="promptInstallApp()" class="sidebar-mobile-control-btn" id="sidebarInstallBtn">
+<button data-on-click="a1" class="sidebar-mobile-control-btn" id="sidebarInstallBtn">
 <i class="fas fa-download"></i>
 <span data-i18n="installApp">نصب برنامه</span>
 </button>
-<button onclick="switchLanguage()" class="sidebar-mobile-control-btn" id="sidebarLangBtn">
+<button data-on-click="a24" class="sidebar-mobile-control-btn" id="sidebarLangBtn">
 <i class="fas fa-language"></i>
 <span>FA / EN</span>
 </button>
-<button onclick="toggleTheme()" class="sidebar-mobile-control-btn" id="sidebarThemeBtn" aria-label="Toggle theme from menu">
+<button data-on-click="a25" class="sidebar-mobile-control-btn" id="sidebarThemeBtn" aria-label="Toggle theme from menu">
 <i class="fas fa-circle-half-stroke"></i>
 <span data-i18n="theme">تم</span>
 </button>
 </div>
 </div>
 <nav id="sidebarNav" class="sidebar-nav">
-<button onclick="switchTab('securitycenter')" id="tab-securitycenter" class="tab-btn sidebar-tab-btn group">
+<button data-on-click="a27" id="tab-securitycenter" class="tab-btn sidebar-tab-btn group">
 <i class="fas fa-shield-heart sidebar-tab-icon"></i><span data-i18n="securityCenter">مرکز سلامت امنیت</span>
 </button>
-<button onclick="switchTab('chat')" id="tab-chat" class="tab-btn sidebar-tab-btn active group">
+<button data-on-click="a28" id="tab-chat" class="tab-btn sidebar-tab-btn active group">
 <i class="fas fa-comments sidebar-tab-icon"></i><span data-i18n="secureChat">چت امن</span>
 </button>
-<button onclick="switchTab('vault')" id="tab-vault" class="tab-btn sidebar-tab-btn group"><i class="fas fa-folder-tree sidebar-tab-icon"></i><span data-i18n="vaultTab">مدیریت فایل‌ها</span></button>
-<button onclick="switchTab('locallink')" id="tab-locallink" class="tab-btn sidebar-tab-btn group">
+<button data-on-click="a29" id="tab-vault" class="tab-btn sidebar-tab-btn group"><i class="fas fa-folder-tree sidebar-tab-icon"></i><span data-i18n="vaultTab">مدیریت فایل‌ها</span></button>
+<button data-on-click="a30" id="tab-locallink" class="tab-btn sidebar-tab-btn group">
 <i class="fas fa-tower-broadcast sidebar-tab-icon"></i><span data-i18n="localLink">پیوند محلی</span>
 </button>
-<button onclick="switchTab('migration')" id="tab-migration" class="tab-btn sidebar-tab-btn group">
+<button data-on-click="a31" id="tab-migration" class="tab-btn sidebar-tab-btn group">
 <i class="fas fa-exchange-alt sidebar-tab-icon"></i><span data-i18n="migration">مهاجرت</span>
 </button>
-<button onclick="switchTab('settings')" id="tab-settings" class="tab-btn sidebar-tab-btn group">
+<button data-on-click="a32" id="tab-settings" class="tab-btn sidebar-tab-btn group">
 <i class="fas fa-cog sidebar-tab-icon"></i><span data-i18n="settings">تنظیمات</span>
 </button>
-<button onclick="switchTab('help')" id="tab-help" class="tab-btn sidebar-tab-btn group">
+<button data-on-click="a33" id="tab-help" class="tab-btn sidebar-tab-btn group">
 <i class="fas fa-question-circle sidebar-tab-icon"></i><span data-i18n="help">راهنما</span>
 </button>
-<button onclick="switchTab('about')" id="tab-about" class="tab-btn sidebar-tab-btn group">
+<button data-on-click="a34" id="tab-about" class="tab-btn sidebar-tab-btn group">
 <i class="fas fa-info-circle sidebar-tab-icon"></i><span data-i18n="about">درباره من</span>
 </button>
 </nav>
@@ -1257,7 +530,7 @@ FA / EN
 <h2 class="text-3xl font-bold gradient-text" data-i18n="securityCenter">مرکز سلامت امنیت</h2>
 <p class="text-sm text-gray-600 dark:text-gray-400 mt-2" data-i18n="securityCenterDesc">وضعیت فعلی برنامه، کلیدها، گذرواژه‌ها، بکاپ، 2FA و Passkey را یک‌جا بررسی می‌کند.</p>
 </div>
-<button onclick="renderSecurityCenter()" class="px-4 py-2 bg-brand-500 text-white rounded-xl hover:bg-brand-600 transition-colors">
+<button data-on-click="a35" class="px-4 py-2 bg-brand-500 text-white rounded-xl hover:bg-brand-600 transition-colors">
 <i class="fas fa-rotate mr-2"></i><span data-i18n="refreshHealth">بازخوانی سلامت</span>
 </button>
 </div>
@@ -1271,11 +544,11 @@ FA / EN
 <div class="flex flex-col sm:flex-row gap-4">
 <div class="panic-password-field flex-1">
 <input type="password" id="panicPasswordInput_sc" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-brand-500/30" placeholder="رمز پروفایل طعمهٔ جدید" data-i18n-placeholder="panicPasswordPlaceholder">
-<button onclick="togglePasswordVisibility('panicPasswordInput_sc', this)" type="button" class="panic-password-toggle" aria-label="Toggle password visibility">
+<button data-on-click="a36" type="button" class="panic-password-toggle" aria-label="Toggle password visibility">
 <i class="fas fa-eye"></i>
 </button>
 </div>
-<button onclick="setPanicPassword('panicPasswordInput_sc')" class="px-6 py-2 bg-brand-500 text-white rounded-xl hover:bg-brand-600 transition-colors" data-i18n="savePanicPassword">ذخیرهٔ رمز طعمه</button>
+<button data-on-click="a37" class="px-6 py-2 bg-brand-500 text-white rounded-xl hover:bg-brand-600 transition-colors" data-i18n="savePanicPassword">ذخیرهٔ رمز طعمه</button>
 </div>
 </div>
 </div>
@@ -1846,7 +1119,7 @@ FA / EN
      and the switches for what moves between them (58-device-roster.js). -->
 <div id="chatIdentityDevicesList"></div>
 </div>
-<button onclick="copyChatFullIdentity()" class="w-full chat-primary-btn mt-2">
+<button data-on-click="a38" class="w-full chat-primary-btn mt-2">
 <i class="fas fa-copy"></i>
 <span data-i18n="copyFullIdentity">کپی کامل هویت</span>
 </button>
@@ -2062,7 +1335,7 @@ FA / EN
 <div id="chatStickerPacksCard" class="chat-storage-card">
   <div class="flex items-center justify-between gap-3">
     <span class="font-semibold" data-i18n="stickerPacks">پک‌های استیکر</span>
-    <button type="button" onclick="openPackManager()" class="px-3 py-1.5 rounded-lg text-sm font-bold bg-gray-100 dark:bg-slate-800 border border-gray-300 dark:border-gray-600" data-i18n="managePacks">مدیریت پک‌ها</button>
+    <button type="button" data-on-click="a39" class="px-3 py-1.5 rounded-lg text-sm font-bold bg-gray-100 dark:bg-slate-800 border border-gray-300 dark:border-gray-600" data-i18n="managePacks">مدیریت پک‌ها</button>
   </div>
   <p class="chat-settings-hint" data-i18n="stickerPacksHint">نام و ترتیب پک‌ها را عوض کنید، یا چندتا را با هم انتخاب و حذف یا ارسال کنید. ترتیب همان است که در پنل استیکر می‌بینید.</p>
 </div>
@@ -2081,7 +1354,7 @@ FA / EN
 <button id="chatStickerImportBtn" type="button" class="chat-sticker-head-btn" data-i18n-title="importStickers" title="وارد کردن استیکر"><i class="fas fa-file-import"></i></button>
 <button id="chatStickerSelectBtn" type="button" class="chat-sticker-head-btn" data-i18n-title="selectStickers" title="انتخاب و مدیریت"><i class="fas fa-list-check"></i></button>
 <button id="chatStickerManageBtn" type="button" class="chat-sticker-head-btn" data-i18n-title="manageStickers" title="مدیریت پک‌ها"><i class="fas fa-sliders"></i></button>
-<button id="chatStickerPacksBtn" type="button" class="chat-sticker-head-btn" data-i18n-title="managePacks" title="مدیریت پک‌ها" onclick="openPackManager()"><i class="fas fa-layer-group"></i></button>
+<button id="chatStickerPacksBtn" type="button" class="chat-sticker-head-btn" data-i18n-title="managePacks" title="مدیریت پک‌ها" data-on-click="a39"><i class="fas fa-layer-group"></i></button>
 <button id="chatStickerCloseBtn" type="button" class="chat-sticker-head-btn" data-i18n-title="close" title="بستن"><i class="fas fa-xmark"></i></button>
 </div>
 </div>
@@ -2396,12 +1669,12 @@ FA / EN
 <label class="block text-sm font-medium mb-2" data-i18n="migrationPassword">رمز عبور فایل خروجی</label>
 <input type="password" id="exportPassword" class="input-with-leading-icon w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700 focus:border-brand-500 focus:outline-none" data-i18n-placeholder="strongPasswordPlaceholder" placeholder="یک رمز عبور قوی وارد کنید...">
 <div class="absolute left-3 top-[70%] -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('exportPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a40" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
 </div>
 </div>
-<button onclick="exportMigrationData()" class="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors  whitespace-nowrap w-full md:w-auto">
+<button data-on-click="a41" class="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors  whitespace-nowrap w-full md:w-auto">
 <i class="fas fa-download ml-2"></i> <span data-i18n="exportBtn">خروجی گرفتن (.poorija-backup)</span>
 </button>
 </div>
@@ -2412,8 +1685,8 @@ FA / EN
 <p class="text-sm text-gray-600 dark:text-gray-400 mb-6" data-i18n="importDesc">فایل پشتیبان (.poorija-backup) را وارد کنید. توجه داشته باشید که این کار اطلاعات فعلی برنامه را بازنویسی میکند و به رمز عبوری که در هنگام خروجی گرفتن ثبت کردید نیاز دارد.</p>
 <div class="space-y-4">
 <div class="w-full">
-<input type="file" id="importMigrationFile" accept=".poorija-backup" class="hidden" onchange="document.getElementById('importFileName').textContent = this.files[0]?.name || ''">
-<button onclick="document.getElementById('importMigrationFile').click()" class="w-full px-4 py-8 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl hover:border-blue-500 dark:hover:border-blue-500 transition-colors flex flex-col items-center justify-center gap-3">
+<input type="file" id="importMigrationFile" accept=".poorija-backup" class="hidden" data-on-change="a42">
+<button data-on-click="a43" class="w-full px-4 py-8 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl hover:border-blue-500 dark:hover:border-blue-500 transition-colors flex flex-col items-center justify-center gap-3">
 <i class="fas fa-upload text-3xl text-gray-400"></i>
 <span id="importFileName" class="text-gray-500" data-i18n="backupSelectFile">فایل بکاپ را انتخاب کنید...</span>
 </button>
@@ -2423,12 +1696,12 @@ FA / EN
 <label class="block text-sm font-medium mb-2" data-i18n="migrationPasswordInput">رمز عبور فایل بکاپ</label>
 <input type="password" id="importPassword" class="input-with-leading-icon w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700 focus:border-blue-500 focus:outline-none" data-i18n-placeholder="enterBackupPassword" placeholder="رمز عبور را وارد کنید...">
 <div class="absolute left-3 top-[70%] -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('importPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a44" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
 </div>
 </div>
-<button onclick="importMigrationData()" class="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors  whitespace-nowrap w-full md:w-auto">
+<button data-on-click="a45" class="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors  whitespace-nowrap w-full md:w-auto">
 <i class="fas fa-upload ml-2"></i> <span data-i18n="importBtn">وارد کردن و جایگزینی</span>
 </button>
 </div>
@@ -2717,7 +1990,7 @@ FA / EN
      edge gap it worked around was fixed in the layout itself, so the switch
      could only make things worse. -->
 <div id="nativeShellDiag" class="mtab-diag" dir="rtl" hidden>
-<button type="button" class="mtab-diag-toggle" onclick="toggleNativeShellDiag()">
+<button type="button" class="mtab-diag-toggle" data-on-click="a46">
 <i class="fas fa-ruler-combined"></i>
 <span data-i18n="mtabDiagTitle">اطلاعات نمایش صفحه</span>
 </button>
@@ -2733,7 +2006,7 @@ FA / EN
 <div class="space-y-4">
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="defaultAlgorithm">الگوریتم پیش‌فرض</label>
-<select id="defaultAlgorithm" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="defaultAlgorithm" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="AES-256-GCM" data-i18n="algGCM">AES-256-GCM (پیشنهادی)</option>
 <option value="AES-192-GCM">AES-192-GCM</option>
 <option value="AES-128-GCM">AES-128-GCM</option>
@@ -2749,14 +2022,14 @@ FA / EN
 </div>
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="defaultKeyMethod">روش کلید پیش‌فرض</label>
-<select id="defaultKeyMethod" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="defaultKeyMethod" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="password" data-i18n="password">رمز عبور</option>
 <option value="publicKey" data-i18n="publicKey">کلید عمومی</option>
 </select>
 </div>
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="chunkSize">اندازه چانک</label>
-<select id="chunkSize" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="chunkSize" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="1MB" data-i18n="chunk1mb">1 MB (پیش‌فرض - تعادل سرعت و حافظه)</option>
 <option value="512KB" data-i18n="chunk512kb">512 KB (حافظه کم)</option>
 <option value="5MB" data-i18n="chunk5mb">5 MB (فایل‌های بزرگ)</option>
@@ -2766,7 +2039,7 @@ FA / EN
 </div>
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="namingPattern">الگوی نامگذاری</label>
-<select id="namingPattern" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="namingPattern" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="original" data-i18n="nameOriginal">نام اصلی + .poorija</option>
 <option value="timestamp" data-i18n="nameTimestamp">تاریخ و زمان</option>
 <option value="random" data-i18n="nameRandom">شناسه تصادفی</option>
@@ -2777,11 +2050,11 @@ FA / EN
 <div class="grid md:grid-cols-2 gap-4">
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="defaultKdfIterations">تعداد تکرار پیش‌فرض PBKDF2</label>
-<input type="number" id="defaultKdfIterations" onchange="saveSettings()" min="100000" step="10000" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<input type="number" id="defaultKdfIterations" data-on-change="a47" min="100000" step="10000" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 </div>
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="kdfHash">هش KDF</label>
-<select id="defaultKdfHash" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="defaultKdfHash" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="SHA-256">PBKDF2 / SHA-256</option>
 <option value="SHA-384">PBKDF2 / SHA-384</option>
 <option value="SHA-512">PBKDF2 / SHA-512</option>
@@ -2789,7 +2062,7 @@ FA / EN
 </div>
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="saltLength">طول Salt</label>
-<select id="defaultSaltLength" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="defaultSaltLength" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="16">16 B</option>
 <option value="24">24 B</option>
 <option value="32">32 B</option>
@@ -2797,7 +2070,7 @@ FA / EN
 </div>
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="gcmTagLength">طول GCM Tag</label>
-<select id="defaultGcmTagLength" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="defaultGcmTagLength" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="128">128-bit</option>
 <option value="120">120-bit</option>
 <option value="112">112-bit</option>
@@ -2806,7 +2079,7 @@ FA / EN
 </div>
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="ctrCounterLength">طول شمارنده CTR</label>
-<select id="defaultCtrCounterLength" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="defaultCtrCounterLength" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="64">64-bit</option>
 <option value="96">96-bit</option>
 <option value="128">128-bit</option>
@@ -2814,12 +2087,12 @@ FA / EN
 </div>
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="aadContext">متن AAD / Context</label>
-<input type="text" id="defaultAadContext" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700" data-i18n-placeholder="aadContextPlaceholder" placeholder="metadata / tenant / purpose">
+<input type="text" id="defaultAadContext" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700" data-i18n-placeholder="aadContextPlaceholder" placeholder="metadata / tenant / purpose">
 </div>
 </div>
 <div>
 <label class="block text-sm font-medium mb-2" data-i18n="rsaOaepLabel">برچسب RSA-OAEP</label>
-<input type="text" id="defaultRsaLabel" onchange="saveSettings()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700" data-i18n-placeholder="rsaOaepLabelPlaceholder" placeholder="recipient-context">
+<input type="text" id="defaultRsaLabel" data-on-change="a47" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700" data-i18n-placeholder="rsaOaepLabelPlaceholder" placeholder="recipient-context">
 <p class="text-xs text-gray-500 mt-2" data-i18n="encryptionDefaultsHint">IV در AES-GCM به‌صورت 96-bit و یکتا تولید می‌شود؛ Tag/AAD، PBKDF2 و OAEP label از این تنظیمات به‌صورت پیش‌فرض در مسیرهای جدید استفاده می‌کنند.</p>
 </div>
 </div>
@@ -2837,20 +2110,20 @@ FA / EN
 <p class="text-sm text-gray-500" data-i18n="autoLockDesc">قفل خودکار پس از دوره عدم فعالیت</p>
 </div>
 <div class="relative inline-block w-12 align-middle select-none">
-<input type="checkbox" id="autoLockToggle" onchange="toggleAutoLock()" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
+<input type="checkbox" id="autoLockToggle" data-on-change="a48" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
 <label class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-700 cursor-pointer transition-colors duration-300"></label>
 </div>
 </div>
 <div id="autoLockTimeSection" class="hidden">
 <label class="block text-sm font-medium mb-2" data-i18n="lockAfter">قفل پس از</label>
-<select id="autoLockTime" onchange="toggleCustomAutoLockTime()" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="autoLockTime" data-on-change="a49" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="1" data-i18n="oneMinute">1 دقیقه</option>
 <option value="5" data-i18n="fiveMinutes">5 دقیقه</option>
 <option value="15" data-i18n="fifteenMinutes">15 دقیقه</option>
 <option value="30" data-i18n="thirtyMinutes">30 دقیقه</option>
 <option value="custom" data-i18n="customMinute">دلخواه...</option>
 </select>
-<input type="number" id="customAutoLockTime" onchange="saveSettings()" placeholder="مدت زمان (دقیقه)" data-i18n-placeholder="customAutoLockPlaceholder" class="mt-2 w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700 hidden" min="1">
+<input type="number" id="customAutoLockTime" data-on-change="a47" placeholder="مدت زمان (دقیقه)" data-i18n-placeholder="customAutoLockPlaceholder" class="mt-2 w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700 hidden" min="1">
 </div>
 <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
 <div class="flex items-center justify-between">
@@ -2871,12 +2144,12 @@ FA / EN
 <p class="text-sm text-gray-500" data-i18n="deleteOriginalDesc">پاک کردن خودکار فایل از برنامه پس از پردازش موفق</p>
 </div>
 <div class="relative inline-block w-12 align-middle select-none">
-<input type="checkbox" id="deleteOriginalToggle" onchange="saveSettings()" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
+<input type="checkbox" id="deleteOriginalToggle" data-on-change="a47" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
 <label class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-700 cursor-pointer transition-colors duration-300"></label>
 </div>
 </div>
 <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-<button onclick="showChangePassword()" class="w-full py-2 bg-slate-200 dark:bg-slate-800 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors hover:scale-105 transition-all text-left px-4 flex items-center justify-between">
+<button data-on-click="a50" class="w-full py-2 bg-slate-200 dark:bg-slate-800 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors hover:scale-105 transition-all text-left px-4 flex items-center justify-between">
 <span data-i18n="changeMasterPassword">تغییر رمز عبور مستر</span>
 <i class="fas fa-chevron-left"></i>
 </button>
@@ -2885,7 +2158,7 @@ FA / EN
 <div class="relative w-full">
 <input type="password" id="currentPassword" data-i18n-placeholder="currentPassword" class="input-with-leading-icon w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-900">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('currentPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a51" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
 </div>
@@ -2893,7 +2166,7 @@ FA / EN
 <div class="relative w-full">
 <input type="password" id="newPassword" data-i18n-placeholder="newPassword" class="input-with-leading-icon w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-900">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('newPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a52" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
 </div>
@@ -2901,15 +2174,15 @@ FA / EN
 <div class="relative w-full">
 <input type="password" id="confirmNewPassword" data-i18n-placeholder="confirmNewPassword" class="input-with-leading-icon w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-900">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('confirmNewPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a53" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
 </div>
 </div>
-<button onclick="changeMasterPassword()" class="w-full py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600" data-i18n="updatePassword">بروزرسانی رمز</button>
+<button data-on-click="a54" class="w-full py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600" data-i18n="updatePassword">بروزرسانی رمز</button>
 </div>
 <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-<button onclick="showChangeSecurityQuestions()" class="w-full py-2 bg-slate-200 dark:bg-slate-800 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors hover:scale-105 transition-all text-left px-4 flex items-center justify-between">
+<button data-on-click="a55" class="w-full py-2 bg-slate-200 dark:bg-slate-800 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors hover:scale-105 transition-all text-left px-4 flex items-center justify-between">
 <span data-i18n="changeSecurityQuestions">تغییر سوالات امنیتی</span>
 <i class="fas fa-chevron-left"></i>
 </button>
@@ -2919,40 +2192,40 @@ FA / EN
 <div class="relative w-full">
 <input type="password" id="settingsSecurityPassword" data-i18n-placeholder="currentPassword" class="input-with-leading-icon w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-900">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('settingsSecurityPassword')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a56" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
 </div>
 </div>
 <div class="space-y-3">
 <div>
-<select id="settingsSecQ1" onchange="updateSettingsSecurityQuestions()" class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900 border border-gray-300 dark:border-gray-700 focus:outline-none mb-1"></select>
+<select id="settingsSecQ1" data-on-change="a57" class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900 border border-gray-300 dark:border-gray-700 focus:outline-none mb-1"></select>
 <input type="text" id="settingsSecA1" class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900 border border-gray-300 dark:border-gray-700 focus:outline-none" data-i18n-placeholder="answerPlaceholder" placeholder="پاسخ...">
 </div>
 <div>
-<select id="settingsSecQ2" onchange="updateSettingsSecurityQuestions()" class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900 border border-gray-300 dark:border-gray-700 focus:outline-none mb-1"></select>
+<select id="settingsSecQ2" data-on-change="a57" class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900 border border-gray-300 dark:border-gray-700 focus:outline-none mb-1"></select>
 <input type="text" id="settingsSecA2" class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900 border border-gray-300 dark:border-gray-700 focus:outline-none" data-i18n-placeholder="answerPlaceholder" placeholder="پاسخ...">
 </div>
 <div>
-<select id="settingsSecQ3" onchange="updateSettingsSecurityQuestions()" class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900 border border-gray-300 dark:border-gray-700 focus:outline-none mb-1"></select>
+<select id="settingsSecQ3" data-on-change="a57" class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900 border border-gray-300 dark:border-gray-700 focus:outline-none mb-1"></select>
 <input type="text" id="settingsSecA3" class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900 border border-gray-300 dark:border-gray-700 focus:outline-none" data-i18n-placeholder="answerPlaceholder" placeholder="پاسخ...">
 </div>
 </div>
-<button onclick="changeSecurityQuestions()" class="w-full py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600" data-i18n="saveSecurityQuestions">ذخیره سوالات امنیتی</button>
+<button data-on-click="a58" class="w-full py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600" data-i18n="saveSecurityQuestions">ذخیره سوالات امنیتی</button>
 </div>
 <div class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
 <div>
 <p class="font-medium" data-i18n="twoFactorAuth">تایید دو مرحله‌ای (2FA)</p>
 <p class="text-sm text-gray-500" id="2faStatus" data-i18n="disabled">غیرفعال</p>
 </div>
-<button onclick="toggle2FA()" id="2faToggleBtn" class="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 text-sm" data-i18n="enable">فعالسازی</button>
+<button data-on-click="a59" id="2faToggleBtn" class="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 text-sm" data-i18n="enable">فعالسازی</button>
 </div>
 <div class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
 <div>
 <p class="font-medium" data-i18n="passkeyQuickUnlock">Passkey / Biometric Quick Unlock</p>
 <p class="text-sm text-gray-500" id="passkeyStatusText" data-i18n="passkeyDisabled">هنوز فعال نشده</p>
 </div>
-<button onclick="togglePasskeyQuickUnlock()" id="passkeyToggleBtn" class="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 text-sm">
+<button data-on-click="a60" id="passkeyToggleBtn" class="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 text-sm">
 <span data-i18n="setupPasskey">راه‌اندازی</span>
 </button>
 </div>
@@ -2973,7 +2246,7 @@ FA / EN
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
 <div>
 <label class="block text-xs text-gray-500 mb-1" data-i18n="fontFamilyFa">فونت فارسی</label>
-<select id="settingFontFa" onchange="applyAppearanceSettings()" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="settingFontFa" data-on-change="a61" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="'Vazirmatn', sans-serif" data-i18n="fontFaDefaultOption">Vazirmatn (پیش‌فرض)</option>
 <option value="'Tahoma', sans-serif">Tahoma</option>
 <option value="'B Yekan', sans-serif">B Yekan</option>
@@ -2991,7 +2264,7 @@ FA / EN
 </div>
 <div>
 <label class="block text-xs text-gray-500 mb-1" data-i18n="fontFamilyEn">فونت انگلیسی</label>
-<select id="settingFontEn" onchange="applyAppearanceSettings()" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="settingFontEn" data-on-change="a61" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="'Inter', sans-serif" data-i18n="fontEnDefaultOption">Inter (پیش‌فرض)</option>
 <option value="'Roboto', sans-serif">Roboto</option>
 <option value="'Open Sans', sans-serif">Open Sans</option>
@@ -3002,7 +2275,7 @@ FA / EN
 </div>
 <div>
 <label class="block text-xs text-gray-500 mb-1" data-i18n="textSize">اندازه نوشتار</label>
-<select id="settingFontSize" onchange="applyAppearanceSettings()" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="settingFontSize" data-on-change="a61" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="14px" data-i18n="sizeSmall">کوچک</option>
 <option value="16px" data-i18n="sizeNormal">متوسط (پیش‌فرض)</option>
 <option value="18px" data-i18n="sizeLarge">بزرگ</option>
@@ -3010,7 +2283,7 @@ FA / EN
 </div>
 <div>
 <label class="block text-xs text-gray-500 mb-1" data-i18n="iconColor">رنگ آیکون‌ها</label>
-<input type="color" id="settingIconColor" onchange="applyAppearanceSettings()" value="#0ea5e9" class="w-full h-10 rounded cursor-pointer border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800">
+<input type="color" id="settingIconColor" data-on-change="a61" value="#0ea5e9" class="w-full h-10 rounded cursor-pointer border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800">
 </div>
 </div>
 </div>
@@ -3022,7 +2295,7 @@ FA / EN
 </div>
 <img id="desktopIconPreview" src="assets/desktop-icons/poorija-default.svg" alt="Desktop icon preview" class="w-14 h-14 rounded-2xl border border-gray-200 dark:border-gray-700  bg-white dark:bg-slate-900 p-1">
 </div>
-<select id="settingDesktopIconProfile" onchange="applyDesktopIconProfileSelection()" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
+<select id="settingDesktopIconProfile" data-on-change="a62" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700">
 <option value="poorija-default" data-i18n="iconProfileDefault">P00RIJA Shield</option>
 <option value="poorija-midnight" data-i18n="iconProfileMidnight">Midnight Shield</option>
 <option value="poorija-linen" data-i18n="iconProfileLinen">Linen Shield</option>
@@ -3036,67 +2309,67 @@ FA / EN
 <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
 <label class="block text-sm font-medium mb-2" data-i18n="theme">تم</label>
 <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3">
-<button onclick="setTheme('light')" class="p-3 border-2 border-gray-300 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a63" class="p-3 border-2 border-gray-300 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-gray-100 rounded mb-2"></div>
 <span class="text-sm" data-i18n="light">روشن</span>
 </button>
-<button onclick="setTheme('dark')" class="p-3 border-2 border-gray-700 bg-slate-800 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a64" class="p-3 border-2 border-gray-700 bg-slate-800 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-slate-900 rounded mb-2"></div>
 <span class="text-sm text-white" data-i18n="dark">تاریک</span>
 </button>
-<button onclick="setTheme('pastel')" class="p-3 border-2 border-pink-300 bg-pink-50 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a65" class="p-3 border-2 border-pink-300 bg-pink-50 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-gradient-to-r from-pink-200 to-blue-200 rounded mb-2"></div>
 <span class="text-sm">Pastel</span>
 </button>
-<button onclick="setTheme('midnight')" class="p-3 border-2 border-indigo-800 bg-indigo-950 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a66" class="p-3 border-2 border-indigo-800 bg-indigo-950 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-indigo-900 rounded mb-2"></div>
 <span class="text-sm text-indigo-200">Midnight</span>
 </button>
-<button onclick="setTheme('neon')" class="p-3 border-2 border-[#00ffcc] bg-[#050505] rounded-xl hover:shadow-[0_0_10px_#00ffcc] transition-all text-center">
+<button data-on-click="a67" class="p-3 border-2 border-[#00ffcc] bg-[#050505] rounded-xl hover:shadow-[0_0_10px_#00ffcc] transition-all text-center">
 <div class="w-full h-8 bg-[#111] border border-[#ff00ff] rounded mb-2 shadow-[0_0_5px_#ff00ff]"></div>
 <span class="text-sm text-[#00ffcc] drop-shadow-[0_0_5px_#00ffcc]">Neon Dark</span>
 </button>
-<button onclick="setTheme('dracula')" class="p-3 border-2 border-[#6272a4] bg-[#282a36] rounded-xl hover:border-[#ff79c6] transition-colors text-center">
+<button data-on-click="a68" class="p-3 border-2 border-[#6272a4] bg-[#282a36] rounded-xl hover:border-[#ff79c6] transition-colors text-center">
 <div class="w-full h-8 bg-[#44475a] border border-[#ff79c6] rounded mb-2"></div>
 <span class="text-sm text-[#f8f8f2]">Dracula</span>
 </button>
-<button onclick="setTheme('nord')" class="p-3 border-2 border-[#4c566a] bg-[#2e3440] rounded-xl hover:border-[#88c0d0] transition-colors text-center">
+<button data-on-click="a69" class="p-3 border-2 border-[#4c566a] bg-[#2e3440] rounded-xl hover:border-[#88c0d0] transition-colors text-center">
 <div class="w-full h-8 bg-[#3b4252] border border-[#88c0d0] rounded mb-2"></div>
 <span class="text-sm text-[#eceff4]">Nord</span>
 </button>
-<button onclick="setTheme('solarized')" class="p-3 border-2 border-[#93a1a1] bg-[#fdf6e3] rounded-xl hover:border-[#b58900] transition-colors text-center">
+<button data-on-click="a70" class="p-3 border-2 border-[#93a1a1] bg-[#fdf6e3] rounded-xl hover:border-[#b58900] transition-colors text-center">
 <div class="w-full h-8 bg-[#eee8d5] border border-[#b58900] rounded mb-2"></div>
 <span class="text-sm text-[#657b83]">Solarized Light</span>
 </button>
-<button onclick="setTheme('cyberpunk')" class="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a71" class="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-[#0d0221] border border-[#00ff41] rounded mb-2"></div>
 <span class="text-sm text-[#00ff41]">Cyberpunk</span>
 </button>
-<button onclick="setTheme('ocean')" class="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a72" class="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-gradient-to-r from-[#001f3f] to-[#0074d9] rounded mb-2"></div>
 <span class="text-sm text-[#7fdbff]">Ocean</span>
 </button>
-<button onclick="setTheme('forest')" class="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a73" class="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-[#1e392a] border border-[#81c784] rounded mb-2"></div>
 <span class="text-sm text-[#a5d6a7]">Forest</span>
 </button>
-<button onclick="setTheme('aurora')" class="p-3 border-2 border-emerald-200 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a74" class="p-3 border-2 border-emerald-200 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-gradient-to-r from-[#0b132b] via-[#00c2a8] to-[#9ef01a] rounded mb-2"></div>
 <span class="text-sm text-emerald-700 dark:text-emerald-300">Aurora</span>
 </button>
-<button onclick="setTheme('sunset')" class="p-3 border-2 border-orange-200 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a75" class="p-3 border-2 border-orange-200 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-gradient-to-r from-[#2b0f54] via-[#ab1f65] to-[#ffb703] rounded mb-2"></div>
 <span class="text-sm text-orange-700 dark:text-orange-300">Sunset</span>
 </button>
-<button onclick="setTheme('linen')" class="p-3 border-2 border-stone-200 rounded-xl hover:border-brand-500 transition-colors text-center">
+<button data-on-click="a76" class="p-3 border-2 border-stone-200 rounded-xl hover:border-brand-500 transition-colors text-center">
 <div class="w-full h-8 bg-gradient-to-r from-[#f5efe6] via-[#efe5d6] to-[#d9c7b0] rounded mb-2"></div>
 <span class="text-sm text-stone-700">Linen</span>
 </button>
-<button onclick="setTheme('obsidian')" class="p-3 border-2 border-slate-700 bg-[#0b1020] rounded-xl hover:border-sky-400 transition-colors text-center">
+<button data-on-click="a77" class="p-3 border-2 border-slate-700 bg-[#0b1020] rounded-xl hover:border-sky-400 transition-colors text-center">
 <div class="w-full h-8 bg-gradient-to-r from-[#0b1020] via-[#151b35] to-[#1f2a44] rounded mb-2 border border-sky-500/30"></div>
 <span class="text-sm text-sky-200">Obsidian</span>
 </button>
-<button onclick="setTheme('custom')" class="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl hover:border-brand-500 transition-colors text-center col-span-2 md:col-span-1">
+<button data-on-click="a78" class="p-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl hover:border-brand-500 transition-colors text-center col-span-2 md:col-span-1">
 <div class="w-full h-8 bg-gradient-to-r from-red-500 via-green-500 to-blue-500 rounded mb-2"></div>
 <span class="text-sm" data-i18n="customTheme">کاستوم تم</span>
 </button>
@@ -3108,19 +2381,19 @@ FA / EN
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 <div>
 <label class="block text-xs text-gray-500 mb-1" data-i18n="bgColor">رنگ پس‌زمینه (Background)</label>
-<input type="color" id="customBgColor" onchange="applyCustomTheme()" value="#ffffff" class="w-full h-10 rounded cursor-pointer">
+<input type="color" id="customBgColor" data-on-change="a79" value="#ffffff" class="w-full h-10 rounded cursor-pointer">
 </div>
 <div>
 <label class="block text-xs text-gray-500 mb-1" data-i18n="cardColor">رنگ کارت‌ها (Cards)</label>
-<input type="color" id="customCardColor" onchange="applyCustomTheme()" value="#f8fafc" class="w-full h-10 rounded cursor-pointer">
+<input type="color" id="customCardColor" data-on-change="a79" value="#f8fafc" class="w-full h-10 rounded cursor-pointer">
 </div>
 <div>
 <label class="block text-xs text-gray-500 mb-1" data-i18n="textColor">رنگ متن (Text)</label>
-<input type="color" id="customTextColor" onchange="applyCustomTheme()" value="#000000" class="w-full h-10 rounded cursor-pointer">
+<input type="color" id="customTextColor" data-on-change="a79" value="#000000" class="w-full h-10 rounded cursor-pointer">
 </div>
 <div>
 <label class="block text-xs text-gray-500 mb-1" data-i18n="primaryColor">رنگ اصلی (Primary/Brand)</label>
-<input type="color" id="customPrimaryColor" onchange="applyCustomTheme()" value="#14b8a6" class="w-full h-10 rounded cursor-pointer">
+<input type="color" id="customPrimaryColor" data-on-change="a79" value="#14b8a6" class="w-full h-10 rounded cursor-pointer">
 </div>
 </div>
 </div>
@@ -3135,7 +2408,7 @@ FA / EN
 <div class="flex items-center justify-between">
 <span data-i18n="showNotifications">نمایش اعلانات</span>
 <div class="relative inline-block w-12 align-middle select-none">
-<input type="checkbox" id="notificationsToggle" onchange="handleNotificationsToggleChange()" checked class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
+<input type="checkbox" id="notificationsToggle" data-on-change="a80" checked class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
 <label class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-700 cursor-pointer transition-colors duration-300"></label>
 </div>
 </div>
@@ -3156,14 +2429,14 @@ FA / EN
 <span class="ms-2 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-gray-600 dark:text-gray-300" data-i18n="offByDefault">پیش‌فرض خاموش</span>
 </div>
 <div class="relative inline-block w-12 align-middle select-none shrink-0">
-<input type="checkbox" id="pushBackgroundToggle" onchange="handlePushToggleChange()" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
+<input type="checkbox" id="pushBackgroundToggle" data-on-change="a81" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
 <label class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-700 cursor-pointer transition-colors duration-300"></label>
 </div>
 </div>
 <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-relaxed" data-i18n="pushBackgroundDesc">برای رسیدن اعلان وقتی برنامه بسته است، سرویس پوشِ مرورگر شما وارد مسیر می‌شود و رله یک نشانی برای دستگاهتان نگه می‌دارد. متن پیام، نام فرستنده و هیچ محتوایی فرستاده نمی‌شود و رمزنگاری سرتاسری دست‌نخورده می‌ماند.</p>
 <div id="pushTtlRow" class="mt-4 flex items-center justify-between gap-4 transition-opacity">
 <span class="text-sm min-w-0" data-i18n="pushTtl">پاک‌سازی خودکار اشتراک پس از</span>
-<select id="pushTtlSelect" onchange="handlePushTtlChange()" class="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm shrink-0">
+<select id="pushTtlSelect" data-on-change="a82" class="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm shrink-0">
 <option value="30">30</option>
 <option value="60">60</option>
 <option value="90">90</option>
@@ -3184,7 +2457,7 @@ FA / EN
   <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-relaxed" data-i18n="upDesc">یک اپ توزیع‌کننده که خودتان نصب و انتخاب می‌کنید سوکت را نگه می‌دارد و رله به آدرسی که آن می‌دهد پیام می‌فرستد. گوگل در مسیر نیست.</p>
   <div id="upDistributorRow" class="mt-3 flex items-center gap-2">
     <select id="upDistributor" class="flex-1 min-w-0 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm"></select>
-    <button id="upConnect" type="button" onclick="connectUnifiedPush()" class="px-3 py-1.5 rounded-lg text-sm font-bold bg-brand-500 text-white" data-i18n="upConnect">اتصال</button>
+    <button id="upConnect" type="button" data-on-click="a83" class="px-3 py-1.5 rounded-lg text-sm font-bold bg-brand-500 text-white" data-i18n="upConnect">اتصال</button>
   </div>
   <div id="upNone" class="hidden mt-3">
     <p class="text-xs leading-relaxed text-amber-600 dark:text-amber-400" data-i18n="upNoDistributor">هیچ اپ توزیع‌کننده‌ای روی این گوشی نصب نیست. ntfy را از F-Droid یا Play نصب کنید و دوباره همین‌جا برگردید.</p>
@@ -3197,10 +2470,10 @@ FA / EN
     </div>
     <p class="mt-2 text-[11px] text-gray-400" data-i18n="upNtfyNoAccount">نصبش کافی است. نه حساب می‌خواهد، نه تنظیمات.</p>
   </div>
-  <button id="upDisconnect" type="button" onclick="disconnectUnifiedPush()" class="hidden mt-3 px-3 py-1.5 rounded-lg text-xs border border-gray-300 dark:border-gray-600" data-i18n="upDisconnect">قطع اتصال</button>
+  <button id="upDisconnect" type="button" data-on-click="a84" class="hidden mt-3 px-3 py-1.5 rounded-lg text-xs border border-gray-300 dark:border-gray-600" data-i18n="upDisconnect">قطع اتصال</button>
 
   <label class="mt-4 flex items-start gap-2 text-xs text-gray-500 cursor-pointer">
-    <input id="upPolling" type="checkbox" onchange="toggleMailPolling(this.checked)" class="mt-0.5 accent-brand-500">
+    <input id="upPolling" type="checkbox" data-on-change="a85" class="mt-0.5 accent-brand-500">
     <span data-i18n="upPollDesc">اگر توزیع‌کننده ندارید: هر ۱۵ دقیقه یک بار سر بزن. کندتر است، باتری می‌برد و یک الگوی ترافیکی می‌سازد که قبلاً نبود.</span>
   </label>
 </div>
@@ -3218,7 +2491,7 @@ FA / EN
 <div class="desktop-shell-row flex items-center justify-between gap-4">
 <span class="min-w-0" data-i18n="desktopKeepRunning">ادامهٔ اجرا در پس‌زمینه پس از بستن پنجره</span>
 <div class="relative inline-block w-12 align-middle select-none">
-<input type="checkbox" id="desktopKeepRunningToggle" onchange="handleDesktopKeepRunningChange()" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
+<input type="checkbox" id="desktopKeepRunningToggle" data-on-change="a86" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
 <label class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-700 cursor-pointer transition-colors duration-300"></label>
 </div>
 </div>
@@ -3227,7 +2500,7 @@ FA / EN
 <div class="desktop-shell-row flex items-center justify-between gap-4">
 <span class="min-w-0" data-i18n="desktopAutostart">اجرای خودکار هنگام ورود به سیستم</span>
 <div class="relative inline-block w-12 align-middle select-none">
-<input type="checkbox" id="desktopAutostartToggle" onchange="handleDesktopAutostartChange()" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
+<input type="checkbox" id="desktopAutostartToggle" data-on-change="a87" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
 <label class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-700 cursor-pointer transition-colors duration-300"></label>
 </div>
 </div>
@@ -3236,7 +2509,7 @@ FA / EN
 <div class="desktop-shell-row flex items-center justify-between gap-4">
 <span class="min-w-0" data-i18n="desktopStartMinimized">اجرای پنهان هنگام ورود خودکار</span>
 <div class="relative inline-block w-12 align-middle select-none">
-<input type="checkbox" id="desktopStartMinimizedToggle" onchange="handleDesktopStartMinimizedChange()" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
+<input type="checkbox" id="desktopStartMinimizedToggle" data-on-change="a88" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
 <label class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-700 cursor-pointer transition-colors duration-300"></label>
 </div>
 </div>
@@ -3250,7 +2523,7 @@ FA / EN
 <div class="desktop-shell-row flex items-center justify-between gap-4">
 <span class="min-w-0" data-i18n="desktopVaultSync">نگهداری یک نسخهٔ رمزشده از خزانه روی این سیستم</span>
 <div class="relative inline-block w-12 align-middle select-none">
-<input type="checkbox" id="desktopVaultSyncToggle" onchange="handleDesktopVaultSyncChange()" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
+<input type="checkbox" id="desktopVaultSyncToggle" data-on-change="a89" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 border-slate-600"/>
 <label class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-700 cursor-pointer transition-colors duration-300"></label>
 </div>
 </div>
@@ -3261,11 +2534,11 @@ FA / EN
 <span id="desktopVaultStatus" class="mt-1 text-gray-500 dark:text-gray-400"></span>
 </div>
 <div class="mt-4 flex flex-col sm:flex-row gap-3">
-<button onclick="saveDesktopVaultSnapshotNow()" class="flex-1 px-4 py-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors font-semibold">
+<button data-on-click="a90" class="flex-1 px-4 py-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors font-semibold">
 <i class="fas fa-floppy-disk ml-2"></i>
 <span data-i18n="desktopVaultSyncNow">ذخیرهٔ همین حالا</span>
 </button>
-<button onclick="deleteDesktopVaultSnapshot()" class="flex-1 px-4 py-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-500 transition-colors font-semibold">
+<button data-on-click="a91" class="flex-1 px-4 py-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-500 transition-colors font-semibold">
 <i class="fas fa-eraser ml-2"></i>
 <span data-i18n="desktopVaultDelete">حذف امن نسخهٔ روی دیسک</span>
 </button>
@@ -3280,7 +2553,7 @@ FA / EN
 <p class="text-sm text-gray-500 dark:text-gray-400 mb-4" data-i18n="tabOrderDesc">ترتیب آیتم‌های منوی کناری را نسبت به نیاز خودتان جابه‌جا کنید.</p>
 <p class="text-xs text-gray-500 dark:text-gray-400 mb-4" data-i18n="tabOrderDragHint">برای تغییر سریع‌تر، هر ردیف را بگیرید و بکشید. دکمه‌های بالا/پایین همچنان در دسترس هستند.</p>
 <div id="tabOrderList" class="space-y-2"></div>
-<button onclick="resetTabOrder()" class="mt-4 w-full px-4 py-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors font-semibold">
+<button data-on-click="a92" class="mt-4 w-full px-4 py-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors font-semibold">
 <i class="fas fa-rotate-left ml-2"></i>
 <span data-i18n="resetTabOrder">بازنشانی ترتیب پیش‌فرض</span>
 </button>
@@ -3293,11 +2566,11 @@ FA / EN
 <div class="flex flex-col sm:flex-row gap-4">
 <div class="panic-password-field flex-1">
 <input type="password" id="panicPasswordInput_dz" class="w-full px-4 py-2 rounded-lg bg-white dark:bg-slate-800 border border-brand-500/30" placeholder="رمز پروفایل طعمهٔ جدید" data-i18n-placeholder="panicPasswordPlaceholder">
-<button onclick="togglePasswordVisibility('panicPasswordInput_dz', this)" type="button" class="panic-password-toggle" aria-label="Toggle password visibility">
+<button data-on-click="a93" type="button" class="panic-password-toggle" aria-label="Toggle password visibility">
 <i class="fas fa-eye"></i>
 </button>
 </div>
-<button onclick="setPanicPassword('panicPasswordInput_dz')" class="px-6 py-2 bg-brand-500 text-white rounded-xl hover:bg-brand-600 transition-colors" data-i18n="savePanicPassword">ذخیرهٔ رمز طعمه</button>
+<button data-on-click="a94" class="px-6 py-2 bg-brand-500 text-white rounded-xl hover:bg-brand-600 transition-colors" data-i18n="savePanicPassword">ذخیرهٔ رمز طعمه</button>
 </div>
 </div>
 </div>
@@ -3309,7 +2582,7 @@ FA / EN
 </h3>
 <div class="space-y-6">
 <div>
-<button onclick="resetAppSettings()" class="danger-zone-action danger-zone-reset w-full py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-bold">
+<button data-on-click="a95" class="danger-zone-action danger-zone-reset w-full py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-bold">
 <i class="fas fa-undo ml-2"></i>
 <span data-i18n="resetToDefault">ریست کامل تمام تنظیمات و داده‌ها</span>
 </button>
@@ -3459,11 +2732,11 @@ FA / EN
      themselves through the service worker, so this block stays hidden there
      rather than offering a download of the page you are already on. -->
 <div id="aboutUpdateRow" class="hidden mb-8 flex flex-col items-center gap-2">
-  <button id="aboutUpdateBtn" type="button" onclick="checkForUpdatesNow()"
+  <button id="aboutUpdateBtn" type="button" data-on-click="a96"
           class="px-4 py-2 rounded-xl text-sm font-bold bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 border border-gray-200 dark:border-gray-700 transition-all"
           data-i18n="updateCheckNow">بررسی به‌روزرسانی</button>
   <label class="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
-    <input id="aboutUpdateAuto" type="checkbox" onchange="setUpdateAutoCheck(this.checked)" class="accent-brand-500">
+    <input id="aboutUpdateAuto" type="checkbox" data-on-change="a97" class="accent-brand-500">
     <span data-i18n="updateCheckAuto">بررسی خودکار هنگام اجرا</span>
   </label>
   <p class="text-[11px] text-gray-400 max-w-sm leading-relaxed" data-i18n="updateCheckNote">این تنها درخواستی است که برنامه بدون خواست شما به اینترنت می‌زند. فقط شمارهٔ آخرین نسخه را از گیت‌هاب می‌پرسد و هیچ چیزی دربارهٔ شما نمی‌فرستد.</p>
@@ -3540,7 +2813,7 @@ FA / EN
 <p class="text-xs uppercase tracking-[0.3em] text-sky-300">PWA</p>
 <h2 id="installGuideTitle" class="text-2xl font-bold text-white mt-1">Install guide</h2>
 </div>
-<button onclick="closeInstallGuideModal()" type="button" class="h-11 w-11 rounded-2xl border border-white/10 text-slate-200 hover:bg-white/5 transition-colors" aria-label="Close install guide">
+<button data-on-click="a98" type="button" class="h-11 w-11 rounded-2xl border border-white/10 text-slate-200 hover:bg-white/5 transition-colors" aria-label="Close install guide">
 <i class="fas fa-xmark text-lg"></i>
 </button>
 </div>
@@ -3582,10 +2855,10 @@ FA / EN
 <div id="virtualKeyboardContainer" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-800/95 p-4 rounded-xl border border-slate-700 shadow-2xl backdrop-blur w-[800px] max-w-[95vw] z-[9999]">
 <div id="virtualKeyboard" class="grid grid-cols-12 gap-1.5 mt-2"></div>
 <div class="virtual-keyboard-actions flex justify-between mt-4 gap-2 max-w-md mx-auto">
-<button onclick="toggleKeyboardShift()" id="vkShiftBtn" class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-bold text-gray-300 transition-colors">Shift</button>
-<button onclick="backspaceKeyboardInput()" id="vkBackspaceBtn" class="flex-1 py-2 bg-yellow-500/20 hover:bg-yellow-500/40 rounded-lg text-sm font-bold text-yellow-400 transition-colors">Backspace</button>
-<button onclick="clearKeyboardInput()" class="flex-1 py-2 bg-red-500/20 hover:bg-red-500/40 rounded-lg text-sm font-bold text-red-400 transition-colors">Clear</button>
-<button onclick="toggleVirtualKeyboard()" class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-bold text-gray-300 transition-colors">Close</button>
+<button data-on-click="a99" id="vkShiftBtn" class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-bold text-gray-300 transition-colors">Shift</button>
+<button data-on-click="a100" id="vkBackspaceBtn" class="flex-1 py-2 bg-yellow-500/20 hover:bg-yellow-500/40 rounded-lg text-sm font-bold text-yellow-400 transition-colors">Backspace</button>
+<button data-on-click="a101" class="flex-1 py-2 bg-red-500/20 hover:bg-red-500/40 rounded-lg text-sm font-bold text-red-400 transition-colors">Clear</button>
+<button data-on-click="a102" class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-bold text-gray-300 transition-colors">Close</button>
 </div>
 </div>
 <!-- 2FA Setup Modal (Settings) -->
@@ -3599,8 +2872,8 @@ FA / EN
 <input type="text" id="settingsVerify2FACode" data-i18n-placeholder="enter2FACode"
 class="w-full px-4 py-2 rounded-lg bg-slate-700 border border-slate-600 text-white text-center tracking-widest" maxlength="6">
 <div class="flex gap-2">
-<button onclick="verifySettings2FA()" class="flex-1 py-2 bg-brand-600 rounded-lg text-white text-sm font-bold hover:bg-brand-700 transition-colors" data-i18n="verify">تایید</button>
-<button onclick="closeSettings2FA()" class="px-4 py-2 bg-slate-600 rounded-lg text-white text-sm hover:bg-slate-700 transition-colors hover:scale-105 transition-all" data-i18n="close">بستن</button>
+<button data-on-click="a103" class="flex-1 py-2 bg-brand-600 rounded-lg text-white text-sm font-bold hover:bg-brand-700 transition-colors" data-i18n="verify">تایید</button>
+<button data-on-click="a104" class="px-4 py-2 bg-slate-600 rounded-lg text-white text-sm hover:bg-slate-700 transition-colors hover:scale-105 transition-all" data-i18n="close">بستن</button>
 </div>
 </div>
 </div>
@@ -3614,7 +2887,7 @@ class="w-full px-4 py-2 rounded-lg bg-slate-700 border border-slate-600 text-whi
 <input type="password" id="viewPasswordInput" data-i18n-placeholder="masterPassword" placeholder="Master Password"
 class="input-with-leading-icon w-full px-4 py-2 rounded-lg bg-slate-700 border border-slate-600 text-white text-center">
 <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-<button onclick="toggleVirtualKeyboard('viewPasswordInput')" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
+<button data-on-click="a105" type="button" class="text-gray-400 hover:text-brand-400 transition-colors" title="Virtual Keyboard" aria-label="Virtual Keyboard">
 <i class="fas fa-keyboard"></i>
 </button>
 </div>
@@ -3625,11 +2898,11 @@ class="input-with-leading-icon w-full px-4 py-2 rounded-lg bg-slate-700 border b
 <div id="viewPasswordRevealed" class="font-mono text-sm break-all bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 select-all text-white" dir="ltr"></div>
 </div>
 <div class="flex gap-2">
-<button id="viewPasswordVerifyBtn" onclick="submitViewPassword()" class="flex-1 py-2 bg-brand-600 rounded-lg text-white text-sm font-bold hover:bg-brand-700 transition-colors" data-i18n="verify">تایید</button>
-<button id="viewPasswordBiometricBtn" type="button" onclick="biometricViewPassword()" class="hidden px-4 py-2 bg-slate-600 rounded-lg text-white text-sm hover:bg-slate-700 transition-colors" title="Biometric" aria-label="Biometric"><i class="fas fa-fingerprint"></i></button>
-<button onclick="closeViewPasswordModal()" class="px-4 py-2 bg-slate-600 rounded-lg text-white text-sm hover:bg-slate-700 transition-colors hover:scale-105 transition-all" data-i18n="close">بستن</button>
+<button id="viewPasswordVerifyBtn" data-on-click="a106" class="flex-1 py-2 bg-brand-600 rounded-lg text-white text-sm font-bold hover:bg-brand-700 transition-colors" data-i18n="verify">تایید</button>
+<button id="viewPasswordBiometricBtn" type="button" data-on-click="a107" class="hidden px-4 py-2 bg-slate-600 rounded-lg text-white text-sm hover:bg-slate-700 transition-colors" title="Biometric" aria-label="Biometric"><i class="fas fa-fingerprint"></i></button>
+<button data-on-click="a108" class="px-4 py-2 bg-slate-600 rounded-lg text-white text-sm hover:bg-slate-700 transition-colors hover:scale-105 transition-all" data-i18n="close">بستن</button>
 </div>
-<button id="viewPasswordCopyBtn" type="button" onclick="copyRevealedPassword()" class="hidden w-full py-2 bg-brand-600 rounded-lg text-white text-sm font-bold hover:bg-brand-700 transition-colors"><i class="fas fa-copy"></i> <span data-i18n="copy">کپی</span></button>
+<button id="viewPasswordCopyBtn" type="button" data-on-click="a109" class="hidden w-full py-2 bg-brand-600 rounded-lg text-white text-sm font-bold hover:bg-brand-700 transition-colors"><i class="fas fa-copy"></i> <span data-i18n="copy">کپی</span></button>
 </div>
 </div>
 </div>
@@ -3647,79 +2920,80 @@ class="input-with-leading-icon w-full px-4 py-2 rounded-lg bg-slate-700 border b
 </div>
 <p class="text-sm text-gray-600 dark:text-gray-300 leading-7" data-i18n="desktopBiometricPromptBody">اگر پلتفرم و runtime این نسخه از احراز هویت بیومتریک یا platform authenticator پشتیبانی کنند، برنامه می‌تواند برای باز کردن سریع از تایید محلی دستگاه استفاده کند. آیا مایل هستید همین حالا آن را فعال کنید؟</p>
 <div class="flex flex-col-reverse sm:flex-row gap-3 mt-6">
-<button type="button" onclick="dismissDesktopBiometricPrompt()" class="flex-1 py-2.5 rounded-xl bg-slate-700 text-white hover:bg-slate-600 transition-colors" data-i18n="desktopBiometricLater">بعداً</button>
-<button type="button" onclick="enableDesktopBiometricFromPrompt()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-semibold hover:scale-[1.01] transition-all" data-i18n="desktopBiometricEnableNow">همین حالا فعال شود</button>
+<button type="button" data-on-click="a110" class="flex-1 py-2.5 rounded-xl bg-slate-700 text-white hover:bg-slate-600 transition-colors" data-i18n="desktopBiometricLater">بعداً</button>
+<button type="button" data-on-click="a111" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-semibold hover:scale-[1.01] transition-all" data-i18n="desktopBiometricEnableNow">همین حالا فعال شود</button>
 </div>
 </div>
 </div>
-<script defer src="vendor/peerjs/peerjs.min.js?v=2.17.1-chat-v35"></script>
+<script defer src="vendor/peerjs/peerjs.min.js?v=2.20.0-chat-v37"></script>
 <!-- ML-KEM-768 (FIPS 203), for the second secret of the key exchange. Checked
      against OpenSSL by tools/check-mlkem.cjs. -->
-<script defer src="vendor/mlkem/mlkem.bundle.min.js?v=2.17.1-chat-v35"></script>
-<script defer src="vendor/sileo/sileo.bundle.min.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/crypto-core.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/vault-profiles.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/screen-guard.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/stego.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/qr-kit.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/tools-extra.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/local-link.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/local-mesh.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/local-room.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/crypto-config.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/dialogs.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/desktop-bridge.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/metadata.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/voice-changer.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/help-content.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/relay-hints.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/image-formats.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/update-check.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/app.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/advanced-crypto.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/backup.js?v=2.17.1-chat-v35"></script>
+<script defer src="vendor/mlkem/mlkem.bundle.min.js?v=2.20.0-chat-v37"></script>
+<script defer src="vendor/sileo/sileo.bundle.min.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/crypto-core.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/vault-profiles.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/screen-guard.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/stego.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/qr-kit.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/tools-extra.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/local-link.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/local-mesh.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/local-room.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/crypto-config.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/dialogs.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/desktop-bridge.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/metadata.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/voice-changer.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/help-content.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/relay-hints.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/image-formats.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/update-check.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/app.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/inline-actions.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/advanced-crypto.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/backup.js?v=2.20.0-chat-v37"></script>
 <!-- Secure Chat: one file split into ordered parts. `defer` keeps them in
      document order, which is the order they depend on. See js/chat/README.md. -->
 <!-- Binding of session payloads (roadmap 1.1): an ES module, run before the chat's deferred scripts because module and defer scripts execute in document order. -->
-<script type="module" src="js/crypto/aad-bridge.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/crypto/identity-bridge.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/crypto/ratchet-bridge.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/crypto/kt-bridge.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/crypto/sender-keys-bridge.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/crypto/sframe-bridge.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/01-constants.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/02-media-vault.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/03-call-screen.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/04-call-layout.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/05-structured-messages.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/06-groups.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/07-conversation-lock.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/08-global-search.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/09-the-emoji-key.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/10-selection.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/11-group-permissions.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/12-group-call-mesh.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/13-group-call-stage.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/14-group-call-roster.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/15-group-call-render.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/16-group-call-signalling.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/17-file-manager.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/18-file-manager-2.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/19-forward-secrecy.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/20-call-rows.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/21-chat-list-filters.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/22-drafts.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/23-export-import.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/24-settings-panels.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/25-call-log.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/26-contacts.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/27-message-render.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/28-offline-envelopes.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/29-file-transfer.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/30-file-transfer-2.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/31-file-transfer-3.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/32-file-transfer-4.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/33-rail-header.js?v=2.17.1-chat-v35"></script>
+<script type="module" src="js/crypto/aad-bridge.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/crypto/identity-bridge.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/crypto/ratchet-bridge.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/crypto/kt-bridge.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/crypto/sender-keys-bridge.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/crypto/sframe-bridge.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/01-constants.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/02-media-vault.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/03-call-screen.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/04-call-layout.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/05-structured-messages.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/06-groups.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/07-conversation-lock.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/08-global-search.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/09-the-emoji-key.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/10-selection.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/11-group-permissions.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/12-group-call-mesh.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/13-group-call-stage.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/14-group-call-roster.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/15-group-call-render.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/16-group-call-signalling.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/17-file-manager.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/18-file-manager-2.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/19-forward-secrecy.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/20-call-rows.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/21-chat-list-filters.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/22-drafts.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/23-export-import.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/24-settings-panels.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/25-call-log.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/26-contacts.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/27-message-render.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/28-offline-envelopes.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/29-file-transfer.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/30-file-transfer-2.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/31-file-transfer-3.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/32-file-transfer-4.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/33-rail-header.js?v=2.20.0-chat-v37"></script>
 <!-- Carrying a message through a messenger that works but is watched. The
      pieces were always here; what was missing was a way to use them without
      knowing they were here. See js/chat/38-carrier.js. -->
@@ -3764,46 +3038,46 @@ class="input-with-leading-icon w-full px-4 py-2 rounded-lg bg-slate-700 border b
 </section>
 </div>
 </div>
-<script type="module" src="js/chat/34-sheets-profile-clocks.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/35-sheets-profile-clocks-2.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/36-sheets-profile-clocks-3.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/37-chat-tools.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/38-carrier.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/39-relay-call.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/40-route-finder.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/41-member-cards.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/42-path-manager.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/43-relay-link.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/44-device-beacon.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/45-text-format.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/46-saved-messages.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/47-scheduled-send.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/48-key-verify.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/49-message-requests.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/50-live-location.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/51-envelope-privacy.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/52-relay-mirrors.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/53-native-proxy.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/54-link-preview.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/55-gifs-and-keyboard-stickers.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/56-sticker-motion.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/57-sibling-files.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/58-device-roster.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/59-device-link.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/60-call-audio.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/61-relay-directory.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/62-guest-mode.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/63-relay-choice.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/64-photos.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/65-identity-move.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/66-key-transparency.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/67-path-race.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/68-sfu-call.js?v=2.17.1-chat-v35"></script>
-<script type="module" src="js/chat/69-notice-hints.js?v=2.17.1-chat-v35"></script>
+<script type="module" src="js/chat/34-sheets-profile-clocks.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/35-sheets-profile-clocks-2.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/36-sheets-profile-clocks-3.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/37-chat-tools.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/38-carrier.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/39-relay-call.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/40-route-finder.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/41-member-cards.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/42-path-manager.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/43-relay-link.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/44-device-beacon.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/45-text-format.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/46-saved-messages.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/47-scheduled-send.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/48-key-verify.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/49-message-requests.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/50-live-location.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/51-envelope-privacy.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/52-relay-mirrors.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/53-native-proxy.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/54-link-preview.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/55-gifs-and-keyboard-stickers.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/56-sticker-motion.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/57-sibling-files.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/58-device-roster.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/59-device-link.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/60-call-audio.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/61-relay-directory.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/62-guest-mode.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/63-relay-choice.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/64-photos.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/65-identity-move.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/66-key-transparency.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/67-path-race.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/68-sfu-call.js?v=2.20.0-chat-v37"></script>
+<script type="module" src="js/chat/69-notice-hints.js?v=2.20.0-chat-v37"></script>
 <!-- Last, and it has to be: it follows two of the chat's functions by replacing
      them on window, and a chat script loaded after it would declare them again. -->
-<script defer src="js/messenger.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/messenger-settings.js?v=2.17.1-chat-v35"></script>
-<script defer src="js/nav-history.js?v=2.17.1-chat-v35"></script>
+<script defer src="js/messenger.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/messenger-settings.js?v=2.20.0-chat-v37"></script>
+<script defer src="js/nav-history.js?v=2.20.0-chat-v37"></script>
 </body>
 </html>

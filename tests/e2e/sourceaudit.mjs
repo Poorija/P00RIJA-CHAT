@@ -55,16 +55,40 @@ const noAlt = [...html.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]).filter((tag) 
 check('index.html: every <img> has an alt', noAlt.length === 0, list(noAlt));
 const noRel = [...html.matchAll(/<a\b[^>]*target="_blank"[^>]*>/g)].map((m) => m[0]).filter((tag) => !/rel="[^"]*noopener/.test(tag)).map((t) => t.slice(0, 80));
 check('index.html: every target="_blank" link has rel="noopener"', noRel.length === 0, list(noRel));
-/* Known debt, measured 2026-11-16: 139 handlers and 3 inline script blocks. The ratchet only moves down. */
-const INLINE_HANDLER_CEILING = 139;
-const INLINE_SCRIPT_CEILING = 3;
+/* None since 2.20.0 (tools/extract-inline.cjs), and the policy refuses them: a new one would not run. */
+const INLINE_HANDLER_CEILING = 0;
+const INLINE_SCRIPT_CEILING = 0;
 const inlineHandlers = [...html.matchAll(/\s(on(?:click|change|input|submit|load|error|keydown|keyup|focus|blur|mouseover|touchstart))=["']/gi)].map((m) => m[1]);
 check(`index.html: inline event handlers do not grow (${inlineHandlers.length}, ceiling ${INLINE_HANDLER_CEILING})`, inlineHandlers.length <= INLINE_HANDLER_CEILING, `${inlineHandlers.length}`);
 const inlineScripts = [...html.matchAll(/<script\b(?![^>]*\ssrc=)[^>]*>/gi)].length;
 check(`index.html: inline <script> blocks do not grow (${inlineScripts}, ceiling ${INLINE_SCRIPT_CEILING})`, inlineScripts <= INLINE_SCRIPT_CEILING, `${inlineScripts}`);
+/* innerHTML: a ratchet that only moves down. Clearing a node is replaceChildren() now (2.20.0, 35 sites),
+   and what remains writes markup; every one of those that carries somebody else's text escapes it
+   (app().escapeHTML), which is checked by reading them, not by this count — the count is what stops the
+   number growing unnoticed. */
+const INNERHTML_CEILING = 215;
+const INNERHTML_TEMPLATE_CEILING = 103;
+const jsFiles = [];
+(function collect(dir) {
+  for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+    const rel = path.join(dir, entry.name);
+    if (entry.isDirectory()) { if (entry.name !== 'vendor' && entry.name !== 'node_modules') collect(rel); }
+    else if (entry.name.endsWith('.js')) jsFiles.push(rel);
+  }
+})('js');
+let innerSites = 0;
+let innerTemplates = 0;
+for (const rel of jsFiles) {
+  const source = read(rel);
+  innerSites += (source.match(/\.innerHTML\s*=(?!=)/g) || []).length;
+  innerTemplates += (source.match(/\.innerHTML\s*=\s*`/g) || []).length;
+}
+check(`js: .innerHTML = sites do not grow (${innerSites}, ceiling ${INNERHTML_CEILING})`, innerSites <= INNERHTML_CEILING, `${innerSites}`);
+check(`js: .innerHTML = template-literal sites do not grow (${innerTemplates}, ceiling ${INNERHTML_TEMPLATE_CEILING})`, innerTemplates <= INNERHTML_TEMPLATE_CEILING, `${innerTemplates}`);
 const devStatic = read('scripts/dev-static.js');
 const scriptSrc = (devStatic.match(/"script-src ([^"]+)"/) || [])[1] || '';
-console.log(`  NOTE  the policy served is: script-src ${scriptSrc} — ${/unsafe-inline/.test(scriptSrc) ? "'unsafe-inline' is present (the known debt above)" : 'no unsafe-inline'}`);
+console.log(`  NOTE  the policy served is: script-src ${scriptSrc} — ${/unsafe-inline/.test(scriptSrc) ? "'unsafe-inline' is present — it must not be" : 'no unsafe-inline'}`);
+check("script-src has no 'unsafe-inline'", !/unsafe-inline/.test(scriptSrc), scriptSrc);
 const missingLocal = [];
 for (const m of html.matchAll(/(?:src|href)="([^"#?]+)(?:[?#][^"]*)?"/g)) {
   const target = m[1];
@@ -113,7 +137,7 @@ for (const rel of markdown) {
   const withoutCode = text.replace(/```[\s\S]*?```/g, (block) => block.replace(/\[[^\]]*\]\([^)]*\)/g, ''));
   for (const m of withoutCode.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
     const target = m[1];
-    if (/^(https?:|mailto:|#|data:|tel:)/.test(target)) continue;
+    if (/^(https?:|mailto:|#|data:|tel:|ton:)/.test(target)) continue;
     const clean = decodeURIComponent(target.split('#')[0].split('?')[0]);
     if (!clean) continue;
     if (!fs.existsSync(path.join(root, dir, clean)) && !exists(clean.replace(/^\//, ''))) brokenLinks.push(`${rel} -> ${target}`);

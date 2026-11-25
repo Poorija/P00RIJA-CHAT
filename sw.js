@@ -7,7 +7,7 @@
  * version as a network service and its users are entitled to your source.
  */
 
-const CACHE_NAME = 'poorija-chat-v2.17.1-chat-v35';
+const CACHE_NAME = 'poorija-chat-v2.20.0-chat-v37';
 
 // Live endpoints proxied by nginx: never cached, always straight to the network.
 const NETWORK_ONLY_PREFIXES = [
@@ -53,6 +53,9 @@ const CORE_ASSETS = [
   './js/crypto-config.js',
   './js/relay-hints.js',
   './js/app.js',
+  './js/boot-shell.js',
+  './js/boot-fonts.js',
+  './js/inline-actions.js',
   './sw.js',
   './vendor/fontawesome/css/all.min.css',
   './vendor/hash-wasm/argon2.umd.min.js',
@@ -516,13 +519,24 @@ async function noticeFromHint(hint, lang) {
   if (!record || !record.show || !Array.isArray(record.list)) return null;
   let name = '';
   let what = null;
+  /* A part, or a list of them (a contact with several devices: one each). */
+  const asList = (part) => (Array.isArray(part) ? part.slice(0, 4) : (part ? [part] : []));
+  const nameParts = record.show.s ? asList(hint.n) : [];
+  const whatParts = record.show.p ? asList(hint.p) : [];
+  const tryParts = async (parts, key) => {
+    for (const part of parts) {
+      const opened = await openNoticePart(part, key);
+      if (opened && noticeIsFresh(opened)) return opened;
+    }
+    return null;
+  };
   for (const pair of record.list) {
     /* Both halves must open under the SAME contact's keys. The name shown is the
        one this device saved for that contact, never the one the hint carries. */
-    const nameBox = record.show.s && hint.n ? await openNoticePart(hint.n, pair?.s) : null;
-    const whatBox = record.show.p && hint.p ? await openNoticePart(hint.p, pair?.p) : null;
-    const nameOk = !(record.show.s && hint.n) || (nameBox && noticeIsFresh(nameBox));
-    const whatOk = !(record.show.p && hint.p) || (whatBox && noticeIsFresh(whatBox));
+    const nameBox = nameParts.length ? await tryParts(nameParts, pair?.s) : null;
+    const whatBox = whatParts.length ? await tryParts(whatParts, pair?.p) : null;
+    const nameOk = !nameParts.length || nameBox;
+    const whatOk = !whatParts.length || whatBox;
     if (!nameOk || !whatOk || (!nameBox && !whatBox)) continue;
     if (nameBox) name = String(pair.name || '').trim().slice(0, 60);
     if (whatBox) what = whatBox;

@@ -59,8 +59,15 @@ if (fs.existsSync(vendorDir)) {
 }
 
 const called = new Map();
-for (const m of html.matchAll(/\bon[a-z]+="([^"]*)"/g)) {
-  const body = m[1];
+/* The handlers are code of js/inline-actions.js now (tools/extract-inline.cjs), and
+   every control that asks for one must be a function of it. What an action calls
+   is read from its body, as the attribute's text was. */
+const actionsSource = fs.existsSync(path.join(ROOT, 'js', 'inline-actions.js')) ? fs.readFileSync(path.join(ROOT, 'js', 'inline-actions.js'), 'utf8') : '';
+const actionBodies = new Map([...actionsSource.matchAll(/^\s{2}(a\d+)\(event\) \{ (.*) \},$/gm)].map((m) => [m[1], m[2]]));
+const wanted = new Set([...html.matchAll(/\bdata-on-(?:click|change)="(a\d+)"/g)].map((m) => m[1]));
+const unbound = [...wanted].filter((id) => !actionBodies.has(id));
+const sources = [...[...html.matchAll(/\bon[a-z]+="([^"]*)"/g)].map((m) => [m[1]]), ...[...actionBodies.values()].map((body) => [body])];
+for (const [body] of sources) {
   /* A method call is not a global: `document.getElementById(x).click()` was
      reported here as two missing functions, which is noise that buries the one
      real finding underneath it. Anything preceded by a dot belongs to whatever
@@ -74,6 +81,8 @@ for (const m of html.matchAll(/\bon[a-z]+="([^"]*)"/g)) {
 }
 
 console.log(`inline handler attributes: ${[...html.matchAll(/\bon[a-z]+="/g)].length}`);
+console.log(`handler actions in js/inline-actions.js: ${actionBodies.size}, wanted by index.html: ${wanted.size}, with no function: ${unbound.length}`);
+unbound.forEach((id) => console.log('   ' + id + ' has no function'));
 console.log(`global functions discovered: ${defined.size}`);
 console.log(`\n== inline handlers calling something undefined: ${called.size} ==`);
 [...called.entries()].forEach(([name, where]) => console.log(`   ${name}()  <- ${where[0]}`));

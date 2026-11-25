@@ -243,6 +243,10 @@ totalRelays++;
       fromFingerprint: sealedSender ? '' : fromFingerprint,
       payload: message.payload || null,
       queuedAt: new Date().toISOString(),
+      /* A receipt kept for a connected socket that is not reading (a phone in a
+         pocket) ages out and is capped like one kept for an absent person
+         (receiptSweep, 14-guest-mail.js); without the mark it was kept for good. */
+      ...(isReceiptEnvelope ? { receipt: 1 } : {}),
       ...(viaRelay ? { via: viaRelay, hops: viaHops } : {}),
       ...(guestHeldFor(toFingerprint) ? { guestHeld: true } : {}),
     };

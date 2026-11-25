@@ -908,7 +908,7 @@ return false;
    throwaway key wrapped to the recipient, then queues it. Returns false when
    the recipient's public key is unknown, which is the one case where an
    offline send genuinely cannot be made. */
-async function sendSealedRelay(peerRecord, session, message, { createdAt, messageClass = 'text', notify, scope = '', relayTag: explicitTag = '' } = {}) {
+async function sendSealedRelay(peerRecord, session, message, { createdAt, messageClass = 'text', notify, scope = '', relayTag: explicitTag = '', requireSealed = false } = {}) {
 if (!peerRecord) return false;
 /* The body is already ciphertext — the send paths encrypt with the session
    key before they get here. All this adds is that key, wrapped to the
@@ -1041,6 +1041,11 @@ console.warn('[Chat] could not seal the envelope metadata; sending it plainly', 
 body = null;
 }
 }
+/* A message that must not travel in the clear (a key) is not sent unsealed: with
+   no sealed body — the prekey was out of its window, the identity key may not be
+   used for this contact — the envelope would carry it as plain text, and the
+   caller waits for a way to seal it instead. */
+if (requireSealed && !body) return false;
 /* Media is a stream of chunks; only the first of them is worth a notification,
    and the caller says which one that is. */
 const wakesTheDevice = notify === undefined ? messageClass !== 'media' : notify;
@@ -2073,6 +2078,9 @@ let enclosedSessionKeyRaw = '';
 /* The sender's return route, kept until after the message is handled: on a
    first contact the record it belongs on does not exist until then. */
 let openedHomeRelay = null;
+/* Whether what is inside was opened out of a sealed body (and so travelled
+   protected), as opposed to read off an envelope that carried it in the clear. */
+let openedFromBody = false;
 if (!innerMessage && payload.body) {
 /* Two ways in: the prekey the sender wrote to, or the older RSA seal. A
    prekey that has expired is gone from this device, and then the envelope
@@ -2151,6 +2159,7 @@ const opened = JSON.parse(new TextDecoder().decode(plain));
 	} else {
 innerMessage = opened;
 }
+	openedFromBody = Boolean(innerMessage);
 	} catch (error) {
 	console.warn('[Chat] a sealed envelope could not be decrypted:', error);
 	/* A body that fails its GCM tag will fail it on every redelivery too.
@@ -2267,21 +2276,25 @@ session.keySource = 'sealed';
    consent gate must not fire for bytes that already sit on the server — the
    ack that follows processing is what frees that space. */
 session.viaRelayMail = true;
+session.viaSealedBody = openedFromBody;
 try {
 await handleSessionMessage(session, innerMessage);
 } finally {
 session.cryptoKey = previousKey;
 session.keySource = previousSource;
 session.viaRelayMail = false;
+session.viaSealedBody = false;
 }
 if (openedHomeRelay) noteSenderHomeRelay(payload, openedHomeRelay);
 return true;
 }
 session.viaRelayMail = true;
+session.viaSealedBody = openedFromBody;
 try {
 await handleSessionMessage(session, innerMessage);
 } finally {
 session.viaRelayMail = false;
+session.viaSealedBody = false;
 }
 if (openedHomeRelay) noteSenderHomeRelay(payload, openedHomeRelay);
 return true;
@@ -2644,7 +2657,21 @@ return;
    in — sealed and authenticated by this session; see 41-member-cards.js. */
 /* A contact's keys for what a notification of theirs may say. */
 if (message.type === 'notice-key') {
-if (typeof handleNoticeKeyMessage === 'function') await handleNoticeKeyMessage(session, message);
+/* Believed only when it came protected: inside the live session's own
+   encryption, or inside an envelope's sealed body. A bare one — off a channel
+   that is merely encrypted in transit, or an envelope with its message in the
+   clear — is somebody on the path writing a key of their own. */
+let notice = null;
+if (message.payload && session?.cryptoKey && typeof decryptForSession === 'function') {
+try {
+notice = JSON.parse(new TextDecoder().decode(await decryptForSession(session, message.payload, 'notice-key')));
+} catch (error) { if (error?.name === 'SessionPayloadRefused') return; throw error; }
+} else if (session?.viaSealedBody) {
+notice = message;
+} else {
+return;
+}
+if (typeof handleNoticeKeyMessage === 'function') await handleNoticeKeyMessage(session, notice || {});
 return;
 }
 if (message.type === 'member-cards' || message.type === 'member-cards-request') {

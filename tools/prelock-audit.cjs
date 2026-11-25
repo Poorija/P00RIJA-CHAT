@@ -61,15 +61,34 @@ for (const file of files) {
   walk(ast.program);
 }
 
+/* What the vault redirects and what it leaves where it is. A key touched on both
+   sides of the unlock is only safe if it is on GLOBAL_KEYS (js/vault-profiles.js):
+   there it is the same key before and after, and it is meant to be — the lock
+   screen reads it. One that is not would be namespaced after the unlock and read
+   un-namespaced before it, which is the bug this tool was written to find. */
+const vaultSource = fs.readFileSync('js/vault-profiles.js', 'utf8');
+const globalBlock = /const GLOBAL_KEYS = new Set\(\[([\s\S]*?)\]\);/.exec(vaultSource)?.[1] || '';
+const globalKeys = new Set([...globalBlock.matchAll(/'([A-Za-z0-9_]+)'/g)].map((m) => m[1]));
 console.log('=== keys touched from a pre-unlock code path ===');
 let risky = 0;
+const unclassified = [];
 for (const [key, fns] of [...hits].sort()) {
   const pre = [...fns].filter(f => PRE_UNLOCK.has(f) || f === '<top level>');
   if (pre.length) {
     const post = [...fns].filter(f => !PRE_UNLOCK.has(f) && f !== '<top level>');
     const flag = post.length ? '  BOTH SIDES' : '';
     console.log(`  ${key.padEnd(38)} pre: ${pre.join(', ')}${flag}`);
-    if (post.length) { console.log(`  ${''.padEnd(38)} post: ${post.slice(0,4).join(', ')}`); risky++; }
+    if (post.length) {
+      console.log(`  ${''.padEnd(38)} post: ${post.slice(0,4).join(', ')}`);
+      risky++;
+      const classified = globalKeys.has(key) || key === '<key>';
+      console.log(`  ${''.padEnd(38)} ${classified ? 'device-level by design (on GLOBAL_KEYS; the lock screen reads it)' : 'NOT ON GLOBAL_KEYS'}`);
+      if (!classified) unclassified.push(key);
+    }
   }
 }
-console.log(`\n  ${risky} key(s) are touched on BOTH sides of unlock — those are the dangerous ones.`);
+console.log(`\n  ${risky} key(s) are touched on BOTH sides of unlock; ${risky - unclassified.length} are device-level by design.`);
+if (unclassified.length) {
+  console.log(`  NOT classified: ${unclassified.join(', ')} — add each to GLOBAL_KEYS (js/vault-profiles.js) if the lock screen reads it, or keep it out of code that runs before the unlock.`);
+  process.exit(1);
+}

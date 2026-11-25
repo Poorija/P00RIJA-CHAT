@@ -1,3 +1,95 @@
+# P00RIJA Chat 2.20.0
+
+Version 2.20.0 · build chat-v37
+
+A review of 2.17 turned up a list of faults; each was checked against the code
+first, and the ones that were real are fixed here. Servers and apps of 2.17.x keep
+working with this one.
+
+**Fixed**
+
+- **The native builds could not be built.** `src-tauri/Cargo.lock` had been given
+  the app's version on another crate (`security-framework-sys`, which is at 2.17.0
+  and nowhere else), by the version bump of 2.17.1; every Tauri build then asked
+  for a crate that does not exist. Repaired, and the bump is now a tool
+  (`tools/bump-version.cjs`) that touches only the app's own block of each lock
+  file; `check:versions` asks `cargo metadata --locked` whether the lock is one cargo
+  accepts. A `test:native` script exists for the CI job that named it.
+- **A call whose media never came up was not restarted.** The nine-second watch for
+  ICE stuck at new or checking sat after a `return` and never ran. It is armed once
+  per call and cancelled on connected, completed and closed (`icestall`).
+- **A receipt kept for a connected socket that was not reading was kept for good.**
+  The relay marked receipts `receipt: 1` only on the path for an absent person; the
+  other path left it off, so the 48-hour and 300-per-mailbox rules never reached it
+  (`receiptkeep`).
+- **A notification key could travel in the clear.** `notice-key` went over the live
+  channel with no session encryption, and as an unsealed envelope whenever the
+  prekey was past its window. It now goes only inside the live session's own
+  encryption or inside a sealed body (and waits otherwise), and is believed only so.
+- **The same account on a second device overwrote the first device's keys.** A
+  contact now keeps up to four devices' keys and a hint carries a part for each.
+- **A withdrawn notification key that could not be delivered was forgotten**, and the
+  contact kept believing it. It is kept as owed and sent when they can be reached.
+- **The security line of a conversation said "RSA-OAEP-3072" for every session.** It
+  now says what the session is keyed with (Double Ratchet with X25519 and ML-KEM-768,
+  ML-KEM-768 with ECDH, ECDH, or the key exchange not yet done).
+- **The tests**: a stale `ton://` link check, the mirrored self-view default, and
+  `native-shell` (which does run) are repaired; `nativeui`, `release37` and `uxfixes`,
+  written for things this app no longer has, are retired with their reasons.
+
+**Changed**
+
+- **The page runs no code written into it.** `script-src` no longer has
+  `'unsafe-inline'` — in the web server's policy, the development server's and the
+  native shell's. The 138 `onclick`/`onchange` attributes and the two inline scripts
+  of `index.html` are now `js/inline-actions.js`, `js/boot-shell.js` and
+  `js/boot-fonts.js` (bound to the same elements, in the same places); the native
+  bootstrap is `js/native-bootstrap.js`. A script an attacker manages to put into a
+  page no longer runs. `tools/extract-inline.cjs` did the move; `sourceaudit` now
+  fails on any inline handler or script, and holds the `.innerHTML =` sites to a
+  ceiling (215, down from 250: the 35 that only cleared a node are `replaceChildren()`).
+- **Documents**: `docs/PROTOCOL.md` describes identity v4, `kex-offer/4` and the
+  ratchet; `docs/SPEC.md` §8 records the wire of 2.16–2.20.
+
+**Not changed, and why**
+
+- *Dropping the profile key when the app locks* (the plan's `sealed-inbox`): a locked
+  app keeps receiving, which needs the identity, the prekeys and the history in the
+  page; none of that is a thing to drop. The 2.16.8 fix writes through with the key
+  that is already there. The ten keys `audit:prelock` lists are all on the vault's
+  device-level list on purpose, and the audit now checks that.
+- *Minifying the classic scripts, a multi-stage image that builds the web root, and
+  splitting the five largest files*: each is a change to how every server is built or
+  to thousands of lines, and none was needed by what was found. The module bundle is
+  minified already; the CSS rule pruner finds nothing left to remove.
+
+The full gate (246 suites) found three more, fixed: the two notification switches of
+2.17 had no on-colour in the legacy settings list (`linkpreviewrelay`), `sealedsender`
+still expected a receipt for an absent person to be refused (it has been kept since
+2.16.4), and `chatnavfit` measures a strip the messenger skin hides (quarantined; it
+fails the same on 2.17.2).
+
+Tests: `icestall` and `inlineactions` (every one of the page's 135 controls is pressed
+and reaches the function it names) are new; `receiptkeep`, `noticehints` (34),
+`sourceaudit`, `csp` and `native-shell` changed. Gate: 235 passed, 3 passed on the
+second run, 5 quarantined, 6 not runnable on a development machine.
+
+# P00RIJA Chat 2.17.2
+
+Version 2.17.2 · build chat-v36
+
+**Fixed**
+
+- **A contact in a conversation that has a lock is given no notification key,
+  whether the lock is open at that moment or not.** 2.17.1 asked only whether it
+  was engaged, so a conversation unlocked for a minute handed its contact a key.
+  The check runs every minute, so a lock set later takes the key back.
+
+Said, not changed: the names the worker shows are kept in its IndexedDB beside
+the keys (outside the vault, because a worker cannot open the vault); encrypting
+them under keys stored in the same place would protect nothing. They are only the
+names of contacts, only while a switch is on.
+
 # P00RIJA Chat 2.17.1
 
 Version 2.17.1 · build chat-v35

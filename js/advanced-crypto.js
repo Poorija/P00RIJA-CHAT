@@ -263,7 +263,7 @@
     const target = document.getElementById('sssShares');
     if (!target) return;
     if (!shares.length) {
-      target.innerHTML = '';
+      target.replaceChildren();
       return;
     }
     target.innerHTML = `

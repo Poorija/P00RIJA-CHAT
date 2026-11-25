@@ -260,7 +260,7 @@ function hideGroupCallInvite() {
   }
   const box = document.getElementById('chatGroupCallInvite');
   box?.classList.add('hidden');
-  if (box) box.innerHTML = '';
+  if (box) box.replaceChildren();
 }
 
 /* ---- published to globalThis (roadmap 2.1, tools/esm-chat.cjs) ---- */

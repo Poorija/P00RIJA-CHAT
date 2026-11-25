@@ -276,7 +276,7 @@ async function renderFileManager() {
   cards.forEach((card) => {
     // A lock can close while the IndexedDB reads above are in flight.
     if (!vaultLockState().unlocked) {
-      card.classList.add('hidden'); card.innerHTML = ''; return;
+      card.classList.add('hidden'); card.replaceChildren(); return;
     }
     card.innerHTML = markup;
   });
@@ -3118,6 +3118,8 @@ chatAutoConnect: ['اتصال خودکار روشن است', 'Auto connect is on
 chatAllowVideo: ['تماس تصویری فعال است', 'Video calls are on', 'تماس تصویری غیرفعال است', 'Video calls are off'],
 chatAutoDiscovery: ['دیسکاوری محلی فعال است', 'Local discovery is on', 'دیسکاوری محلی غیرفعال است', 'Local discovery is off'],
 chatShowSuspensionCountdown: ['شمارش معکوس تعلیق روشن است', 'Suspension countdown is on', 'شمارش معکوس تعلیق خاموش است', 'Suspension countdown is off'],
+chatNoticeShowSender: ['نام فرستنده در اعلان نشان داده می‌شود', 'The sender\'s name is shown in notifications', 'اعلان نام فرستنده را نشان نمی‌دهد', 'Notifications do not show the sender\'s name'],
+chatNoticeShowPreview: ['متن یا نوع پیام در اعلان نشان داده می‌شود', 'The message or its kind is shown in notifications', 'اعلان هیچ محتوایی ندارد', 'Notifications carry no content'],
 chatSendReceipts: ['رسید خواندن فرستاده می‌شود', 'Read receipts are sent', 'رسید خواندن فرستاده نمی‌شود — طرف مقابل تیک دوم را نمی‌بیند', 'Read receipts are not sent — the other side does not see the second tick'],
 chatPublicStun: ['STUN عمومی روشن است — آی‌پی شما به گوگل/توییلیو دیده می‌شود', 'Public STUN is on — Google/Twilio see your address', 'فقط رله و TURN خودتان استفاده می‌شود', 'Only your own relay and TURN are used'],
 /* The master switch and the cross-relay switch were missing from this list,

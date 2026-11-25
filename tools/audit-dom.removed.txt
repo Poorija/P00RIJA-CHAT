@@ -49,3 +49,7 @@ sssThreshold
 sssTotal
 textAlgorithm
 textDecAlgorithm
+tabbarWideToggle
+tabbarWideRow
+tabbarEdgeToggle
+tabbarEdgeRow

@@ -205,7 +205,7 @@ try {
   /* on: the keys go to the contact, sealed */
   await flip(BARAN, 'chatNoticeShowSender', true);
   await flip(BARAN, 'chatNoticeShowPreview', true);
-  const given = await waitFor(ARIA, (who) => { const peer = findPeerByAnyKey(who); return Boolean(peer?.noticeKeys?.s && peer?.noticeKeys?.p); }, { arg: fp.BARAN, timeoutMs: 60000 });
+  const given = await waitFor(ARIA, (who) => { const peer = findPeerByAnyKey(who); const list = noticeDevicesOf(peer); return list.length > 0 && Boolean(list[0].s && list[0].p); }, { arg: fp.BARAN, timeoutMs: 60000 });
   check('turned on, the contact is handed the two keys', given === true);
   const mine = await BARAN.evaluate((who) => chatState.prefs.noticeKeys?.per?.[who] || null, fp.ARIA);
   check('the keys are this contact\'s own, kept per contact', Boolean(mine?.s && mine?.p) && mine.s !== mine.p, JSON.stringify(Object.keys((await BARAN.evaluate(() => chatState.prefs.noticeKeys?.per)) || {})));
@@ -261,6 +261,67 @@ try {
   const boxAfter = (mailbox(fp.BARAN) || []).filter((item) => JSON.stringify(item).includes('"hint"'));
   const latest = (mailbox(fp.BARAN) || []).slice(-1)[0];
   check('and the next message carries no hint', Boolean(latest) && !latest.payload?.hint, `${boxAfter.length} with a hint in the box, latest ${latest?.payload?.hint ? 'has one' : 'has none'}`);
+
+  /* ---- the keys are never sent in the clear, and a bare one is not believed ---- */
+  console.log('\n===== a key travels only protected, and is believed only so =====');
+  await back(BARAN);
+  await flip(BARAN, 'chatNoticeShowSender', true);
+  await flip(BARAN, 'chatNoticeShowPreview', true);
+  await waitFor(ARIA, (who) => noticeDevicesOf(findPeerByAnyKey(who)).length > 0, { arg: fp.BARAN, timeoutMs: 60000 });
+  await ARIA.evaluate((who) => { const peer = findPeerByAnyKey(who); const k = 'A'.repeat(43) + '='; return handleNoticeKeyMessage(chatState.sessions.get(peer.peerId) || { peerId: peer.peerId, remoteFingerprint: peer.fingerprint }, { d: 'dev-x', s: k, p: k }); }, fp.BARAN).catch(() => {});
+  const bare = await ARIA.evaluate(async (who) => {
+    const peer = findPeerByAnyKey(who);
+    const before = JSON.stringify(peer.noticeKeys || null);
+    const session = chatState.sessions.get(peer.peerId) || { peerId: peer.peerId, remoteFingerprint: peer.fingerprint };
+    const k = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
+    session.viaSealedBody = false;
+    await handleSessionMessage(session, { type: 'notice-key', v: 3, d: 'evil', s: k, p: k });
+    return { same: JSON.stringify(findPeerByAnyKey(who).noticeKeys || null) === before, devices: Object.keys(findPeerByAnyKey(who).noticeKeys?.devices || {}) };
+  }, fp.BARAN);
+  check('a notice-key with no protection is not believed', bare.same === true && !bare.devices.includes('evil'), JSON.stringify(bare));
+
+  const sealedOnly = await BARAN.evaluate(async (who) => {
+    const peer = findPeerByAnyKey(who);
+    peer.prekeyExpiresAt = new Date(Date.now() - 3600 * 1000).toISOString();
+    const session = chatState.sessions.get(peer.peerId);
+    if (session) session.connection = null;
+    const k = btoa(String.fromCharCode(...new Uint8Array(32).fill(9)));
+    const sent = await sendNoticeKeyToPeer(peer, { s: k, p: k });
+    delete peer.prekeyExpiresAt;
+    return sent;
+  }, fp.ARIA);
+  check('with no way to seal it (the prekey past its window) the key is not sent at all', sealedOnly === false, String(sealedOnly));
+  await cut(BARAN);
+  const unsealed = (mailbox(fp.ARIA) || []).some((item) => JSON.stringify(item).includes('notice-key'));
+  check('and nothing of it is in the relay\'s mailbox, in the clear or otherwise readable', unsealed === false);
+  await back(BARAN);
+
+  /* a second device of the same contact does not overwrite the first */
+  const devices = await ARIA.evaluate(async (who) => {
+    const peer = findPeerByAnyKey(who);
+    const session = chatState.sessions.get(peer.peerId) || { peerId: peer.peerId, remoteFingerprint: peer.fingerprint };
+    const key = (n) => btoa(String.fromCharCode(...new Uint8Array(32).fill(n)));
+    session.viaSealedBody = true;
+    await handleSessionMessage(session, { type: 'notice-key', v: 3, d: 'phone', s: key(11), p: key(12) });
+    await handleSessionMessage(session, { type: 'notice-key', v: 3, d: 'tablet', s: key(13), p: key(14) });
+    session.viaSealedBody = false;
+    return Object.keys(findPeerByAnyKey(who).noticeKeys?.devices || {});
+  }, fp.BARAN);
+  check('a second device of a contact adds its keys and does not replace the first\'s', devices.includes('phone') && devices.includes('tablet') && devices.length >= 2, JSON.stringify(devices));
+
+  /* a withdrawal that cannot be delivered yet is kept, and delivered when it can */
+  const realSend = await BARAN.evaluate(() => { window.__realSend = sendNoticeKeyToPeer; window.__sendTries = 0; window.sendNoticeKeyToPeer = async () => { window.__sendTries += 1; return false; }; return true; });
+  void realSend;
+  await flip(BARAN, 'chatNoticeShowSender', false);
+  await flip(BARAN, 'chatNoticeShowPreview', false);
+  await BARAN.waitForTimeout(1500);
+  const owed = await BARAN.evaluate((who) => chatState.prefs.noticeGivenTo?.[who] || null, fp.ARIA);
+  check('a withdrawal that could not be sent is kept as owed, not forgotten', owed === 'REVOKE', String(owed));
+  await BARAN.evaluate(() => giveNoticeKeysToContacts());
+  check('and it is tried again, still owed while it fails', await BARAN.evaluate((who) => chatState.prefs.noticeGivenTo?.[who] === 'REVOKE' && window.__sendTries >= 2, fp.ARIA));
+  await BARAN.evaluate(() => { window.sendNoticeKeyToPeer = async () => true; return giveNoticeKeysToContacts(); });
+  check('and once the contact can be reached it is sent, and no longer owed', await BARAN.evaluate((who) => !chatState.prefs.noticeGivenTo?.[who], fp.ARIA));
+  await BARAN.evaluate(() => { window.sendNoticeKeyToPeer = window.__realSend; });
 
   const failed = results.filter((ok) => !ok).length;
   console.log(`\n===== ${failed} failed of ${results.length} =====`);

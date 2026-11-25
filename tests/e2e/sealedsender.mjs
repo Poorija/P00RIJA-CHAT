@@ -161,7 +161,9 @@ try {
   const countBefore = mailboxOf(fpBita).length;
   await ARASH.evaluate((fp) => relaySessionEvent(findPeerByAnyKey(fp), { type: 'receipt', messageId: 'msg-x', status: 'seen', createdAt: new Date().toISOString() }), fpBita);
   await sleep(3000);
-  check('the relay refuses to store it', mailboxOf(fpBita).length === countBefore, `${countBefore} → ${mailboxOf(fpBita).length}`);
+  /* A receipt for somebody away is kept, for two days and without waking them (2.16.4,
+     eph 2): it is stored like any envelope, and sealed, so the relay learns nothing from it. */
+  check('the relay keeps it for them, as a receipt is kept (2.16.4)', mailboxOf(fpBita).length === countBefore + 1, `${countBefore} → ${mailboxOf(fpBita).length}`);
   await comeBack(BITA);
   await sleep(4000);
 

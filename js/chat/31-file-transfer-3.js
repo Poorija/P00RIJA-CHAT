@@ -947,7 +947,7 @@ modal.innerHTML = `
 <div class="chat-incoming-hero">
 <div class="chat-incoming-rings"><span></span><span></span><span></span></div>
 <div class="chat-incoming-call-avatar-hero">
-${avatarData ? `<img src="${avatarData}" alt="">` : `<span>${initials(name)}</span>`}
+${avatarData ? `<img src="${avatarData}" alt="">` : `<span>${app().escapeHTML(initials(name))}</span>`}
 </div>
 </div>
 <div class="chat-incoming-copy">
@@ -1393,6 +1393,12 @@ if (chatState.iceRecoveryTimer) {
 clearTimeout(chatState.iceRecoveryTimer);
 chatState.iceRecoveryTimer = null;
 }
+/* The nine-second watch for a path that never comes up goes with it, whichever
+   way the call ended or moved on. */
+if (chatState.iceStallTimer) {
+clearTimeout(chatState.iceStallTimer);
+chatState.iceStallTimer = null;
+}
 }
 function setCallStatusText(text) {
 const el = document.getElementById('chatFloatingCallStatus');
@@ -1501,17 +1507,11 @@ pc.addEventListener('iceconnectionstatechange', () => {
 const state = pc.iceConnectionState;
 if (['connected', 'completed'].includes(state)) {
 clearIceRecoveryTimer();
+clearTimeout(chatState.iceStallTimer);
+chatState.iceStallTimer = null;
 chatState.iceRestartAttempt = 0;
 setCallStatusText(t('اتصال امن برقرار است', 'Secure call is active'));
 return;
-/* A call whose media path never comes up: the stream event has already put
-   "connected" on screen, the picture stays black and the person closes the app
-   and tries again. ICE that is still at new or checking after nine seconds is
-   restarted once, by the caller, the same way a path that fails is. */
-window.setTimeout(() => {
-  if (!chatState.currentCall || chatState.currentCall.peerConnection !== pc) return;
-  if (['new', 'checking'].includes(pc.iceConnectionState)) attemptCallRecovery(pc, 'stalled');
-}, 9000);
 }
 if (state === 'disconnected') {
 // ICE recovers from this on its own most of the time, so give it a
@@ -1533,9 +1533,23 @@ return;
 }
 if (state === 'closed') {
 clearIceRecoveryTimer();
+clearTimeout(chatState.iceStallTimer);
+chatState.iceStallTimer = null;
 endCurrentCall({ closePeer: false });
 }
 });
+/* A call whose media path never comes up: the stream event has already put
+   "connected" on screen, the picture stays black and the person closes the app
+   and tries again. ICE that is still at new or checking after nine seconds is
+   restarted once, by the caller, the same way a path that fails is. This sat
+   after a return inside the listener and never ran; it is armed once, here,
+   and put away by connected, completed and closed. */
+clearTimeout(chatState.iceStallTimer);
+chatState.iceStallTimer = window.setTimeout(() => {
+  chatState.iceStallTimer = null;
+  if (!chatState.currentCall || chatState.currentCall.peerConnection !== pc) return;
+  if (['new', 'checking'].includes(pc.iceConnectionState)) attemptCallRecovery(pc, 'stalled');
+}, 9000);
 }
 /* Which video codec this device can actually afford.
  *
