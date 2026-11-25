@@ -97,10 +97,18 @@ await B.page.waitForTimeout(5000);
    quoting itself in the list. */
 const arrived = await B.page.evaluate(()=>Object.values(chatState.history).flat().some((e)=>e.text==='live and forward secret'));
 check('the message arrives', arrived === true, String(arrived));
-const [keysA, keysB] = await Promise.all([
-  A.page.evaluate(()=>window.__keyFingerprints()),
-  B.page.evaluate(()=>window.__keyFingerprints()),
-]);
+/* The two ends are read until they agree, for a few seconds: a message can arrive by the relay a moment before
+   the last confirmation of the exchange has settled on both sides, and a one-shot read then saw the key
+   mid-change (one failure in about seven runs, on a slow runner). Two ends that never agree still fail. */
+let keysA; let keysB;
+for (let attempt = 0; attempt < 12; attempt += 1) {
+  [keysA, keysB] = await Promise.all([
+    A.page.evaluate(()=>window.__keyFingerprints()),
+    B.page.evaluate(()=>window.__keyFingerprints()),
+  ]);
+  if (keysA[0]?.key && keysA[0].key === keysB[0]?.key) break;
+  await A.page.waitForTimeout(1000);
+}
 console.log('  A ' + JSON.stringify(keysA) + '\n  B ' + JSON.stringify(keysB));
 check('both ends hold the same derived key, from one exchange each',
   keysA[0]?.key && keysA[0].key === keysB[0]?.key, `${keysA[0]?.key} vs ${keysB[0]?.key}`);

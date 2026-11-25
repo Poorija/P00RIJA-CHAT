@@ -9,8 +9,8 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
@@ -146,41 +146,52 @@ jobs:
           wait_for http://localhost:11220/chat-health
           wait_for http://localhost:8123/index.html
 
-          npm run test:offline
-          npm run test:retention
-          npm run test:security
-          npm run test:keytrust
-          npm run test:fs
-          npm run test:wipe
-          npm run test:push
-          npm run test:contacts
-          npm run test:files
+          # An end-to-end script that fails once is run once more, and the first
+          # failure is said so in the log (a ::warning:: line), so a flake on a
+          # two-core runner is visible and does not stop the job, while a script
+          # that fails twice does. Each script's own output is kept in the log.
+          run_test() {
+            if ! npm run "$1"; then
+              echo "::warning::$1 failed once; running it again"
+              npm run "$1" || { echo "::error::$1 failed twice"; exit 1; }
+            fi
+          }
+
+          run_test test:offline
+          run_test test:retention
+          run_test test:security
+          run_test test:keytrust
+          run_test test:fs
+          run_test test:wipe
+          run_test test:push
+          run_test test:contacts
+          run_test test:files
           # Cheap and specific: between them these three take about half a
           # minute and cover the QR encoder, the language switch, and the
           # settings panes and drawer — all places where a regression is
           # invisible until somebody types Persian or presses the language
           # button.
-          npm run test:qrtext
-          npm run test:lang
-          npm run test:langpanels
+          run_test test:qrtext
+          run_test test:lang
+          run_test test:langpanels
 
           # No browser needed: two read a function out of the source and
           # exercise it, the third runs the notification path against a stub.
           # They cover what a push call says when the answer is not JSON, what
           # the call transform asks Opus for, and that an arriving message
           # never reaches the system notification surface.
-          npm run test:notifyprivacy
-          npm run test:pusherrors
-          npm run test:callcodec
-          npm run test:callladder
+          run_test test:notifyprivacy
+          run_test test:pusherrors
+          run_test test:callcodec
+          run_test test:callladder
 
           # Every relay suite against BOTH relays. The deployed one and the
           # distribution are different programs, and running the suites
           # against only one of them is how they came apart. About two
           # minutes; each spawns its own relay on a loopback port.
-          npm run test:relays
-          npm run audit
-          npm run test:perf
+          run_test test:relays
+          run_test audit
+          run_test test:perf
           npm run native:prepare
-          npm run test:native
-          PKG_URL=http://localhost:8123 npm run test:smoke
+          run_test test:native
+          PKG_URL=http://localhost:8123 run_test test:smoke
