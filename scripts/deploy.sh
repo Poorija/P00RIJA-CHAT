@@ -96,10 +96,16 @@ Options
   --dry-run       Show what rsync would copy. Changes nothing.
   --skip-bump     Skip the version bump on the server; for a change that
                   touched only the server config.
-  --prebuilt      Build every image once, here, for linux/amd64, and have each
-                  server pull them (only the layers it lacks) through an SSH
-                  tunnel from a registry on 127.0.0.1 here: every server runs
-                  the same images, and none has to reach npm or Docker Hub.
+  --prebuilt      (the default since 2.20.1) Build every image once, here, for
+                  linux/amd64, and have each server pull them (only the layers
+                  it lacks) through an SSH tunnel from a registry on 127.0.0.1
+                  here: every server runs the same images, and none has to reach
+                  npm or Docker Hub. The web root is built here too (minified,
+                  tools/build-web.mjs), inside the image's first stage.
+  --build-on-server
+                  The old way: each server builds its own images from the tree.
+                  The app image now needs the npm registry for that, which a
+                  server may not have; use it only where it does.
                   <NAME>_JUMP='<other server>' in the settings sends a slow
                   server's connections through a faster one.
   --reconfigure   Ask for the server details again and overwrite the saved ones.
@@ -130,7 +136,7 @@ USAGE
 
 MODE="deploy"
 SKIP_BUMP=""
-PREBUILT=""
+PREBUILT="--prebuilt"
 WANT_RECONFIGURE=0
 FIRST_DOMAIN="" FIRST_EMAIL="" FIRST_CERT="" FIRST_CERT_DIR="" FIRST_YES=0
 ONLY_SERVER=""
@@ -144,6 +150,7 @@ while [ $# -gt 0 ]; do
         --dry-run) MODE="dry-run" ;;
         --skip-bump) SKIP_BUMP="--skip-bump" ;;
         --prebuilt) PREBUILT="--prebuilt" ;;
+        --build-on-server) PREBUILT="" ;;
         --reconfigure|--configure) WANT_RECONFIGURE=1 ;;
         --server)
             ONLY_SERVER="${2:-}"
@@ -626,51 +633,76 @@ live_check() {
         return 2
     fi
 
+    # Which layout is being served: a built web root (the page names files under
+    # build/, named by the hash of their content) or the source tree's own.
+    local page built
+    page="$(curl -sk --retry 1 --retry-delay 1 --max-time 30 "$PUBLIC_URL/index.html")"
+    built="$(printf '%s' "$page" | grep -oE 'build/crypto-[0-9a-f]{12}\.js' | head -1)"
+    if [ -n "$built" ]; then
+        # Every script the page names must answer, the worker as well, and the
+        # module bundle must hold the chat (a stale layer would not).
+        local src code total=0 ok_n=0 bundle
+        while IFS= read -r src; do
+            [ -n "$src" ] || continue
+            total=$((total + 1))
+            code="$(curl -sk --retry 1 --retry-delay 1 --max-time 60 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/$src")"
+            if [ "$code" = "200" ]; then ok_n=$((ok_n + 1)); else printf "  %-34s %s\n" "$src" "$code"; fi
+        done < <(printf '%s' "$page" | grep -oE 'src="[^"?]+\.js' | sed 's/^src="//')
+        code="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/sw.js")"
+        printf "  %-34s %s/%s (sw.js %s)\n" "built scripts served" "$ok_n" "$total" "$code"
+        [ "$ok_n" = "$total" ] && [ "$total" -gt 0 ] && [ "$code" = "200" ] || status=1
+        bundle="$(curl -sk --retry 1 --retry-delay 1 --max-time 120 "$PUBLIC_URL/$built")"
+        sealing="$(printf '%s' "$bundle" | grep -c 'sealSessionKeyFor')"
+        printf "  %-34s %s\n" "offline sealing present" "$sealing"
+        [ "${sealing:-0}" -gt 0 ] || status=1
+    else
     dialogs="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/dialogs.js")"
-    printf "  %-34s %s\n" "js/dialogs.js" "$dialogs"
-    [ "$dialogs" = "200" ] || status=1
-
-    # js/chat.js was split into js/chat/NN-*.js. Checking one part would prove
-    # very little, so this checks that every part the tree expects is actually
-    # being served — a partial upload of an ordered script set produces a page
-    # that loads without error and is missing whole features.
-    local want got missing
-    want="$(ls js/chat/*.js 2>/dev/null | wc -l | tr -d ' ')"
-    got=0; missing=""; retried=""
-    for part in js/chat/*.js; do
-        [ -e "$part" ] || continue
-        code="$(curl -sk --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/$part")"
-        # No answer at all (000) is the network, not the file: one retry tells
-        # a dropped connection from a part that is not there, and the retry is
-        # reported, so a flaky link still shows.
-        if [ "$code" = "000" ]; then
+        printf "  %-34s %s\n" "js/dialogs.js" "$dialogs"
+        [ "$dialogs" = "200" ] || status=1
+    
+        # js/chat.js was split into js/chat/NN-*.js. Checking one part would prove
+        # very little, so this checks that every part the tree expects is actually
+        # being served — a partial upload of an ordered script set produces a page
+        # that loads without error and is missing whole features.
+        local want got missing
+        want="$(ls js/chat/*.js 2>/dev/null | wc -l | tr -d ' ')"
+        got=0; missing=""; retried=""
+        for part in js/chat/*.js; do
+            [ -e "$part" ] || continue
             code="$(curl -sk --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/$part")"
-            retried="$retried $(basename "$part")"
-        fi
-        if [ "$code" = "200" ]; then
-            got=$((got + 1))
-        else
-            missing="$missing $(basename "$part")"
-        fi
-    done
-    printf "  %-34s %s\n" "chat parts served" "$got/$want"
-    [ -n "$missing" ] && printf "  %-34s %s\n" "missing" "$missing"
-    [ -n "$retried" ] && printf "  %-34s %s\n" "answered on a second try" "$retried"
-    [ "$got" = "$want" ] && [ "$want" -gt 0 ] || status=1
-
-    sealing="$(curl -sk --retry 1 --retry-delay 1 --max-time 40 "$PUBLIC_URL/js/chat/28-offline-envelopes.js" | grep -c 'sealSessionKeyFor')"
-    printf "  %-34s %s\n" "offline sealing present" "$sealing"
-    [ "${sealing:-0}" -gt 0 ] || status=1
-
-    # Each is a distinct file, so a partial copy shows up here instead of at a
-    # user's lock screen.
-    local vault stego core link
-    vault="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/vault-profiles.js")"
-    stego="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/stego.js")"
-    core="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/crypto-core.js")"
-    link="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/local-link.js")"
-    printf "  %-34s %s %s %s %s\n" "vault / stego / core / link" "$vault" "$stego" "$core" "$link"
-    [ "$vault" = "200" ] && [ "$stego" = "200" ] && [ "$core" = "200" ] && [ "$link" = "200" ] || status=1
+            # No answer at all (000) is the network, not the file: one retry tells
+            # a dropped connection from a part that is not there, and the retry is
+            # reported, so a flaky link still shows.
+            if [ "$code" = "000" ]; then
+                code="$(curl -sk --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/$part")"
+                retried="$retried $(basename "$part")"
+            fi
+            if [ "$code" = "200" ]; then
+                got=$((got + 1))
+            else
+                missing="$missing $(basename "$part")"
+            fi
+        done
+        printf "  %-34s %s\n" "chat parts served" "$got/$want"
+        [ -n "$missing" ] && printf "  %-34s %s\n" "missing" "$missing"
+        [ -n "$retried" ] && printf "  %-34s %s\n" "answered on a second try" "$retried"
+        [ "$got" = "$want" ] && [ "$want" -gt 0 ] || status=1
+    
+        sealing="$(curl -sk --retry 1 --retry-delay 1 --max-time 40 "$PUBLIC_URL/js/chat/28-offline-envelopes.js" | grep -c 'sealSessionKeyFor')"
+        printf "  %-34s %s\n" "offline sealing present" "$sealing"
+        [ "${sealing:-0}" -gt 0 ] || status=1
+    
+        # Each is a distinct file, so a partial copy shows up here instead of at a
+        # user's lock screen.
+        local vault stego core link
+        vault="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/vault-profiles.js")"
+        stego="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/stego.js")"
+        core="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/crypto-core.js")"
+        link="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/local-link.js")"
+        printf "  %-34s %s %s %s %s\n" "vault / stego / core / link" "$vault" "$stego" "$core" "$link"
+        [ "$vault" = "200" ] && [ "$stego" = "200" ] && [ "$core" = "200" ] && [ "$link" = "200" ] || status=1
+    
+fi
 
     # The offline pane is the one feature meant to keep working when this very
     # server is unreachable, so a deploy that silently dropped it would only be
@@ -757,7 +789,19 @@ live_check() {
     # The carrier flow's own file, which is the one thing a shutdown makes the
     # difference between a working app and a useless one.
     local carrier
-    carrier="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/chat/38-carrier.js")"
+    # Built web root: the chat is inside the module bundle, so the file to ask for
+    # is the one the page itself names; the source layout still has its own part.
+    local page bundle
+    page="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 "$PUBLIC_URL/index.html")"
+    bundle="$(printf '%s' "$page" | grep -oE 'build/crypto-[0-9a-f]{12}\.js' | head -1)"
+    if [ -n "$bundle" ]; then
+        carrier="$(curl -sk --retry 1 --retry-delay 1 --max-time 60 -o /tmp/poorija-bundle.$$ -w '%{http_code}' "$PUBLIC_URL/$bundle")"
+        # The carrier flow lives in that bundle; a stale layer would not have it.
+        grep -q 'carrier' /tmp/poorija-bundle.$$ 2>/dev/null || carrier="200 but no carrier flow in it"
+        rm -f /tmp/poorija-bundle.$$
+    else
+        carrier="$(curl -sk --retry 1 --retry-delay 1 --max-time 20 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/js/chat/38-carrier.js")"
+    fi
     printf "  %-34s %s\n" "carrier flow served" "$carrier"
     [ "$carrier" = "200" ] || status=1
 

@@ -7,11 +7,11 @@
 **End-to-end encrypted chat, voice & video calls and groups — through a server you run yourself.**<br>
 **چت رمزنگاری‌شدهٔ سرتاسری، تماس صوتی و تصویری و گروه — از راه سروری که خودتان اجرا می‌کنید.**
 
-![version](https://img.shields.io/badge/version-2.20.0-0a84ff?style=for-the-badge) ![license](https://img.shields.io/badge/license-AGPL--3.0-34c759?style=for-the-badge) ![post-quantum](https://img.shields.io/badge/key%20exchange-ECDH%20%2B%20ML--KEM--768-af52de?style=for-the-badge) ![platforms](https://img.shields.io/badge/PWA%20·%20macOS%20·%20Windows%20·%20Linux%20·%20Android-ff9500?style=for-the-badge)
+![version](https://img.shields.io/badge/version-2.20.2-0a84ff?style=for-the-badge) ![license](https://img.shields.io/badge/license-AGPL--3.0-34c759?style=for-the-badge) ![post-quantum](https://img.shields.io/badge/key%20exchange-ECDH%20%2B%20ML--KEM--768-af52de?style=for-the-badge) ![platforms](https://img.shields.io/badge/PWA%20·%20macOS%20·%20Windows%20·%20Linux%20·%20Android-ff9500?style=for-the-badge)
 
 [**English**](#-english) · [**فارسی**](#-فارسی) · [Install](#install-the-server) · [Native apps](#native-apps) · [Release notes](RELEASE-NOTES.md) · [Support](#support-the-project--حمایت-از-پروژه)
 
-Version 2.20.0 · build chat-v37 · AGPL-3.0-only
+Version 2.20.2 · build chat-v39 · AGPL-3.0-only
 
 <img src="docs/screenshots/chats-light.png" alt="Chats" width="19%"> <img src="docs/screenshots/thread-light.png" alt="A conversation" width="19%"> <img src="docs/screenshots/thread-dark.png" alt="A conversation, dark" width="19%"> <img src="docs/screenshots/calls-dark.png" alt="Calls" width="19%"> <img src="docs/screenshots/settings-dark.png" alt="Settings" width="19%">
 
@@ -146,7 +146,7 @@ password is kept (`.env`, mode 600).
 | `--password TEXT` | the dashboard password, 12+ characters (generated otherwise) |
 | `--peers "<id>@<origin>,…"` | relays this one carries for ([docs/RELAY-NETWORK.md](docs/RELAY-NETWORK.md)) |
 | `--dir DIR` | install folder (`/opt/p00rija-chat` as root) |
-| `--version v2.20.0` · `--branch NAME` | a release or a branch instead of `main` |
+| `--version v2.20.2` · `--branch NAME` | a release or a branch instead of `main` |
 | `--lang fa\|en` · `--no-start` · `--yes` | language · configure only · never ask |
 
 Other ways to install: the Docker images ([docker/README.dockerhub.md](docker/README.dockerhub.md),
@@ -353,7 +353,7 @@ sudo bash install.sh
 | `--password TEXT` | رمز داشبورد، حداقل ۱۲ نویسه (وگرنه ساخته می‌شود) |
 | `--peers "<id>@<origin>,…"` | رله‌هایی که این یکی برایشان پیام می‌رساند ([docs/RELAY-NETWORK.md](docs/RELAY-NETWORK.md)) |
 | `--dir DIR` | پوشهٔ نصب (برای root: `/opt/p00rija-chat`) |
-| `--version v2.20.0` · `--branch NAME` | یک انتشار یا شاخه به‌جای `main` |
+| `--version v2.20.2` · `--branch NAME` | یک انتشار یا شاخه به‌جای `main` |
 | `--lang fa\|en` · `--no-start` · `--yes` | زبان · فقط تنظیم، بدون راه‌اندازی · هیچ‌چیز نپرس |
 
 راه‌های دیگر: ایمیج‌های Docker ([docker/README.dockerhub.md](docker/README.dockerhub.md)، `scripts/docker-install.sh`)، یا دستی ([INSTALL-LINUX-SERVER.md](INSTALL-LINUX-SERVER.md)).

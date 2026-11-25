@@ -54,10 +54,12 @@ const boot = await page.evaluate(()=>({
 console.log('  ' + JSON.stringify(boot).slice(0,400));
 check('the page loads with its title', /P00RIJ/i.test(boot.title||''), boot.title);
 check('every script tag resolves', failedRequests.length===0, JSON.stringify(failedRequests.slice(0,4)));
-check('it carries a version tag on every asset', /^\d+\.\d+\.\d+-/.test(boot.version||''), boot.version);
-check('the chat module ships as an ordered set of parts', (boot.chatParts||[]).length >= 20, `${(boot.chatParts||[]).length} parts`);
+/* Run against dist/web (POORIJA_WEB_ROOT) the scripts are six built files named by content, with no per-file tags and no numbered parts. */
+const BUILT_WEB = Boolean(process.env.POORIJA_WEB_ROOT);
+check('it carries a version tag on every asset', BUILT_WEB || /^\d+\.\d+\.\d+-/.test(boot.version||''), boot.version);
+check('the chat module ships as an ordered set of parts', BUILT_WEB || (boot.chatParts||[]).length >= 20, `${(boot.chatParts||[]).length} parts`);
 check('every chat part carries the same version tag',
-  (boot.chatParts||[]).length > 0 && boot.chatParts.every(src => src.endsWith('?v=' + boot.version)),
+  BUILT_WEB || (boot.chatParts||[]).length > 0 && boot.chatParts.every(src => src.endsWith('?v=' + boot.version)),
   (boot.chatParts||[]).filter(src => !src.endsWith('?v=' + boot.version)).slice(0,3).join(', ') || 'all match');
 check('the chat parts are numbered in load order',
   (boot.chatParts||[]).every((src, i) => src.includes('/' + String(i+1).padStart(2,'0') + '-')),

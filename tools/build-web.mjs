@@ -32,6 +32,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
+import { transform } from 'esbuild';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = process.env.POORIJA_WEB_OUT ? path.resolve(process.env.POORIJA_WEB_OUT) : path.join(ROOT, 'dist', 'web');
@@ -103,8 +104,18 @@ for (const group of groups.filter((g) => g.kind !== 'module')) {
     group.out = group.members[0].src;
     continue;
   }
-  const parts = group.members.map((tag) => `\n/* ---- ${tag.src} ---- */\n${fs.readFileSync(path.join(ROOT, tag.src), 'utf8')}\n`);
-  const code = parts.join('');
+  /* Each file is minified on its own and then joined, so one file's last statement
+     cannot run into the next one's first. Whitespace and syntax only: these are
+     classic scripts that share one global scope, and a top-level name (a function
+     the markup or another file calls) must stay what it is called — renaming
+     identifiers is for modules, and the module bundle has it. */
+  const pieces = [];
+  for (const tag of group.members) {
+    const source = fs.readFileSync(path.join(ROOT, tag.src), 'utf8');
+    const small = await transform(source, { loader: 'js', minifyWhitespace: true, minifySyntax: true, minifyIdentifiers: false, legalComments: 'none', charset: 'utf8', target: 'es2022' });
+    pieces.push(`/* ${tag.src} */\n${small.code.trim()}\n;\n`);
+  }
+  const code = pieces.join('');
   const name = `${group.kind === 'defer' ? 'app' : 'boot'}-${hash(code)}.js`;
   fs.writeFileSync(path.join(OUT, 'build', name), code);
   group.out = `build/${name}`;
@@ -144,7 +155,11 @@ const listStart = sw.indexOf('const CORE_ASSETS = [');
 const listEnd = sw.indexOf('];', listStart);
 if (listStart < 0 || listEnd < 0) throw new Error('sw.js has no CORE_ASSETS list');
 const built = groups.map((g) => `  './${g.out}',`).filter((line, i, all) => all.indexOf(line) === i);
-sw = sw.slice(0, listEnd) + built.join('\n') + '\n' + sw.slice(listEnd);
+/* The entry before the insertion point may be the list's last and carry no comma
+   (it did not, and the worker the build wrote was a syntax error: it could never
+   register, so a server serving this build would have had no offline use at all). */
+const head = sw.slice(0, listEnd).replace(/([^,\s])\s*$/, '$1,\n');
+sw = head + built.join('\n') + '\n' + sw.slice(listEnd);
 /* Every list in the worker names source scripts one by one; in the build they
    are in the bundles. */
 sw = sw.split('\n').filter((line) => {

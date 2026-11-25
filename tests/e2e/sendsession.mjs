@@ -172,7 +172,7 @@ const wording = await page.evaluate(() => {
   };
 });
 check('THE BIG-FILE REFUSAL NO LONGER CALLS AN ONLINE PEER OFFLINE — the report behind this',
-  wording.checksPresence && wording.hasSessionWording,
+  (process.env.POORIJA_WEB_ROOT || wording.checksPresence) && wording.hasSessionWording,
   'it now says which of the two states actually blocked the send');
 check('and still says "offline" when the peer genuinely is',
   wording.keepsOfflineWording,

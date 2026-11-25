@@ -144,7 +144,8 @@ const alive = await page.evaluate(() => ({
     .filter((n) => typeof window[n] !== 'function')
 }));
 check('every module loaded', alive.core && alive.vault && alive.stego, JSON.stringify(alive));
-check('every chat part loaded', alive.chatParts >= 20, `${alive.chatParts} parts`);
+/* Built, the parts are one bundle: the page names a module script, not sixty-nine. */
+check('every chat part loaded', process.env.POORIJA_WEB_ROOT ? alive.chatFns.length === 0 : alive.chatParts >= 20, `${alive.chatParts} parts`);
 check('the chat functions are there', alive.chatFns.length === 0, alive.chatFns.join(', '));
 
 /* Argon2 is WebAssembly. If 'wasm-unsafe-eval' were missing, the vault would

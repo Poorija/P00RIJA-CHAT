@@ -18,6 +18,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../', import.meta.url));
+/* POORIJA_WEB_ROOT=dist/web runs every suite against the built web root, which is what the servers' image serves. */
+const webRoot = process.env.POORIJA_WEB_ROOT ? path.resolve(process.env.POORIJA_WEB_ROOT) : root;
 const port = Number(process.env.E2E_PORT || 8241);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'poorija-e2e-'));
 const log = fs.openSync(path.join(dir, 'servers.log'), 'w');
@@ -44,8 +46,8 @@ const run = (file, args=[], overrides={}, output=log) => {
 const sockets = new Set();
 const proxy = http.createServer((req,res) => {
   const pathname = new URL(req.url,'http://localhost').pathname;
-  const candidate = path.join(root, pathname === '/' ? 'index.html' : pathname);
-  const isFile = candidate.startsWith(root) && fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+  const candidate = path.join(webRoot, pathname === '/' ? 'index.html' : pathname);
+  const isFile = candidate.startsWith(webRoot) && fs.existsSync(candidate) && fs.statSync(candidate).isFile();
   const upstream = http.request({hostname:'localhost',port:isFile?port+1:port+2,path:req.url,method:req.method,headers:req.headers},response=>{
     res.writeHead(response.statusCode,response.headers);response.pipe(res);
   });

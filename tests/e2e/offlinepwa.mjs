@@ -62,7 +62,12 @@ const paths = cached[cacheName] || [];
 console.log(`  cache "${cacheName}" holds ${paths.length} entries`);
 check('one cache only, no stale generations left behind', Object.keys(cached).length === 1, Object.keys(cached).join(', '));
 
-const wanted = ['/js/app.js', '/js/crypto-core.js', '/js/vault-profiles.js', '/js/stego.js',
+const BUILT_WEB = Boolean(process.env.POORIJA_WEB_ROOT); /* run against dist/web: the files are the build's, not the source tree's */
+/* Built, the scripts are the build's six files (names by content), found from the page's own tags. */
+const builtScripts = BUILT_WEB ? await page.evaluate(() => [...document.querySelectorAll('script[src]')].map((s) => new URL(s.src).pathname)) : [];
+const wanted = BUILT_WEB
+  ? [...builtScripts, '/css/styles.css', '/index.html', '/vendor/peerjs/peerjs.min.js']
+  : ['/js/app.js', '/js/crypto-core.js', '/js/vault-profiles.js', '/js/stego.js',
   '/js/metadata.js', '/js/voice-changer.js', '/js/help-content.js',
   '/js/dialogs.js', '/css/styles.css', '/index.html', '/vendor/peerjs/peerjs.min.js'];
 const absent = wanted.filter((w) => !paths.some((p) => p.endsWith(w)));
@@ -73,7 +78,8 @@ check('every module the app loads is in the cache', absent.length === 0, absent.
    every function defined in it while the rest of the app loads clean. Checking
    for one file, as this did, could not see that. */
 const chatParts = chatPartNames();
-const cachedParts = chatParts.filter((f) => paths.some((p) => p.endsWith('/js/chat/' + f)));
+/* Built, the parts are inside the module bundle, which is one of the scripts checked above. */
+const cachedParts = BUILT_WEB ? chatParts : chatParts.filter((f) => paths.some((p) => p.endsWith('/js/chat/' + f)));
 check('every one of the chat parts is cached',
   cachedParts.length === chatParts.length,
   `${cachedParts.length}/${chatParts.length} cached`);
@@ -115,11 +121,11 @@ check('nothing the app itself needs went to the network', appFailures.length ===
 
 console.log('\n===== back online: does a fix reach an installed PWA? =====');
 await ctx.setOffline(false);
-const shellPolicy = await page.evaluate(async () => {
+const shellPolicy = await page.evaluate(async (shellUrl) => {
   const started = performance.now();
-  const res = await fetch('./js/app.js', { cache: 'no-store' });
+  const res = await fetch(shellUrl, { cache: 'no-store' });
   return { ok: res.ok, ms: Math.round(performance.now() - started) };
-});
+}, BUILT_WEB ? builtScripts[0] : './js/app.js');
 console.log('  ' + JSON.stringify(shellPolicy));
 check('the shell is re-fetched when the network is back', shellPolicy.ok === true, JSON.stringify(shellPolicy));
 

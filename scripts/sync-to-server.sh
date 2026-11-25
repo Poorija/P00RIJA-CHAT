@@ -117,6 +117,31 @@ fi
 verify_assets() {
     local mismatched=0 checked=0
     docker ps --format '{{.Names}}' | grep -Fxq "$APP_CONTAINER" || { warn "$APP_CONTAINER is not running."; return 1; }
+    # The image serves the BUILT web root (tools/build-web.mjs), built once on the
+    # machine that deploys: its scripts are files named by the hash of their own
+    # content, which a source tree does not have. So there is nothing here to
+    # compare with the working tree; what is checked is that every built file is
+    # what its name says it is, that the page and the worker name only files that
+    # are there, and that the page carries this tree's release tag.
+    if docker exec "$APP_CONTAINER" test -d /usr/share/nginx/html/build 2>/dev/null; then
+        local bad=0 count=0 name want have html
+        html="$(docker exec "$APP_CONTAINER" cat /usr/share/nginx/html/index.html)"
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            count=$((count + 1))
+            want="$(printf '%s' "$name" | sed -E 's/^[a-z]+-([0-9a-f]{12})\.js$/\1/')"
+            have="$(docker exec "$APP_CONTAINER" sh -c "sha256sum '/usr/share/nginx/html/build/$name'" 2>/dev/null | cut -c1-12)"
+            if [ "$have" != "$want" ]; then
+                printf "  ${ERR}DIFF${NC}  build/%s (its content hashes to %s)\n" "$name" "$have"; bad=$((bad + 1))
+            fi
+            grep -Fq -- "build/$name" <<<"$html" || { printf "  ${ERR}UNNAMED${NC}  build/%s is not named by index.html\n" "$name"; bad=$((bad + 1)); }
+            docker exec "$APP_CONTAINER" grep -Fq "./build/$name" /usr/share/nginx/html/sw.js || { printf "  ${ERR}UNCACHED${NC}  build/%s is not in sw.js\n" "$name"; bad=$((bad + 1)); }
+        done < <(docker exec "$APP_CONTAINER" ls /usr/share/nginx/html/build)
+        grep -Fq -- "?v=$CURRENT_TAG" <<<"$html" || { printf "  ${ERR}TAG${NC}  index.html does not carry %s\n" "$CURRENT_TAG"; bad=$((bad + 1)); }
+        docker exec "$APP_CONTAINER" grep -Fq "$CURRENT_TAG" /usr/share/nginx/html/sw.js || { printf "  ${ERR}TAG${NC}  sw.js does not carry %s\n" "$CURRENT_TAG"; bad=$((bad + 1)); }
+        if [ "$bad" -eq 0 ]; then ok "the built web root is whole: $count script files, each named by its own hash, all in the page and the worker"; return 0; fi
+        fail "$bad problem(s) in the built web root"; return 1
+    fi
     while IFS= read -r f; do
         [ -f "$f" ] || continue
         checked=$((checked + 1))

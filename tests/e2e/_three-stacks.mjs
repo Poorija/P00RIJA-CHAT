@@ -33,6 +33,8 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+/* POORIJA_WEB_ROOT=dist/web runs the suite against the built web root. */
+const webRootOf = () => (process.env.POORIJA_WEB_ROOT ? path.resolve(process.env.POORIJA_WEB_ROOT) : root);
 const require = createRequire(import.meta.url);
 const ids = require(path.join(root, 'scripts', 'lib', 'relay-identity.js'));
 const dirlib = require(path.join(root, 'scripts', 'lib', 'relay-directory.js'));
@@ -71,8 +73,8 @@ function proxy(staticPort, relayPort, delay = { ms: 0 }) {
   let blocked = false;
   const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
-    const candidate = path.join(root, pathname === '/' ? 'index.html' : pathname);
-    const isFile = candidate.startsWith(root) && fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+    const candidate = path.join(webRootOf(), pathname === '/' ? 'index.html' : pathname);
+    const isFile = candidate.startsWith(webRootOf()) && fs.existsSync(candidate) && fs.statSync(candidate).isFile();
     /* A relay further away: every request to it waits this long first. */
     if (!isFile && delay.ms > 0 && !req.__delayed) {
       req.pause();

@@ -230,6 +230,9 @@ const HEAVY = /^(stress|relayscale|relaythroughput|perf|callreal|bigfile|sticker
 const SOLO = new Set(['prodready', 'stress', 'relayscale', 'relaythroughput', 'perf']);
 
 const dockerAvailable = (await runProcess('docker', ['version', '--format', '{{.Server.Version}}'], { timeoutSeconds: 20 })).code === 0;
+/* POORIJA_WEB_ROOT=dist/web runs the gate against the built web root (what the servers' image serves). The dashboard
+   page is not part of that image, so its suite has nothing to open there. */
+if (process.env.POORIJA_WEB_ROOT && !NOT_RUNNABLE.monitor) NOT_RUNNABLE.monitor = 'the relay dashboard page (monitor-client.html) is not in the built web root: the image does not serve it; the suite runs on the source tree';
 if (!dockerAvailable) for (const name of NEEDS_DOCKER) if (!NOT_RUNNABLE[name]) NOT_RUNNABLE[name] = 'docker is not available on this machine (or its engine is not running)';
 {
   const { chromium: _c, webkit, firefox } = await import('playwright');

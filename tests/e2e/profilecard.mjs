@@ -96,8 +96,15 @@ try {
     const here = day(undefined);
     return ['Pacific/Kiritimati', 'Pacific/Pago_Pago'].find((zone) => day(zone) !== here) || '';
   });
+  /* The second city of the two-city shape must be on THIS day, or it carries a day letter of its own and the
+     shape has two (Los Angeles is yesterday for the first hours of the day here, which this test found at midnight). */
+  const sameDay = await A.evaluate(() => {
+    const day = (zone) => new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const here = day(undefined);
+    return ['America/Los_Angeles', 'Europe/London', 'Asia/Tehran', 'Europe/Berlin', 'America/New_York', 'Asia/Dubai'].find((zone) => day(zone) === here) || 'Europe/London';
+  });
   /* The one-city shape is a city on another day, so the day letter is on show at every width whatever the hour (Tokyo was tomorrow only some of the day, and a tile that broke only then passed at lunch time). */
-  const shapes = [[], [{ tz: across, label: across.split('/')[1].replace('_', ' ') }], [{ tz: 'America/Los_Angeles', label: 'Los Angeles' }, { tz: across, label: across.split('/')[1].replace('_', ' ') }]];
+  const shapes = [[], [{ tz: across, label: across.split('/')[1].replace('_', ' ') }], [{ tz: sameDay, label: sameDay.split('/')[1].replace('_', ' ') }, { tz: across, label: across.split('/')[1].replace('_', ' ') }]];
   for (const width of [390, 360, 320]) {
     await A.setViewportSize({ width, height: 900 });
     for (const [index, cities] of shapes.entries()) {

@@ -112,7 +112,7 @@ try {
   check('every file of both packs arrives as itself, four at a time', answers.wrong.length === 0, `${answers.wrong.length} of ${answers.files} wrong: ${answers.wrong.slice(0, 8).join(', ')}`);
   const strays = answers.cached.filter((p) => p !== '/' && !/\.[a-z0-9]+$/i.test(p));
   check('nothing but the app\'s own files is in the worker\'s cache', strays.length === 0, strays.join(', '));
-  check('which still holds the app\'s files', ['/index.html', '/js/app.js', '/css/styles.css'].every((p) => answers.cached.includes(p)), `${answers.cached.length} entries`);
+  check('which still holds the app\'s files', (process.env.POORIJA_WEB_ROOT ? ['/index.html', '/css/styles.css'] : ['/index.html', '/js/app.js', '/css/styles.css']).every((p) => answers.cached.includes(p)) && (!process.env.POORIJA_WEB_ROOT || answers.cached.some((p) => p.startsWith('/build/'))), `${answers.cached.length} entries`);
 } catch (error) {
   check('the suite ran to the end', false, error?.stack || String(error));
 } finally {

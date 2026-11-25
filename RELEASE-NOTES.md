@@ -1,3 +1,59 @@
+# P00RIJA Chat 2.20.2
+
+Version 2.20.2 · build chat-v39
+
+The deployment's own verification, taught the built web root (2.20.1 deployed it and
+then reported failure, because it compared the served files with the source tree's).
+
+**Fixed**
+
+- `sync-to-server.sh` checks a built web root for what can be checked about one: every
+  script file is named by the hash of its content, every one is in the page and in the
+  worker, and both carry the release tag. `deploy.sh`'s check of what a server serves asks
+  for every script the page names (and the worker), and for the offline sealing and the
+  carrier flow inside the module bundle, instead of the source tree's files, which a
+  built root does not have.
+
+Nothing the app or the servers run changed.
+
+# P00RIJA Chat 2.20.1
+
+Version 2.20.1 · build chat-v38
+
+What the servers serve is now the **built** web root, built once on the machine that
+deploys. Servers and apps of 2.20.0 keep working with this one.
+
+**Changed**
+
+- **The app image serves a built, minified web root.** `config/Dockerfile` has a first
+  stage that runs `tools/build-web.mjs` (the page's hundred-odd scripts become six
+  files named by their content; the classic scripts are minified with esbuild, whitespace
+  and syntax only, so no global name changes) and an nginx stage that serves the result.
+  The first stage runs on the builder's own architecture: its output is byte for byte
+  the same built natively on arm64 and under emulation for amd64 (checked).
+- **`scripts/deploy.sh` builds the images here, once, and every server pulls them**
+  (`--prebuilt`, which was how ir5 was already deployed, is the default now;
+  `--build-on-server` is the old way). No server needs the npm registry or Docker Hub,
+  and every server runs the same image digests.
+
+**Fixed**
+
+- **The service worker of the built web root was a syntax error.** The build appended
+  its files after a list entry that had no trailing comma, so the worker could never
+  register: a server serving that build would have had no offline use at all. It had
+  never been served, which is why nothing noticed. The build is fixed and
+  `check:web-build` now parses `sw.js`.
+- **The suites can run against the built root** (`POORIJA_WEB_ROOT=dist/web`): the
+  local stack and the three suites with their own proxy honour it, and the eight that
+  asserted the source tree's structure (a file's path, an identifier in a function's
+  text) assert the build's equivalent. The whole gate was run that way; on the built
+  root the app registers its worker, caches one generation, boots with no network and
+  renders all eight tabs offline.
+- `profilecard` no longer depends on the hour (a second city that is on another day
+  put two day letters in a shape that expects one).
+
+Tests: the gate on the source tree and on `dist/web`.
+
 # P00RIJA Chat 2.20.0
 
 Version 2.20.0 · build chat-v37

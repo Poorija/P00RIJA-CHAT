@@ -34,6 +34,8 @@ import { openApp, browser, waitFor, PASS } from './_chat-harness.mjs';
 import { createChecks } from './_check.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+/* POORIJA_WEB_ROOT=dist/web runs the suite against the built web root. */
+const webRootOf = () => (process.env.POORIJA_WEB_ROOT ? path.resolve(process.env.POORIJA_WEB_ROOT) : root);
 const require = createRequire(import.meta.url);
 const ids = require(path.join(root, 'scripts', 'lib', 'relay-identity.js'));
 const dirlib = require(path.join(root, 'scripts', 'lib', 'relay-directory.js'));
@@ -64,8 +66,8 @@ function proxy(staticPort, relayPort) {
   const sockets = new Set();
   const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
-    const candidate = path.join(root, pathname === '/' ? 'index.html' : pathname);
-    const isFile = candidate.startsWith(root) && fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+    const candidate = path.join(webRootOf(), pathname === '/' ? 'index.html' : pathname);
+    const isFile = candidate.startsWith(webRootOf()) && fs.existsSync(candidate) && fs.statSync(candidate).isFile();
     const upstream = http.request({ hostname: '127.0.0.1', port: isFile ? staticPort : relayPort.current, path: req.url, method: req.method, headers: req.headers }, (response) => {
       res.writeHead(response.statusCode, response.headers);
       response.pipe(res);

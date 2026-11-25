@@ -30,6 +30,8 @@ const html = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8');
 const named = [...html.matchAll(/<script\b[^>]*\bsrc="([^"?]+)/g)].map((m) => m[1]);
 for (const rel of named) if (!fs.existsSync(path.join(OUT, rel))) problems.push(`index.html names ${rel}, which the build did not write`);
 const sw = fs.readFileSync(path.join(OUT, 'sw.js'), 'utf8');
+/* The worker is a script of its own, and a syntax error in it is a worker that can never register. */
+try { parser.parse(sw, { sourceType: 'script', errorRecovery: false }); } catch (error) { problems.push(`sw.js does not parse: ${error.message}`); }
 for (const m of sw.matchAll(/^\s*'\.\/([^'?#]+\.[a-z0-9]+)',\s*$/gim)) if (!fs.existsSync(path.join(OUT, m[1]))) problems.push(`sw.js precaches ${m[1]}, which is not in the build`);
 let joined = '';
 for (const rel of named.filter((r) => r.startsWith('build/'))) {

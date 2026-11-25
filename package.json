@@ -1,7 +1,7 @@
 {
   "name": "p00rija-chat",
-  "version": "2.20.0",
-  "buildTag": "chat-v37",
+  "version": "2.20.2",
+  "buildTag": "chat-v39",
   "description": "P00RIJA Chat — end-to-end encrypted messenger with its own relay",
   "main": "scripts/server.js",
   "directories": {
@@ -167,6 +167,7 @@
     "@babel/traverse": "^7.29.14",
     "@tauri-apps/cli": "2.12.4",
     "@types/node": "^26.6.6",
+    "esbuild": "0.28.2",
     "jest": "^30.5.2",
     "jest-environment-jsdom": "^30.5.2",
     "jsdom": "^30.1.3",
