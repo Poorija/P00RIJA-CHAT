@@ -53,7 +53,11 @@ const boot = await page.evaluate(()=>({
 }));
 console.log('  ' + JSON.stringify(boot).slice(0,400));
 check('the page loads with its title', /P00RIJ/i.test(boot.title||''), boot.title);
-check('every script tag resolves', failedRequests.length===0, JSON.stringify(failedRequests.slice(0,4)));
+/* A static server (the CI's, `npm run dev`) has no relay behind it, so the app's own probes of one are 404 there by
+   construction; what this asks is whether the page's FILES resolve. */
+const relayPaths = /^\/(chat-health|relay-[a-z]+|turn-config|push\/|kt\/|chat-signal|peerjs|healthz|transit-peers|link-preview|telegram-stickers|bootstrap\/|p00rija-update\/)/;
+const missingFiles = failedRequests.filter((entry) => !relayPaths.test(entry));
+check('every script tag resolves', missingFiles.length===0, JSON.stringify(missingFiles.slice(0,4)));
 /* Run against dist/web (POORIJA_WEB_ROOT) the scripts are six built files named by content, with no per-file tags and no numbered parts. */
 const BUILT_WEB = Boolean(process.env.POORIJA_WEB_ROOT);
 check('it carries a version tag on every asset', BUILT_WEB || /^\d+\.\d+\.\d+-/.test(boot.version||''), boot.version);

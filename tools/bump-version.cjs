@@ -34,11 +34,15 @@ if (!/^\d+\.\d+\.\d+$/.test(next || '') || !/^chat-v\d+$/.test(nextBuild || ''))
 }
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
 const write = (file, text) => fs.writeFileSync(path.join(ROOT, file), text);
+/* Boundary-safe: 2.20.2 is a prefix of 2.20.22 (and chat-v4 of chat-v40), and a plain
+   replace turned the new number into 2.20.222. The old one counts only where it
+   stands alone, not as the start of a longer number. */
+const alone = (value) => new RegExp(`(?<![0-9.])${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![0-9])`, 'g');
 const everywhere = (text) => text
-  .split(`${old}-${oldBuild}`).join(`${next}-${nextBuild}`)
-  .split(`build ${oldBuild}`).join(`build ${nextBuild}`)
-  .split(oldBuild).join(nextBuild)
-  .split(old).join(next);
+  .replace(alone(`${old}-${oldBuild}`), `${next}-${nextBuild}`)
+  .replace(alone(`build ${oldBuild}`), `build ${nextBuild}`)
+  .replace(alone(oldBuild), nextBuild)
+  .replace(alone(old), next);
 /* Files that are about this app and nothing else. */
 for (const file of ['INSTALL-LINUX-SERVER.md', 'index.html', 'README.md', 'HANDOFF.md', 'package.json', 'standalone-relay/package.json', 'sw.js',
   'config/relay-overrides.json', 'js/app.js', 'src-tauri/Cargo.toml', 'src-tauri/tauri.conf.json']) {

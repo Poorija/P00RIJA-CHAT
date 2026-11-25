@@ -1,3 +1,29 @@
+# P00RIJA Chat 2.20.22
+
+Version 2.20.22 · build chat-v40
+
+A new version string, so that a device holding a partial or broken copy of the app —
+a cache that took some of 2.20.1's files and not others, a page served by a server
+mid-deploy — fetches the whole of this one: the release tag is what the worker's cache,
+the page's links and the reload key are named by.
+
+**Fixed (the build on GitHub)**
+
+- The CI workflow ran `test:release37`, a suite retired in 2.20.0 (it drives a card of
+  the old vault tab, and fails by design); it is no longer run, and the script is gone.
+- `smoke` counted the app's probe of a relay (`/chat-health`, which the CI's static-only
+  server answers with a 404 by construction) as a script that did not resolve; it now
+  asks only whether the page's files resolve.
+- The Rust step, which failed on 2.17.1 for the lockfile reason fixed in 2.20.0, passes:
+  `cargo test` over `src-tauri` ran clean.
+
+**Servers**
+
+- The build cache of the images' earlier server-side builds (3–8 GB on each server) and
+  the archived system journals older than two weeks (1–2.5 GB on most) were removed from
+  all eight servers; two of them were over 90 % and 83 % full. Nothing of the app, its
+  data or its mailboxes was touched.
+
 # P00RIJA Chat 2.20.2
 
 Version 2.20.2 · build chat-v39

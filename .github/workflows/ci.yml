@@ -149,7 +149,6 @@ jobs:
           npm run test:offline
           npm run test:retention
           npm run test:security
-          npm run test:release37
           npm run test:keytrust
           npm run test:fs
           npm run test:wipe
