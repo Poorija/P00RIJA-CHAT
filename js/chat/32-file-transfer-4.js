@@ -697,7 +697,7 @@ if (!chatState.connected || !chatState.ws || chatState.ws.readyState !== WebSock
    overlapped freely — the same message sealed to the relay twice per
    reconnect, its copies crowding out other people's held mail. One pass at
    a time. */
-if (retryQueuedMessages.inFlight) return;
+if (retryQueuedMessages.inFlight) { retryQueuedMessages.again = true; return; }
 retryQueuedMessages.inFlight = true;
 try {
 for (const conversationKey in chatState.history) {
@@ -773,6 +773,10 @@ markMessageStatus(conversationKey, msg.id, 'relayed');
 }
 } finally {
 retryQueuedMessages.inFlight = false;
+/* Asked for again while it was at work (a session got its key a moment after
+   the pass looked at it): one more pass, so that what that pass skipped is not
+   left waiting for the next presence blip. */
+if (retryQueuedMessages.again) { retryQueuedMessages.again = false; setTimeout(() => retryQueuedMessages().catch(() => {}), 250); }
 }
 }
 

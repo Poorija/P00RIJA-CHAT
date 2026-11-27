@@ -159,12 +159,13 @@ function identitySealRefused(session, peerRecord) {
   if (!record) return Boolean(session?.ratchet);
   return Number(record.kexPinned || 0) >= KEX_HYBRID || Number(record.ratchetPinned || 0) >= 1;
 }
-async function sealSessionKeyFor(session, peerRecord) {
-if (!session?.cryptoKey) return '';
+async function sealSessionKeyFor(session, peerRecord, contentKey = null) {
+const key = contentKey || session?.cryptoKey;
+if (!key) return '';
 if (identitySealRefused(session, peerRecord)) return '';
 const publicKeyData = peerRecord?.publicKeyData || session.remotePublicKeyData || '';
 if (!publicKeyData) return '';
-const rawKey = await crypto.subtle.exportKey('raw', session.cryptoKey);
+const rawKey = await crypto.subtle.exportKey('raw', key);
 const wrapped = await sealToIdentity(peerRecord || { publicKeyData }, 'offline', rawKey);
 return app().arrayBufferToBase64(wrapped);
 }
@@ -343,7 +344,62 @@ const iv = app().generateSecureRandomBytes(12);
 const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, session.cryptoKey, plainBytes);
 return { iv: Array.from(iv), cipher: app().arrayBufferToBase64(cipher) };
 }
+/* One thing at a time per session.
+ *
+ * What a session seals and opens moves the state it keeps (the ratchet's chains and
+ * its DH step, the binding's counters), and each of those steps awaits WebCrypto
+ * in the middle of reading and writing that state. Two at once — and two people
+ * writing at the same moment is exactly two at once: a message arriving while
+ * another is being opened, a reply sealed while the next is — each read the state
+ * as it was before the other's step, and one of them used a key the other had
+ * already moved past: a tag that does not open (OperationError), the message left
+ * on the relay unacknowledged and never shown, in the engine that interleaves
+ * them (WebKit; Chromium happened to finish each before the next began). They are
+ * run in the order they were asked, one after another. */
+const sessionTurns = new WeakMap();
+const contactTurns = new Map();
+function inSessionTurn(session, work) {
+  if (!session || typeof session !== 'object') return work();
+  /* One line per contact, not per session object: a contact can be reached by
+     two (a live one, and one made for mail), and both step the same chains. */
+  const fingerprint = String(session.remoteFingerprint || '');
+  const table = fingerprint ? contactTurns : sessionTurns;
+  const key = fingerprint || session;
+  const before = table.get(key) || Promise.resolve();
+  const mine = before.then(work, work);
+  const tail = mine.then(() => undefined, () => undefined);
+  table.set(key, tail);
+  tail.then(() => { if (table.get(key) === tail) table.delete(key); });
+  return mine;
+}
+/* Which key each payload was sealed under, remembered by the payload itself (not
+   written into it): an envelope that encloses the key has to enclose THAT one.
+   It used to enclose whatever the session held when the envelope was built, a
+   moment after the payload was sealed — and when two people begin at the same
+   instant the session's key is replaced in between (the offline key by the
+   negotiated one): the payload under the first, the envelope carrying the second,
+   a tag that opens for nobody, the message left on the relay unacknowledged
+   and never shown. */
+const payloadKeys = new WeakMap();
+function keyOfPayload(payload) {
+  if (payload && typeof payload === 'object') {
+    const direct = payloadKeys.get(payload);
+    if (direct) return direct;
+    for (const value of Object.values(payload)) {
+      if (value && typeof value === 'object' && payloadKeys.has(value)) return payloadKeys.get(value);
+    }
+  }
+  return null;
+}
 async function encryptForSession(session, plainBytes, kind) {
+return inSessionTurn(session, async () => {
+const keyNow = session?.cryptoKey || null;
+const sealed = await encryptForSessionNow(session, plainBytes, kind);
+if (sealed && typeof sealed === 'object' && keyNow) payloadKeys.set(sealed, keyNow);
+return sealed;
+});
+}
+async function encryptForSessionNow(session, plainBytes, kind) {
 /* Required, not defaulted: a payload sealed as one kind and opened as another
    does not open, and a default is how a caller gets that wrong silently. */
 if (!kind) throw new TypeError('encryptForSession: kind is required');
@@ -398,6 +454,9 @@ this.reason = reason;
 }
 }
 async function decryptForSession(session, payload, kind) {
+return inSessionTurn(session, () => decryptForSessionNow(session, payload, kind));
+}
+async function decryptForSessionNow(session, payload, kind) {
 if (!kind) throw new TypeError('decryptForSession: kind is required');
 if (payload && (payload.r === 1 || payload.r === 2)) {
 if (typeof PoorijaRatchet !== 'object') throw new SessionPayloadRefused('ratchet unavailable');
@@ -634,13 +693,20 @@ Object.defineProperties(globalThis, {
   "sessionBinds": { get() { return sessionBinds; }, set(value) { sessionBinds = value; }, configurable: true },
   "pinSessionAad": { get() { return pinSessionAad; }, set(value) { pinSessionAad = value; }, configurable: true },
   "encryptUnboundForSession": { get() { return encryptUnboundForSession; }, set(value) { encryptUnboundForSession = value; }, configurable: true },
+  "sessionTurns": { get() { return sessionTurns; }, set() { throw new TypeError('Assignment to constant variable sessionTurns.'); }, configurable: true },
+  "contactTurns": { get() { return contactTurns; }, set() { throw new TypeError('Assignment to constant variable contactTurns.'); }, configurable: true },
+  "inSessionTurn": { get() { return inSessionTurn; }, set(value) { inSessionTurn = value; }, configurable: true },
+  "payloadKeys": { get() { return payloadKeys; }, set() { throw new TypeError('Assignment to constant variable payloadKeys.'); }, configurable: true },
+  "keyOfPayload": { get() { return keyOfPayload; }, set(value) { keyOfPayload = value; }, configurable: true },
   "encryptForSession": { get() { return encryptForSession; }, set(value) { encryptForSession = value; }, configurable: true },
+  "encryptForSessionNow": { get() { return encryptForSessionNow; }, set(value) { encryptForSessionNow = value; }, configurable: true },
   "RATCHET_CAP": { get() { return RATCHET_CAP; }, set() { throw new TypeError('Assignment to constant variable RATCHET_CAP.'); }, configurable: true },
   "ratchetAvailable": { get() { return ratchetAvailable; }, set(value) { ratchetAvailable = value; }, configurable: true },
   "ratchetPinnedFor": { get() { return ratchetPinnedFor; }, set(value) { ratchetPinnedFor = value; }, configurable: true },
   "pinRatchet": { get() { return pinRatchet; }, set(value) { pinRatchet = value; }, configurable: true },
   "SessionPayloadRefused": { get() { return SessionPayloadRefused; }, set() { throw new TypeError('Assignment to constant variable SessionPayloadRefused.'); }, configurable: true },
   "decryptForSession": { get() { return decryptForSession; }, set(value) { decryptForSession = value; }, configurable: true },
+  "decryptForSessionNow": { get() { return decryptForSessionNow; }, set(value) { decryptForSessionNow = value; }, configurable: true },
   "identitySignBytes": { get() { return identitySignBytes; }, set(value) { identitySignBytes = value; }, configurable: true },
   "identitySign": { get() { return identitySign; }, set(value) { identitySign = value; }, configurable: true },
   "verifyIdentitySignature": { get() { return verifyIdentitySignature; }, set(value) { verifyIdentitySignature = value; }, configurable: true },

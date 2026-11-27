@@ -1726,7 +1726,27 @@ chatState.peerId = '';
 if (chatState.shouldReconnect) scheduleReconnect();
 });
 }
-async function startSecureSession(targetPeer = null, { silent = false } = {}) {
+/* One dial per contact at a time. Every message sent while a session has no key
+   yet comes here (ensureDirectSession), so a burst of ten from each of two
+   people dialled twenty times, each connection ran a key exchange of its own,
+   and the exchanges replaced one another's chains faster than mail sealed under
+   them could be opened. A dial in flight, or one that was made moments ago and
+   is still opening, is the one every caller waits on. */
+const secureSessionDials = new Map();
+const SECURE_DIAL_GRACE_MS = 15000;
+async function startSecureSession(targetPeer = null, options = {}) {
+const peerId = (targetPeer || activePeer())?.peerId || '';
+if (peerId && secureSessionDials.has(peerId)) return secureSessionDials.get(peerId);
+const run = startSecureSessionNow(targetPeer, options);
+if (!peerId) return run;
+secureSessionDials.set(peerId, run);
+try {
+return await run;
+} finally {
+secureSessionDials.delete(peerId);
+}
+}
+async function startSecureSessionNow(targetPeer = null, { silent = false } = {}) {
 if (hasActiveServerRestriction()) {
 notifyRestrictionOnce();
 return null;
@@ -1750,6 +1770,8 @@ if (!existing.cryptoKey) await ensureSessionKey(existing, peerRecord);
 renderActivePeer();
 return existing;
 }
+/* Dialled a moment ago and still opening: that connection is the one. */
+if (existing?.connection && !existing.connection.open && Date.now() - (existing.dialStartedAt || 0) < SECURE_DIAL_GRACE_MS) return existing;
 /* Somebody on another relay: PeerJS cannot dial them, so the channel is
    negotiated over the relays instead (43-relay-link.js) and handed to the
    same session machinery an ordinary connection goes through. */
@@ -1782,6 +1804,7 @@ fingerprint: chatState.identity?.fingerprint || '',
 });
 const session = bindDataConnection(peerRecord, connection, true);
 session.silent = Boolean(silent);
+session.dialStartedAt = Date.now();
 return chatState.sessions.get(peerRecord.peerId) || null;
 }
 
@@ -2163,6 +2186,8 @@ markMessageStatus(conversationKey, messageId, 'queued');
 /* Said only of what happened: handed to the relay is "went through the relay";
    not handed to anything is "waiting for the connection". */
 if (interactive && !forceRelay) { if (relayed) noteRelayRoute(targetPeer); else noteWaitingForConnection(); }
+/* A resend asked for by name says whether the relay took it. */
+if (forceRelay) return Boolean(relayed);
 }
 return true;
 }
@@ -2280,7 +2305,19 @@ if (!entry || entry.direction !== 'out') return;
 if (chatStatusRank(entry.status) >= chatStatusRank('delivered')) return;
 if (entry.status === 'failed') return;
 console.warn(`[Chat] no answer for ${messageId} on the live channel; sending it again through the relay`);
-Promise.resolve(resend()).catch((error) => console.warn('[Chat] resending through the relay failed:', error));
+/* Still only "sent" once the resend has run — it could not reach the relay, or
+   the session had no key — is a message nothing would try again: "sent" is not
+   among the statuses the retry pass picks up. It is queued, so that it goes the
+   moment a way opens. */
+Promise.resolve(resend()).catch((error) => { console.warn('[Chat] resending through the relay failed:', error); return false; }).then((taken) => {
+if (taken !== false) return;
+const again = (chatState.history[conversationKey] || []).find((item) => item.id === messageId);
+if (!again || again.direction !== 'out' || again.status !== 'sent') return;
+again.status = 'queued';
+storeHistory();
+renderMessages();
+if (typeof retryQueuedMessages === 'function') setTimeout(() => retryQueuedMessages().catch(() => {}), 1500);
+});
 }, waitMs);
 }
 // A file upload used to happen in complete silence, so a slow transfer looked
@@ -3718,7 +3755,10 @@ Object.defineProperties(globalThis, {
   "connectPresence": { get() { return connectPresence; }, set(value) { connectPresence = value; }, configurable: true },
   "connectChatTransport": { get() { return connectChatTransport; }, set(value) { connectChatTransport = value; }, configurable: true },
   "buildChatTransport": { get() { return buildChatTransport; }, set(value) { buildChatTransport = value; }, configurable: true },
+  "secureSessionDials": { get() { return secureSessionDials; }, set() { throw new TypeError('Assignment to constant variable secureSessionDials.'); }, configurable: true },
+  "SECURE_DIAL_GRACE_MS": { get() { return SECURE_DIAL_GRACE_MS; }, set() { throw new TypeError('Assignment to constant variable SECURE_DIAL_GRACE_MS.'); }, configurable: true },
   "startSecureSession": { get() { return startSecureSession; }, set(value) { startSecureSession = value; }, configurable: true },
+  "startSecureSessionNow": { get() { return startSecureSessionNow; }, set(value) { startSecureSessionNow = value; }, configurable: true },
   "secureSessionAdvised": { get() { return secureSessionAdvised; }, set() { throw new TypeError('Assignment to constant variable secureSessionAdvised.'); }, configurable: true },
   "offerSecureSessionBeforeLargeSend": { get() { return offerSecureSessionBeforeLargeSend; }, set(value) { offerSecureSessionBeforeLargeSend = value; }, configurable: true },
   "sendMessage": { get() { return sendMessage; }, set(value) { sendMessage = value; }, configurable: true },

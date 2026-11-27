@@ -209,6 +209,19 @@ messages in flight. A header is tried on a copy of the state, kept only once the
 message authenticates. A file's transfer key is 32 random bytes sent as a
 ratchet message (`rk` on the `file-start`, kind `file-key:<transferId>`).
 
+Earlier handshakes (2.20.23). Every generation has a local id (`gid`); a holder of state that is not the contact's newest generation files what it did under its own, and seals under the newest. A new key exchange replaces a contact's chains, but
+mail sealed under the previous ones can still be on its way: in an offline
+mailbox, or sent in the instant the exchange crossed it. The receiving halves of
+the last eight generations are kept for 14 days, and a payload the current chains
+cannot place (`unknown-chain`, `too-far`, or a tag that does not authenticate) is
+tried on them, newest first; nothing is ever sealed under an earlier generation.
+The side that answered an exchange keeps its chains as a *candidate* (six at
+most) before the answer leaves, because the offering side starts using its half
+when it sends `kex-confirm`, and what it then sends can arrive before the
+confirmation does, or when it never does; the candidate opens that mail, and is
+the current generation if the confirmation comes (`start` takes it by its id, with
+whatever it has received meanwhile).
+
 `ratchetPinned` is now a level (1 or 2); less is refused. A device can be held
 at 2.8 with `localStorage['poorija-ratchet'] = '1'`.
 

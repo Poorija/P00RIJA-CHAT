@@ -1040,7 +1040,8 @@ it.
 
 A stolen unlocked device yields: identity keys, prekeys still in their window
 (→ every envelope sealed to them), ratchet states (→ messages not yet sent on
-current chains, skipped keys ≤ 48 h), non-ratchet session keys ≤ 7 d, sender-key
+current chains, skipped keys ≤ 48 h, and the receiving chains of the last 8 earlier
+handshakes for 14 days — mail sealed under them can still arrive), non-ratchet session keys ≤ 7 d, sender-key
 chains (forward only), KT heads. v1 chains give no post-compromise security;
 v2 heals after a DH round trip, and the PQ step at most every 50 messages /
 24 h. With only the vault ciphertext, security reduces to the vault (out of

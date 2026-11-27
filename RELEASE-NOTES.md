@@ -1,3 +1,78 @@
+# P00RIJA Chat 2.20.23
+
+Version 2.20.23 · build chat-v41
+
+**Fixed — messages lost when two people write at the same time**
+
+Two people writing at once, or one writing while the other was away or just back,
+could lose the message of one of them or of both. Nothing was shown to the sender:
+the messages looked sent. The causes, all fixed:
+
+- **A dial for every message.** While a session had no key yet, every message written
+  dialled the contact again, and each connection ran a key exchange of its own: ten
+  messages from each of two people made some twenty exchanges in a few seconds, each
+  replacing the chains the last had made, faster than mail sealed under them could be
+  opened. One dial per contact is now in flight at a time, and one made moments ago
+  and still opening is the one everything waits on (about thirty exchanges in a test
+  run became two or three).
+- **A key exchange crossing the mail.** The side that offered an exchange starts using
+  the new chains the moment it sends the confirmation; the side that answered, when the
+  confirmation reaches it. Mail sent in between — or when the connection dropped before
+  the confirmation arrived — was sealed under chains the receiver had not adopted and
+  could not open; it was dropped as unreadable. The answering side now keeps the chains
+  of an exchange it has answered (six at most) as a candidate and opens that mail with
+  them; if the confirmation comes, the candidate, with what it has received, becomes
+  the current generation.
+- **Mail sealed before the latest exchange.** A new exchange replaced the chains, and
+  mail sealed under the earlier ones (from an offline mailbox, or sent while the
+  exchange crossed it) could no longer be opened. The receiving halves of the last eight
+  earlier generations are now kept for 14 days and tried when the current chains cannot
+  place a payload. Nothing is ever sealed under an earlier generation.
+- **A holder of old state writing over the new.** Two objects can hold one contact's
+  chains (a live session, and one made for mail); the one that had not been replaced
+  could write its earlier generation over the newest in the store, or seal under it.
+  Each generation has an id now: a holder of an earlier one files its state under that
+  generation and seals under the newest, and the sealing and opening of one contact's
+  messages go one after another whichever session object they come through.
+- **The key a relayed message was sealed under.** A message handed to the relay while
+  the session was moving to a new key could enclose the new key in its envelope instead
+  of the one it was sealed under, so the receiver opened it with the wrong key. The
+  payload now remembers the key it was sealed under, and that is the key enclosed.
+- **Messages written without a key stayed queued.** The held messages were tried when
+  the contact appeared online, and not when the session got its key a moment later; on
+  a calm connection that moment never came. They go now when the key is in place, and
+  a request to retry that arrives while a retry is running makes one more pass.
+- **A resend that went nowhere left the message at "sent" for good.** A message handed to
+  a live channel and not answered in ten seconds is sent again through the relay; when
+  that resend could not reach the relay (or the session had no key) the message stayed
+  "sent", a status nothing picks up again. It is queued now, and goes when a way opens.
+  A channel that was replaced and closed later no longer takes the new one off the
+  session either.
+- Mail that stays unopenable (a tag that never authenticates) is, after three
+  deliveries, given up on, said in the thread ("A sealed message could not be
+  opened."), and acknowledged, so that the fifty-message window of a mailbox is not
+  held by it for good. A file whose key could not be read now says so in the console
+  instead of waiting silently.
+
+**Tests**
+
+- `tests/e2e/resendsent.mjs`: a message handed to a channel that delivers nothing, with the
+  relay shut during the wait, goes and arrives once when a way opens; one that arrived is
+  not shown twice.
+- `tests/e2e/simulsend.mjs`: both sides write a burst in the same tick — the first words
+  of a conversation, a live session, the relay only, one of them away and back, after the
+  return — and then send files (2 KB, 300 KB, 900 KB) and a photo with a caption each
+  way, live, by the relay only and with one side away; every line and every byte must
+  arrive once.
+
+**What this costs, and what it does not cover**
+
+- Keeping the receiving chains of earlier generations for up to 14 days means that a
+  device taken unlocked yields the keys of mail from those generations that has not yet
+  arrived, not only those of the current chains (docs/SPEC.md §4.5).
+- A message sealed under a generation older than the last eight, or older than 14 days,
+  is still unreadable.
+
 # P00RIJA Chat 2.20.22
 
 Version 2.20.22 · build chat-v40

@@ -1,6 +1,6 @@
 [package]
 name = "p00rija-chat"
-version = "2.20.22"
+version = "2.20.23"
 description = "P00RIJA Chat native desktop and Android shell"
 authors = ["P00RIJA"]
 license = "AGPL-3.0-only"

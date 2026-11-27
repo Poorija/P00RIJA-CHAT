@@ -944,7 +944,7 @@ kex = null;
    curve alone, and not the identity key: which of them a message is sealed
    with is not left to whoever handed the prekey over (prekeyHybridOwed). */
 if (typeof prekeyHybridOwed === 'function' && prekeyHybridOwed(peerRecord) && (!kex || kex.v !== KEX_HYBRID)) return false;
-const seal = kex ? '' : await sealSessionKeyFor(session, peerRecord).catch(() => '');
+const seal = kex ? '' : await sealSessionKeyFor(session, peerRecord, typeof keyOfPayload === 'function' ? keyOfPayload(message?.payload) : null).catch(() => '');
 /* Where to write back, inside whichever seal is used.
  *
  * Without it a reply can only be sent by somebody who already holds the
@@ -989,9 +989,10 @@ let sessionKeyRaw = '';
    its own from the sending chain, which the receiver holds, so there is no
    session key to enclose — and enclosing one would be carrying in every
    envelope exactly what forward secrecy exists to keep from being kept. */
-if (session?.cryptoKey && !session.ratchet) {
+const contentKey = (typeof keyOfPayload === 'function' ? keyOfPayload(message?.payload) : null) || session?.cryptoKey;
+if (contentKey && !session?.ratchet) {
 try {
-sessionKeyRaw = app().arrayBufferToBase64(await crypto.subtle.exportKey('raw', session.cryptoKey));
+sessionKeyRaw = app().arrayBufferToBase64(await crypto.subtle.exportKey('raw', contentKey));
 } catch (_error) {
 sessionKeyRaw = '';
 }
@@ -2012,6 +2013,17 @@ await startSecureSession(peerRecord, { silent });
 session = await waitForSessionReady(peerRecord);
 return session;
 }
+/* How many times a piece of mail has failed to open, across deliveries and reloads
+   (small, and forgotten past two hundred). */
+function noteUnopenableMail(relayId) {
+  let table = {};
+  try { table = JSON.parse(localStorage.getItem('poorija-unopenable-mail') || '{}'); } catch (_error) { table = {}; }
+  table[relayId] = (Number(table[relayId]) || 0) + 1;
+  const keys = Object.keys(table);
+  if (keys.length > 200) keys.slice(0, keys.length - 200).forEach((key) => { delete table[key]; });
+  try { localStorage.setItem('poorija-unopenable-mail', JSON.stringify(table)); } catch (_error) { /* private mode */ }
+  return table[relayId];
+}
 async function handleOfflineRelayMessage(message) {
 let payload = message.payload || {};
 try {
@@ -2303,6 +2315,23 @@ return true;
    off: acknowledged, because redelivering it will never make it acceptable. */
 if (error?.name === 'SessionPayloadRefused') return true;
 console.error('Failed to process offline relay message:', error);
+/* A tag that does not open stays unopened: delivered again it fails again, and a
+   mailbox that hands out fifty of them first never gets to the messages behind
+   them (the window of mail is fifty unacknowledged). Three failures across
+   deliveries and the message is given up on — said in the thread, and
+   acknowledged, so the rest can come. The first two are given the chance a
+   one-off (a key still arriving) deserves. */
+if (error?.name === 'OperationError' && message?.relayId) {
+  const failures = noteUnopenableMail(message.relayId);
+  if (failures >= 3) {
+    const peer = typeof findPeerBySession === 'function' ? findPeerBySession(chatState.sessions.get(message.fromFingerprint || message.fromClientId)) : null;
+    const key = peer ? getConversationKey(peer) : (payload?.fromFingerprint || '');
+    if (key) {
+      appendHistory(key, { id: `unreadable-${message.relayId}`, type: 'system-note', direction: 'in', text: t('یک پیام رمزنگاری‌شده نتوانست باز شود.', 'A sealed message could not be opened.'), createdAt: new Date().toISOString() });
+    }
+    return true;
+  }
+}
 return false;
 }
 }
@@ -2532,7 +2561,7 @@ async function adoptHybridKey(session, cryptoKey, ratchet = null) {
   const raw = await crypto.subtle.exportKey('raw', cryptoKey);
   session.ratchet = null;
   if (ratchet) {
-    await PoorijaRatchet.start(session, { seed: new Uint8Array(raw), kid: ratchet.kid, role: ratchet.role, fingerprint: session.remoteFingerprint, mine: ratchet.mine || null, theirs: ratchet.theirs || null });
+    await PoorijaRatchet.start(session, { seed: new Uint8Array(raw), kid: ratchet.kid, role: ratchet.role, fingerprint: session.remoteFingerprint, mine: ratchet.mine || null, theirs: ratchet.theirs || null, candidateId: ratchet.candidateId || null });
     pinRatchet(session);
   }
   session.cryptoKey = cryptoKey;
@@ -2547,6 +2576,9 @@ async function adoptHybridKey(session, cryptoKey, ratchet = null) {
   announcePrekey(session);
   renderActivePeer();
   renderMessages();
+  /* What was written while there was no key goes now, not at the next presence
+     blip (which a calm connection may not have for a long time). */
+  if (typeof retryQueuedMessages === 'function') retryQueuedMessages().catch(() => {});
 }
 /* Both halves in hand: derive, store, and forget the ephemeral private. */
 async function completeKex(session, theirEphemeralPublic, myPrivateBase64) {
@@ -2568,6 +2600,7 @@ async function completeKex(session, theirEphemeralPublic, myPrivateBase64) {
   announcePrekey(session);
   renderActivePeer();
   renderMessages();
+  if (typeof retryQueuedMessages === 'function') retryQueuedMessages().catch(() => {});
 }
 /* The prekey, said again to the person themselves. The relay may be an older
    one that does not carry the signature; a live session reaches them without
@@ -2897,6 +2930,16 @@ const answerDigests = { kid: offerDigests.kid, pubDigest: await kexDigest(answer
 answer.sig = await kexSign(kexAnswerSignBytes(answer.fingerprint, kexPinnedIdentity(session).fingerprint, answerDigests));
 const transcript = await kexDigest(`${offerDigest}|${answerDigests.pubDigest}|${answerDigests.pqctDigest}`);
 const derived = await deriveHybridKex(theirPublic, ephemeral.privateKeyData, sealedPq.sharedSecret, transcript);
+/* The chains of this exchange, kept as a candidate before the answer goes
+   out: the offering side uses its half the moment it confirms, and what it
+   sends can reach this side before the confirmation does, or when the
+   confirmation never does. */
+let candidateId = null;
+if (answerRatchet) {
+try {
+candidateId = await PoorijaRatchet.candidate({ seed: new Uint8Array(await crypto.subtle.exportKey('raw', derived.cryptoKey)), kid: offerDigests.kid, role: 'answerer', fingerprint: session.remoteFingerprint, mine: answerMine, theirs: answerMine ? { rp: message.rp, rq: message.rq } : null });
+} catch (error) { console.warn('[Chat] the chains of a key exchange could not be kept ahead of its confirmation:', error); }
+}
 /* A newer offer came in while this one was being worked on: it is the one
    the other side is waiting on now, and this answer would only be refused
    there by name. Nothing of this exchange goes on the session. */
@@ -2911,7 +2954,7 @@ session.cryptoKey = null;
 session.keyReady = false;
 session.keySource = '';
 session.kexPending = { kid: offerDigests.kid, cryptoKey: derived.cryptoKey, confirmKey: derived.confirmKey, at: Date.now(), ratchet: answerRatchet, binding: offerDigests.binding || 3,
-ratchetMine: answerMine, ratchetTheirs: answerMine ? { rp: message.rp, rq: message.rq } : null };
+ratchetMine: answerMine, ratchetTheirs: answerMine ? { rp: message.rp, rq: message.rq } : null, candidateId };
 pinKexHybrid(session);
 scheduleSessionKeyFallback(session, { peerId: session.peerId, clientId: session.remoteClientId, publicKeyData: session.remotePublicKeyData, fingerprint: session.remoteFingerprint });
 renderActivePeer();
@@ -3016,7 +3059,7 @@ return;
 if (session.kexPending !== pending) return;
 if (pending.binding === 4) pinKexBinding(session);
 await adoptHybridKey(session, pending.cryptoKey, pending.ratchet
-? { kid, role: 'answerer', ...(pending.ratchetMine ? { mine: pending.ratchetMine, theirs: pending.ratchetTheirs } : {}) }
+? { kid, role: 'answerer', candidateId: pending.candidateId || null, ...(pending.ratchetMine ? { mine: pending.ratchetMine, theirs: pending.ratchetTheirs } : {}) }
 : null);
 } catch (error) {
 console.warn('[Chat] could not confirm a key exchange:', error);
@@ -3324,7 +3367,7 @@ const expiresAt = message.expiresAt || '';
 	return PoorijaRatchet.receiveTransferKey(session, {
 	sealed: message.rk && typeof message.rk === 'object' ? message.rk : null,
 	c: message.rc, n: message.rn, ...names, fingerprint: names.from, transferId: message.transferId,
-	}).catch(() => null);
+	}).catch((error) => { console.warn('[Chat] the key of an incoming file could not be read, so the file cannot be opened:', error?.message || error); return null; });
 	})()
 	: null,
 	/* The chain the chunks are bound to: the sealed key's chain (2.9) or the
@@ -3658,7 +3701,9 @@ notify(t('پردازش پیام امن ناموفق بود', 'Failed to process 
 });
 connection.on('close', () => {
 const existing = chatState.sessions.get(peerRecord.peerId);
-if (existing) {
+/* Only the channel the session is on. One that was replaced closing later
+   used to take the new one off the session. */
+if (existing && (!existing.connection || existing.connection === connection)) {
 existing.connection = null;
 }
 renderActivePeer();
@@ -3971,6 +4016,7 @@ Object.defineProperties(globalThis, {
   "waitForSessionReady": { get() { return waitForSessionReady; }, set(value) { waitForSessionReady = value; }, configurable: true },
   "ensureStoredSession": { get() { return ensureStoredSession; }, set(value) { ensureStoredSession = value; }, configurable: true },
   "ensureDirectSession": { get() { return ensureDirectSession; }, set(value) { ensureDirectSession = value; }, configurable: true },
+  "noteUnopenableMail": { get() { return noteUnopenableMail; }, set(value) { noteUnopenableMail = value; }, configurable: true },
   "handleOfflineRelayMessage": { get() { return handleOfflineRelayMessage; }, set(value) { handleOfflineRelayMessage = value; }, configurable: true },
   "tryIdentityMoveEnvelope": { get() { return tryIdentityMoveEnvelope; }, set(value) { tryIdentityMoveEnvelope = value; }, configurable: true },
   "authenticatedSenderOf": { get() { return authenticatedSenderOf; }, set(value) { authenticatedSenderOf = value; }, configurable: true },
